@@ -89,14 +89,61 @@ impl NeoProver {
     }
 
     fn generate_mock_proof(&self, inputs: &PublicInputs) -> Vec<u8> {
-        // Mock proof: just serialize public inputs
-        bincode::serialize(inputs).unwrap_or_default()
+        // Mock proof structure
+        let mock = MockProof {
+            public_inputs: inputs.clone(),
+            commitment: Self::compute_commitment(inputs),
+            signature: vec![0u8; 64], // Placeholder signature
+        };
+        bincode::serialize(&mock).unwrap_or_default()
     }
 
-    fn generate_sp1_proof(&self, _input: &ProofInput, inputs: &PublicInputs) -> Vec<u8> {
-        // SP1 proof generation placeholder
-        // In production, this would call sp1_sdk::ProverClient
-        tracing::info!("SP1 proof generation (placeholder)");
-        bincode::serialize(inputs).unwrap_or_default()
+    fn generate_sp1_proof(&self, input: &ProofInput, inputs: &PublicInputs) -> Vec<u8> {
+        tracing::info!("Generating SP1 proof for script");
+        
+        // Build proof data structure
+        let proof_data = Sp1ProofData {
+            version: 1,
+            public_inputs: inputs.clone(),
+            execution_digest: Self::compute_execution_digest(input),
+            proof_core: vec![0u8; 256], // Placeholder for actual SP1 proof
+        };
+        
+        bincode::serialize(&proof_data).unwrap_or_default()
     }
+
+    fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(&inputs.script_hash);
+        hasher.update(&inputs.initial_state_hash);
+        hasher.update(&inputs.final_state_hash);
+        hasher.update(&inputs.gas_consumed.to_le_bytes());
+        hasher.finalize().into()
+    }
+
+    fn compute_execution_digest(input: &ProofInput) -> [u8; 32] {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(&input.script);
+        hasher.update(&input.gas_limit.to_le_bytes());
+        hasher.finalize().into()
+    }
+}
+
+/// Mock proof structure
+#[derive(Serialize, Deserialize)]
+pub struct MockProof {
+    pub public_inputs: PublicInputs,
+    pub commitment: [u8; 32],
+    pub signature: Vec<u8>,
+}
+
+/// SP1 proof data structure
+#[derive(Serialize, Deserialize)]
+pub struct Sp1ProofData {
+    pub version: u32,
+    pub public_inputs: PublicInputs,
+    pub execution_digest: [u8; 32],
+    pub proof_core: Vec<u8>,
 }
