@@ -274,6 +274,7 @@ dependencies = [
  "neo-vm-core",
  "neo-vm-guest",
  "serde",
+ "sha2",
  "tracing",
 ]
 

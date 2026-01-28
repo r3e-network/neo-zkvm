@@ -4,7 +4,7 @@ use neo_vm_core::{NeoVM, VMState, StackItem};
 use serde::{Deserialize, Serialize};
 
 /// Input for zkVM proving
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ProofInput {
     pub script: Vec<u8>,
     pub arguments: Vec<StackItem>,

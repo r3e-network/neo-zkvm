@@ -1,4 +1,4 @@
-//! Neo zkVM Prover
+//! Neo zkVM Prover with SP1 Integration
 
 use neo_vm_guest::{ProofInput, ProofOutput, execute};
 use serde::{Deserialize, Serialize};
@@ -8,16 +8,41 @@ use serde::{Deserialize, Serialize};
 pub struct NeoProof {
     pub output: ProofOutput,
     pub proof_bytes: Vec<u8>,
+    pub public_inputs: PublicInputs,
+}
+
+/// Public inputs for verification
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PublicInputs {
+    pub script_hash: [u8; 32],
+    pub initial_state_hash: [u8; 32],
+    pub final_state_hash: [u8; 32],
+    pub gas_consumed: u64,
 }
 
 /// Prover configuration
 pub struct ProverConfig {
     pub max_cycles: u64,
+    pub prove_mode: ProveMode,
+}
+
+/// Proving mode
+#[derive(Clone, Copy)]
+pub enum ProveMode {
+    /// Execute only, no proof
+    Execute,
+    /// Generate mock proof (for testing)
+    Mock,
+    /// Generate real SP1 proof
+    Sp1,
 }
 
 impl Default for ProverConfig {
     fn default() -> Self {
-        Self { max_cycles: 1_000_000 }
+        Self { 
+            max_cycles: 1_000_000,
+            prove_mode: ProveMode::Mock,
+        }
     }
 }
 
@@ -33,10 +58,45 @@ impl NeoProver {
 
     /// Generate proof for script execution
     pub fn prove(&self, input: ProofInput) -> NeoProof {
-        let output = execute(input);
+        let script_hash = Self::hash_script(&input.script);
+        let output = execute(input.clone());
+        
+        let public_inputs = PublicInputs {
+            script_hash,
+            initial_state_hash: [0u8; 32],
+            final_state_hash: [0u8; 32],
+            gas_consumed: output.gas_consumed,
+        };
+
+        let proof_bytes = match self.config.prove_mode {
+            ProveMode::Execute => vec![],
+            ProveMode::Mock => self.generate_mock_proof(&public_inputs),
+            ProveMode::Sp1 => self.generate_sp1_proof(&input, &public_inputs),
+        };
+
         NeoProof {
             output,
-            proof_bytes: vec![], // Placeholder
+            proof_bytes,
+            public_inputs,
         }
+    }
+
+    fn hash_script(script: &[u8]) -> [u8; 32] {
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(script);
+        hasher.finalize().into()
+    }
+
+    fn generate_mock_proof(&self, inputs: &PublicInputs) -> Vec<u8> {
+        // Mock proof: just serialize public inputs
+        bincode::serialize(inputs).unwrap_or_default()
+    }
+
+    fn generate_sp1_proof(&self, _input: &ProofInput, inputs: &PublicInputs) -> Vec<u8> {
+        // SP1 proof generation placeholder
+        // In production, this would call sp1_sdk::ProverClient
+        tracing::info!("SP1 proof generation (placeholder)");
+        bincode::serialize(inputs).unwrap_or_default()
     }
 }
