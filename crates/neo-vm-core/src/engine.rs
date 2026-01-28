@@ -11,6 +11,8 @@ pub enum VMError {
     InvalidOpcode(u8),
     #[error("Out of gas")]
     OutOfGas,
+    #[error("Division by zero")]
+    DivisionByZero,
 }
 
 #[derive(Debug, Clone)]
@@ -79,12 +81,51 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?.clone();
                 self.eval_stack.push(item);
             }
+            // ADD
             0x9E => {
                 let b = self.eval_stack.pop().and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let a = self.eval_stack.pop().and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 self.eval_stack.push(StackItem::Integer(a + b));
+            }
+            // SUB
+            0x9F => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(a - b));
+            }
+            // MUL
+            0xA0 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(a * b));
+            }
+            // DIV
+            0xA1 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if b == 0 {
+                    return Err(VMError::DivisionByZero);
+                }
+                self.eval_stack.push(StackItem::Integer(a / b));
+            }
+            // MOD
+            0xA2 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if b == 0 {
+                    return Err(VMError::DivisionByZero);
+                }
+                self.eval_stack.push(StackItem::Integer(a % b));
             }
             0x40 => {
                 self.invocation_stack.pop();
