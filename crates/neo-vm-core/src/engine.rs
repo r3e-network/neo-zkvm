@@ -1,6 +1,8 @@
 //! Neo VM Execution Engine
 
 use crate::stack_item::StackItem;
+use sha2::{Sha256, Digest};
+use ripemd::Ripemd160;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -13,6 +15,8 @@ pub enum VMError {
     OutOfGas,
     #[error("Division by zero")]
     DivisionByZero,
+    #[error("Invalid type")]
+    InvalidType,
 }
 
 #[derive(Debug, Clone)]
@@ -300,6 +304,44 @@ impl NeoVM {
                 });
                 // Store return address (simplified)
                 self.eval_stack.push(StackItem::Pointer(return_ip as u32));
+            }
+            // SHA256
+            0xF0 => {
+                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match data {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
+                    _ => return Err(VMError::InvalidType),
+                };
+                let mut hasher = Sha256::new();
+                hasher.update(&bytes);
+                let result = hasher.finalize().to_vec();
+                self.eval_stack.push(StackItem::ByteString(result));
+            }
+            // RIPEMD160
+            0xF1 => {
+                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match data {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
+                    _ => return Err(VMError::InvalidType),
+                };
+                let mut hasher = Ripemd160::new();
+                hasher.update(&bytes);
+                let result = hasher.finalize().to_vec();
+                self.eval_stack.push(StackItem::ByteString(result));
+            }
+            // SHA256 + RIPEMD160 (Hash160)
+            0xF2 => {
+                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match data {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
+                    _ => return Err(VMError::InvalidType),
+                };
+                let sha_result = Sha256::digest(&bytes);
+                let result = Ripemd160::digest(&sha_result).to_vec();
+                self.eval_stack.push(StackItem::ByteString(result));
             }
             // RET
             0x40 => {

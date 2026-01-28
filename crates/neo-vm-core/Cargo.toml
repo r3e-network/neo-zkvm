@@ -10,4 +10,5 @@ num-traits.workspace = true
 serde.workspace = true
 sha2.workspace = true
 sha3.workspace = true
+ripemd.workspace = true
 hex.workspace = true
