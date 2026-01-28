@@ -165,6 +165,47 @@ impl NeoVM {
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 self.eval_stack.push(StackItem::Boolean(a == b));
             }
+            // AND (bitwise)
+            0x91 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(a & b));
+            }
+            // OR (bitwise)
+            0x92 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(a | b));
+            }
+            // XOR (bitwise)
+            0x93 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(a ^ b));
+            }
+            // NOT (logical)
+            0xAA => {
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(!a.to_bool()));
+            }
+            // BOOLAND
+            0xAB => {
+                let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a.to_bool() && b.to_bool()));
+            }
+            // BOOLOR
+            0xAC => {
+                let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a.to_bool() || b.to_bool()));
+            }
             // RET
             0x40 => {
                 self.invocation_stack.pop();
