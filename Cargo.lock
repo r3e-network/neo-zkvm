@@ -286,6 +286,7 @@ dependencies = [
  "neo-vm-guest",
  "neo-zkvm-prover",
  "serde",
+ "sha2",
 ]
 
 [[package]]
