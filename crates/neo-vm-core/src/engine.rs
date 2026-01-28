@@ -3,6 +3,7 @@
 use crate::stack_item::StackItem;
 use sha2::{Sha256, Digest};
 use ripemd::Ripemd160;
+use k256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -342,6 +343,34 @@ impl NeoVM {
                 let sha_result = Sha256::digest(&bytes);
                 let result = Ripemd160::digest(&sha_result).to_vec();
                 self.eval_stack.push(StackItem::ByteString(result));
+            }
+            // CHECKSIG (ECDSA secp256k1)
+            0xF3 => {
+                let pubkey = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let sig = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let msg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                
+                let pubkey_bytes = match pubkey {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                let sig_bytes = match sig {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                let msg_bytes = match msg {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                
+                let result = (|| {
+                    let vk = VerifyingKey::from_sec1_bytes(&pubkey_bytes).ok()?;
+                    let signature = Signature::from_slice(&sig_bytes).ok()?;
+                    let msg_hash = Sha256::digest(&msg_bytes);
+                    vk.verify(&msg_hash, &signature).ok()
+                })();
+                
+                self.eval_stack.push(StackItem::Boolean(result.is_some()));
             }
             // RET
             0x40 => {
