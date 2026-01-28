@@ -259,6 +259,48 @@ impl NeoVM {
                 let depth = self.eval_stack.len() as i128;
                 self.eval_stack.push(StackItem::Integer(depth));
             }
+            // NOP
+            0x21 => {}
+            // JMP (1-byte offset)
+            0x22 => {
+                let ctx = self.invocation_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip = ((ctx.ip as isize - 1) + offset as isize) as usize;
+            }
+            // JMPIF (1-byte offset)
+            0x24 => {
+                let ctx = self.invocation_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if cond.to_bool() {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPIFNOT (1-byte offset)
+            0x26 => {
+                let ctx = self.invocation_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if !cond.to_bool() {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // CALL (1-byte offset)
+            0x34 => {
+                let ctx = self.invocation_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                let return_ip = ctx.ip + 1;
+                let target_ip = ((ctx.ip as isize - 1) + offset as isize) as usize;
+                let script = ctx.script.clone();
+                self.invocation_stack.push(ExecutionContext { 
+                    script, 
+                    ip: target_ip,
+                });
+                // Store return address (simplified)
+                self.eval_stack.push(StackItem::Pointer(return_ip as u32));
+            }
             // RET
             0x40 => {
                 self.invocation_stack.pop();
