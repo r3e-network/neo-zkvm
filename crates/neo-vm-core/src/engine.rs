@@ -101,7 +101,7 @@ impl NeoVM {
         for item in &self.eval_stack {
             hasher.update(format!("{:?}", item).as_bytes());
         }
-        hasher.update(&self.gas_consumed.to_le_bytes());
+        hasher.update(self.gas_consumed.to_le_bytes());
         hasher.finalize().into()
     }
 
@@ -440,7 +440,7 @@ impl NeoVM {
                     _ => return Err(VMError::InvalidType),
                 };
                 let sha_result = Sha256::digest(&bytes);
-                let result = Ripemd160::digest(&sha_result).to_vec();
+                let result = Ripemd160::digest(sha_result).to_vec();
                 self.eval_stack.push(StackItem::ByteString(result));
             }
             // CHECKSIG (ECDSA secp256k1)

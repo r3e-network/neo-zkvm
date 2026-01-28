@@ -1,9 +1,8 @@
 //! Neo zkVM CLI
 
-use neo_vm_guest::{ProofInput, ProofOutput};
+use neo_vm_guest::ProofInput;
 use neo_zkvm_prover::{NeoProver, ProverConfig};
 use neo_zkvm_verifier::verify;
-use neo_vm_core::StackItem;
 
 fn main() {
     println!("Neo zkVM v0.1.0");

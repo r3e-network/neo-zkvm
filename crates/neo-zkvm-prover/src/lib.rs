@@ -115,10 +115,10 @@ impl NeoProver {
     fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
-        hasher.update(&inputs.script_hash);
-        hasher.update(&inputs.initial_state_hash);
-        hasher.update(&inputs.final_state_hash);
-        hasher.update(&inputs.gas_consumed.to_le_bytes());
+        hasher.update(inputs.script_hash);
+        hasher.update(inputs.initial_state_hash);
+        hasher.update(inputs.final_state_hash);
+        hasher.update(inputs.gas_consumed.to_le_bytes());
         hasher.finalize().into()
     }
 
@@ -126,7 +126,7 @@ impl NeoProver {
         use sha2::{Sha256, Digest};
         let mut hasher = Sha256::new();
         hasher.update(&input.script);
-        hasher.update(&input.gas_limit.to_le_bytes());
+        hasher.update(input.gas_limit.to_le_bytes());
         hasher.finalize().into()
     }
 }

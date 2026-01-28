@@ -99,9 +99,9 @@ fn verify_sp1_proof(sp1: &Sp1ProofData, public_inputs: &PublicInputs) -> Verific
 
 fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&inputs.script_hash);
-    hasher.update(&inputs.initial_state_hash);
-    hasher.update(&inputs.final_state_hash);
-    hasher.update(&inputs.gas_consumed.to_le_bytes());
+    hasher.update(inputs.script_hash);
+    hasher.update(inputs.initial_state_hash);
+    hasher.update(inputs.final_state_hash);
+    hasher.update(inputs.gas_consumed.to_le_bytes());
     hasher.finalize().into()
 }
