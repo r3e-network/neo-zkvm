@@ -84,7 +84,39 @@ impl NeoVM {
 
         let op = ctx.script[ctx.ip];
         ctx.ip += 1;
+        
+        // Gas metering
+        let gas_cost = self.get_gas_cost(op);
+        self.gas_consumed += gas_cost;
+        if self.gas_consumed > self.gas_limit {
+            self.state = VMState::Fault;
+            return Err(VMError::OutOfGas);
+        }
+        
         self.execute_op(op)
+    }
+
+    fn get_gas_cost(&self, op: u8) -> u64 {
+        match op {
+            // Push operations - low cost
+            0x0B..=0x20 => 1,
+            // Stack operations
+            0x43..=0x55 => 2,
+            // Arithmetic operations
+            0x99..=0xBB => 8,
+            // Logical operations
+            0x90..=0x98 | 0xAA..=0xAC => 8,
+            // Jump operations
+            0x21..=0x40 => 2,
+            // Hash operations - high cost
+            0xF0..=0xF2 => 512,
+            // Signature verification - very high cost
+            0xF3 => 32768,
+            // Syscall - varies
+            0x41 => 16,
+            // Default
+            _ => 1,
+        }
     }
 
     fn execute_op(&mut self, op: u8) -> Result<(), VMError> {
