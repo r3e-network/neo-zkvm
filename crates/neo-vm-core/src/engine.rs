@@ -206,6 +206,59 @@ impl NeoVM {
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 self.eval_stack.push(StackItem::Boolean(a.to_bool() || b.to_bool()));
             }
+            // SWAP
+            0x50 => {
+                let len = self.eval_stack.len();
+                if len < 2 {
+                    return Err(VMError::StackUnderflow);
+                }
+                self.eval_stack.swap(len - 1, len - 2);
+            }
+            // ROT
+            0x51 => {
+                let len = self.eval_stack.len();
+                if len < 3 {
+                    return Err(VMError::StackUnderflow);
+                }
+                let item = self.eval_stack.remove(len - 3);
+                self.eval_stack.push(item);
+            }
+            // PICK
+            0x4D => {
+                let n = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)? as usize;
+                let len = self.eval_stack.len();
+                if n >= len {
+                    return Err(VMError::StackUnderflow);
+                }
+                let item = self.eval_stack[len - 1 - n].clone();
+                self.eval_stack.push(item);
+            }
+            // ROLL
+            0x52 => {
+                let n = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)? as usize;
+                let len = self.eval_stack.len();
+                if n >= len {
+                    return Err(VMError::StackUnderflow);
+                }
+                let item = self.eval_stack.remove(len - 1 - n);
+                self.eval_stack.push(item);
+            }
+            // OVER
+            0x4B => {
+                let len = self.eval_stack.len();
+                if len < 2 {
+                    return Err(VMError::StackUnderflow);
+                }
+                let item = self.eval_stack[len - 2].clone();
+                self.eval_stack.push(item);
+            }
+            // DEPTH
+            0x43 => {
+                let depth = self.eval_stack.len() as i128;
+                self.eval_stack.push(StackItem::Integer(depth));
+            }
             // RET
             0x40 => {
                 self.invocation_stack.pop();
