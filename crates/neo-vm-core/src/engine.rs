@@ -127,6 +127,45 @@ impl NeoVM {
                 }
                 self.eval_stack.push(StackItem::Integer(a % b));
             }
+            // LT
+            0xB5 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a < b));
+            }
+            // LE
+            0xB6 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a <= b));
+            }
+            // GT
+            0xB7 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a > b));
+            }
+            // GE
+            0xB8 => {
+                let b = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a >= b));
+            }
+            // EQUAL
+            0x97 => {
+                let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a == b));
+            }
+            // RET
             0x40 => {
                 self.invocation_stack.pop();
                 if self.invocation_stack.is_empty() {
