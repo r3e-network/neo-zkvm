@@ -18,6 +18,8 @@ pub enum VMError {
     DivisionByZero,
     #[error("Invalid type")]
     InvalidType,
+    #[error("Unknown syscall: {0}")]
+    UnknownSyscall(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -34,12 +36,24 @@ pub struct ExecutionContext {
     pub ip: usize,
 }
 
+/// Built-in syscall IDs
+pub mod syscall {
+    pub const SYSTEM_RUNTIME_LOG: u32 = 0x01;
+    pub const SYSTEM_RUNTIME_NOTIFY: u32 = 0x02;
+    pub const SYSTEM_RUNTIME_GETTIME: u32 = 0x03;
+    pub const SYSTEM_STORAGE_GET: u32 = 0x10;
+    pub const SYSTEM_STORAGE_PUT: u32 = 0x11;
+    pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
+}
+
 pub struct NeoVM {
     pub state: VMState,
     pub eval_stack: Vec<StackItem>,
     pub invocation_stack: Vec<ExecutionContext>,
     pub gas_consumed: u64,
     pub gas_limit: u64,
+    pub notifications: Vec<StackItem>,
+    pub logs: Vec<String>,
 }
 
 impl NeoVM {
@@ -50,6 +64,8 @@ impl NeoVM {
             invocation_stack: Vec::new(),
             gas_consumed: 0,
             gas_limit,
+            notifications: Vec::new(),
+            logs: Vec::new(),
         }
     }
 
@@ -372,6 +388,19 @@ impl NeoVM {
                 
                 self.eval_stack.push(StackItem::Boolean(result.is_some()));
             }
+            // SYSCALL
+            0x41 => {
+                let ctx = self.invocation_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                // Read 4-byte syscall ID
+                let id = u32::from_le_bytes([
+                    ctx.script[ctx.ip],
+                    ctx.script[ctx.ip + 1],
+                    ctx.script[ctx.ip + 2],
+                    ctx.script[ctx.ip + 3],
+                ]);
+                ctx.ip += 4;
+                self.execute_syscall(id)?;
+            }
             // RET
             0x40 => {
                 self.invocation_stack.pop();
@@ -382,5 +411,30 @@ impl NeoVM {
             _ => return Err(VMError::InvalidOpcode(op)),
         }
         Ok(())
+    }
+
+    fn execute_syscall(&mut self, id: u32) -> Result<(), VMError> {
+        match id {
+            syscall::SYSTEM_RUNTIME_LOG => {
+                let msg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if let StackItem::ByteString(b) = msg {
+                    if let Ok(s) = String::from_utf8(b) {
+                        self.logs.push(s);
+                    }
+                }
+                Ok(())
+            }
+            syscall::SYSTEM_RUNTIME_NOTIFY => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.notifications.push(item);
+                Ok(())
+            }
+            syscall::SYSTEM_RUNTIME_GETTIME => {
+                // Return a mock timestamp for zkVM
+                self.eval_stack.push(StackItem::Integer(0));
+                Ok(())
+            }
+            _ => Err(VMError::UnknownSyscall(id)),
+        }
     }
 }
