@@ -46,6 +46,23 @@ pub mod syscall {
     pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
 }
 
+/// Execution trace step for proof generation
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TraceStep {
+    pub ip: usize,
+    pub opcode: u8,
+    pub stack_hash: [u8; 32],
+    pub gas_consumed: u64,
+}
+
+/// Full execution trace
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ExecutionTrace {
+    pub steps: Vec<TraceStep>,
+    pub initial_state_hash: [u8; 32],
+    pub final_state_hash: [u8; 32],
+}
+
 pub struct NeoVM {
     pub state: VMState,
     pub eval_stack: Vec<StackItem>,
@@ -54,6 +71,8 @@ pub struct NeoVM {
     pub gas_limit: u64,
     pub notifications: Vec<StackItem>,
     pub logs: Vec<String>,
+    pub trace: ExecutionTrace,
+    pub tracing_enabled: bool,
 }
 
 impl NeoVM {
@@ -66,7 +85,24 @@ impl NeoVM {
             gas_limit,
             notifications: Vec::new(),
             logs: Vec::new(),
+            trace: ExecutionTrace::default(),
+            tracing_enabled: false,
         }
+    }
+
+    pub fn enable_tracing(&mut self) {
+        self.tracing_enabled = true;
+        self.trace.initial_state_hash = self.compute_state_hash();
+    }
+
+    fn compute_state_hash(&self) -> [u8; 32] {
+        use sha2::Digest;
+        let mut hasher = Sha256::new();
+        for item in &self.eval_stack {
+            hasher.update(format!("{:?}", item).as_bytes());
+        }
+        hasher.update(&self.gas_consumed.to_le_bytes());
+        hasher.finalize().into()
     }
 
     pub fn load_script(&mut self, script: Vec<u8>) {
@@ -79,9 +115,13 @@ impl NeoVM {
         
         if ctx.ip >= ctx.script.len() {
             self.state = VMState::Halt;
+            if self.tracing_enabled {
+                self.trace.final_state_hash = self.compute_state_hash();
+            }
             return Ok(());
         }
 
+        let ip = ctx.ip;
         let op = ctx.script[ctx.ip];
         ctx.ip += 1;
         
@@ -91,6 +131,17 @@ impl NeoVM {
         if self.gas_consumed > self.gas_limit {
             self.state = VMState::Fault;
             return Err(VMError::OutOfGas);
+        }
+        
+        // Record trace step
+        if self.tracing_enabled {
+            let step = TraceStep {
+                ip,
+                opcode: op,
+                stack_hash: self.compute_state_hash(),
+                gas_consumed: self.gas_consumed,
+            };
+            self.trace.steps.push(step);
         }
         
         self.execute_op(op)
