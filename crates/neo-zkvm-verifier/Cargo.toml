@@ -1,0 +1,10 @@
+[package]
+name = "neo-zkvm-verifier"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+neo-vm-guest = { path = "../neo-vm-guest" }
+neo-zkvm-prover = { path = "../neo-zkvm-prover" }
+serde.workspace = true
+bincode.workspace = true

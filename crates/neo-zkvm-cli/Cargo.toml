@@ -1,0 +1,16 @@
+[package]
+name = "neo-zkvm-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "neo-zkvm"
+path = "src/main.rs"
+
+[dependencies]
+neo-vm-core = { path = "../neo-vm-core" }
+neo-vm-guest = { path = "../neo-vm-guest" }
+neo-zkvm-prover = { path = "../neo-zkvm-prover" }
+neo-zkvm-verifier = { path = "../neo-zkvm-verifier" }
+anyhow.workspace = true
+hex.workspace = true

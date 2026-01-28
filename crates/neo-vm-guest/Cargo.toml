@@ -1,0 +1,9 @@
+[package]
+name = "neo-vm-guest"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+neo-vm-core = { path = "../neo-vm-core" }
+serde.workspace = true
+bincode.workspace = true
