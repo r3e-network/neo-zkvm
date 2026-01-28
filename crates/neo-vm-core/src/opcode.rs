@@ -1,8 +1,11 @@
 //! Neo VM OpCodes - Based on Neo N3 specification
 
 /// Neo VM Operation Codes
+///
+/// Names follow the official Neo N3 specification exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[allow(non_camel_case_types)]
 pub enum OpCode {
     // Constants
     PUSHINT8 = 0x00,

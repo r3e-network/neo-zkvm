@@ -22,9 +22,7 @@ impl StackItem {
             StackItem::Null => false,
             StackItem::Boolean(b) => *b,
             StackItem::Integer(i) => *i != 0,
-            StackItem::ByteString(b) | StackItem::Buffer(b) => {
-                b.iter().any(|&x| x != 0)
-            }
+            StackItem::ByteString(b) | StackItem::Buffer(b) => b.iter().any(|&x| x != 0),
             StackItem::Array(a) | StackItem::Struct(a) => !a.is_empty(),
             StackItem::Map(m) => !m.is_empty(),
             _ => true,

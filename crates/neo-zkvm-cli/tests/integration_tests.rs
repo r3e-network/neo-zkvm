@@ -1,9 +1,9 @@
 //! Integration tests for Neo zkVM
 
-use neo_vm_guest::{ProofInput, execute};
-use neo_zkvm_prover::{NeoProver, ProverConfig, ProveMode};
-use neo_zkvm_verifier::verify;
 use neo_vm_core::StackItem;
+use neo_vm_guest::{execute, ProofInput};
+use neo_zkvm_prover::{NeoProver, ProverConfig};
+use neo_zkvm_verifier::verify;
 
 #[test]
 fn test_full_prove_verify_cycle() {
@@ -13,16 +13,16 @@ fn test_full_prove_verify_cycle() {
         0x9E, // ADD
         0x40, // RET
     ];
-    
+
     let input = ProofInput {
         script,
         arguments: vec![],
         gas_limit: 1_000_000,
     };
-    
+
     let prover = NeoProver::new(ProverConfig::default());
     let proof = prover.prove(input);
-    
+
     assert_eq!(proof.output.state, 0);
     assert!(verify(&proof));
 }
@@ -37,13 +37,13 @@ fn test_complex_arithmetic() {
         0xA1, // DIV (20/2=10)
         0x40, // RET
     ];
-    
+
     let input = ProofInput {
         script,
         arguments: vec![],
         gas_limit: 1_000_000,
     };
-    
+
     let output = execute(input);
     assert_eq!(output.state, 0);
     assert_eq!(output.result, Some(StackItem::Integer(10)));
@@ -57,13 +57,13 @@ fn test_comparison_operations() {
         0xB5, // LT (3 < 5 = true)
         0x40, // RET
     ];
-    
+
     let input = ProofInput {
         script,
         arguments: vec![],
         gas_limit: 1_000_000,
     };
-    
+
     let output = execute(input);
     assert_eq!(output.result, Some(StackItem::Boolean(true)));
 }

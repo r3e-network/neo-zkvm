@@ -1,7 +1,7 @@
 //! Neo zkVM Verifier
 
-use neo_zkvm_prover::{NeoProof, PublicInputs, MockProof, Sp1ProofData};
-use sha2::{Sha256, Digest};
+use neo_zkvm_prover::{MockProof, NeoProof, PublicInputs, Sp1ProofData};
+use sha2::{Digest, Sha256};
 
 /// Verification result
 #[derive(Debug)]

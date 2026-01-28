@@ -2,17 +2,17 @@
 
 #[cfg(test)]
 mod tests {
-    use neo_vm_core::{NeoVM, VMState, StackItem};
+    use neo_vm_core::{NeoVM, StackItem, VMState};
 
     #[test]
     fn test_push_operations() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x11, 0x12, 0x13, 0x40]); // PUSH1, PUSH2, PUSH3, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert!(matches!(vm.state, VMState::Halt));
         assert_eq!(vm.eval_stack.len(), 3);
     }
@@ -21,11 +21,11 @@ mod tests {
     fn test_add_operation() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]); // PUSH2, PUSH3, ADD, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
     }
 
@@ -33,28 +33,28 @@ mod tests {
     fn test_sub_operation() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x15, 0x12, 0x9F, 0x40]); // PUSH5, PUSH2, SUB, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(3)));
     }
 }
 
 #[cfg(test)]
 mod arithmetic_tests {
-    use neo_vm_core::{NeoVM, VMState, StackItem};
+    use neo_vm_core::{NeoVM, StackItem, VMState};
 
     #[test]
     fn test_mul_operation() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x13, 0x14, 0xA0, 0x40]); // PUSH3, PUSH4, MUL, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(12)));
     }
 
@@ -62,11 +62,219 @@ mod arithmetic_tests {
     fn test_div_operation() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x18, 0x12, 0xA1, 0x40]); // PUSH8, PUSH2, DIV, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(4)));
+    }
+
+    #[test]
+    fn test_mod_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x17, 0x13, 0xA2, 0x40]); // PUSH7, PUSH3, MOD, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(1)));
+    }
+
+    #[test]
+    fn test_negate_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x9B, 0x40]); // PUSH5, NEGATE, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(-5)));
+    }
+
+    #[test]
+    fn test_inc_dec_operations() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x9C, 0x9C, 0x9D, 0x40]); // PUSH5, INC, INC, DEC, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(6)));
+    }
+
+    #[test]
+    fn test_abs_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x0F, 0x15, 0x9F, 0x9A, 0x40]); // PUSHM1, PUSH5, SUB, ABS, RET (-6 -> 6)
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(6)));
+    }
+
+    #[test]
+    fn test_sign_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x99, 0x40]); // PUSH5, SIGN, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(1)));
+    }
+
+    #[test]
+    fn test_min_max_operations() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x13, 0x17, 0xB9, 0x40]); // PUSH3, PUSH7, MIN, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(3)));
+    }
+}
+
+#[cfg(test)]
+mod stack_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_dup_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x4A, 0x40]); // PUSH5, DUP, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.len(), 2);
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+
+    #[test]
+    fn test_drop_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x45, 0x40]); // PUSH5, PUSH6, DROP, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.len(), 1);
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+
+    #[test]
+    fn test_swap_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x50, 0x40]); // PUSH5, PUSH6, SWAP, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(6)));
+    }
+
+    #[test]
+    fn test_over_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x4B, 0x40]); // PUSH5, PUSH6, OVER, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.len(), 3);
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+
+    #[test]
+    fn test_nip_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x46, 0x40]); // PUSH5, PUSH6, NIP, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.len(), 1);
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(6)));
+    }
+
+    #[test]
+    fn test_clear_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x17, 0x49, 0x40]); // PUSH5, PUSH6, PUSH7, CLEAR, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.len(), 0);
+    }
+
+    #[test]
+    fn test_depth_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x16, 0x17, 0x43, 0x40]); // PUSH5, PUSH6, PUSH7, DEPTH, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(3)));
+    }
+}
+
+#[cfg(test)]
+mod comparison_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_lt_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x13, 0x15, 0xB5, 0x40]); // PUSH3, PUSH5, LT, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
+    }
+
+    #[test]
+    fn test_gt_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x13, 0xB7, 0x40]); // PUSH5, PUSH3, GT, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
+    }
+
+    #[test]
+    fn test_equal_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x15, 0x97, 0x40]); // PUSH5, PUSH5, EQUAL, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
     }
 }
