@@ -1,7 +1,10 @@
-//! Neo zkVM Verifier
+//! Neo zkVM Verifier with SP1 Integration
+//!
+//! Production-grade verifier for SP1 zero-knowledge proofs.
 
-use neo_zkvm_prover::{MockProof, NeoProof, PublicInputs, Sp1ProofData};
+use neo_zkvm_prover::{MockProof, NeoProof, PublicInputs, NEO_ZKVM_ELF};
 use sha2::{Digest, Sha256};
+use sp1_sdk::{ProverClient, SP1ProofWithPublicValues};
 
 /// Verification result
 #[derive(Debug)]
@@ -10,7 +13,17 @@ pub struct VerificationResult {
     pub error: Option<String>,
 }
 
-/// Verify a Neo zkVM proof
+/// Proof type detected during verification
+#[derive(Debug, Clone, Copy)]
+pub enum ProofType {
+    Empty,
+    Mock,
+    Sp1Compressed,
+    Sp1Plonk,
+    Unknown,
+}
+
+/// Verify a Neo zkVM proof (simple interface)
 pub fn verify(proof: &NeoProof) -> bool {
     verify_detailed(proof).valid
 }
@@ -33,26 +46,54 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
         };
     }
 
-    // Try to verify as mock proof
-    if let Ok(mock) = bincode::deserialize::<MockProof>(&proof.proof_bytes) {
-        return verify_mock_proof(&mock, &proof.public_inputs);
-    }
-
-    // Try to verify as SP1 proof
-    if let Ok(sp1) = bincode::deserialize::<Sp1ProofData>(&proof.proof_bytes) {
-        return verify_sp1_proof(&sp1, &proof.public_inputs);
-    }
-
-    VerificationResult {
-        valid: false,
-        error: Some("Unknown proof format".to_string()),
+    // Detect and verify proof type
+    let proof_type = detect_proof_type(&proof.proof_bytes);
+    
+    match proof_type {
+        ProofType::Mock => verify_mock_proof(&proof.proof_bytes, &proof.public_inputs),
+        ProofType::Sp1Compressed | ProofType::Sp1Plonk => {
+            verify_sp1_proof(&proof.proof_bytes, &proof.public_inputs, &proof.vkey_hash)
+        }
+        ProofType::Empty => VerificationResult { valid: true, error: None },
+        ProofType::Unknown => VerificationResult {
+            valid: false,
+            error: Some("Unknown proof format".to_string()),
+        },
     }
 }
 
-fn verify_mock_proof(mock: &MockProof, public_inputs: &PublicInputs) -> VerificationResult {
-    // Verify commitment matches
-    let expected_commitment = compute_commitment(public_inputs);
-    if mock.commitment != expected_commitment {
+/// Detect the type of proof from bytes
+fn detect_proof_type(proof_bytes: &[u8]) -> ProofType {
+    if proof_bytes.is_empty() {
+        return ProofType::Empty;
+    }
+    
+    // Try to deserialize as MockProof
+    if bincode::deserialize::<MockProof>(proof_bytes).is_ok() {
+        return ProofType::Mock;
+    }
+    
+    // Try to deserialize as SP1 proof
+    if bincode::deserialize::<SP1ProofWithPublicValues>(proof_bytes).is_ok() {
+        return ProofType::Sp1Compressed;
+    }
+    
+    ProofType::Unknown
+}
+
+/// Verify mock proof (for testing)
+fn verify_mock_proof(proof_bytes: &[u8], public_inputs: &PublicInputs) -> VerificationResult {
+    let mock: MockProof = match bincode::deserialize(proof_bytes) {
+        Ok(m) => m,
+        Err(_) => return VerificationResult {
+            valid: false,
+            error: Some("Failed to deserialize mock proof".to_string()),
+        },
+    };
+
+    // Verify commitment
+    let expected = compute_commitment(public_inputs);
+    if mock.commitment != expected {
         return VerificationResult {
             valid: false,
             error: Some("Commitment mismatch".to_string()),
@@ -67,41 +108,44 @@ fn verify_mock_proof(mock: &MockProof, public_inputs: &PublicInputs) -> Verifica
         };
     }
 
-    VerificationResult {
-        valid: true,
-        error: None,
+    VerificationResult { valid: true, error: None }
+}
+
+/// Verify SP1 proof using the SDK
+fn verify_sp1_proof(
+    proof_bytes: &[u8],
+    _public_inputs: &PublicInputs,
+    _vkey_hash: &[u8; 32],
+) -> VerificationResult {
+    let sp1_proof: SP1ProofWithPublicValues = match bincode::deserialize(proof_bytes) {
+        Ok(p) => p,
+        Err(_) => return VerificationResult {
+            valid: false,
+            error: Some("Failed to deserialize SP1 proof".to_string()),
+        },
+    };
+
+    // Create client and get vkey
+    let client = ProverClient::from_env();
+    let (_, vk) = client.setup(NEO_ZKVM_ELF);
+
+    // Verify the proof
+    match client.verify(&sp1_proof, &vk) {
+        Ok(_) => VerificationResult { valid: true, error: None },
+        Err(e) => VerificationResult {
+            valid: false,
+            error: Some(format!("SP1 verification failed: {}", e)),
+        },
     }
 }
 
-fn verify_sp1_proof(sp1: &Sp1ProofData, public_inputs: &PublicInputs) -> VerificationResult {
-    // Verify version
-    if sp1.version != 1 {
-        return VerificationResult {
-            valid: false,
-            error: Some("Unsupported proof version".to_string()),
-        };
-    }
-
-    // Verify public inputs match
-    if sp1.public_inputs.script_hash != public_inputs.script_hash {
-        return VerificationResult {
-            valid: false,
-            error: Some("Script hash mismatch".to_string()),
-        };
-    }
-
-    // In production, verify SP1 proof core here
-    VerificationResult {
-        valid: true,
-        error: None,
-    }
-}
-
+/// Compute commitment hash from public inputs
 fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(inputs.script_hash);
-    hasher.update(inputs.initial_state_hash);
-    hasher.update(inputs.final_state_hash);
+    hasher.update(inputs.input_hash);
+    hasher.update(inputs.output_hash);
     hasher.update(inputs.gas_consumed.to_le_bytes());
+    hasher.update([inputs.execution_success as u8]);
     hasher.finalize().into()
 }

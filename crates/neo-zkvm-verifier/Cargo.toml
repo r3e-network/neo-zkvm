@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 neo-vm-guest = { path = "../neo-vm-guest" }
 neo-zkvm-prover = { path = "../neo-zkvm-prover" }
+sp1-sdk = { workspace = true }
 serde.workspace = true
 bincode.workspace = true
 sha2.workspace = true
