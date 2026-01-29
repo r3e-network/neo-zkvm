@@ -146,8 +146,9 @@ fn test_depth() {
 #[test]
 fn test_jmp() {
     let mut vm = NeoVM::new(1_000_000);
-    // JMP +3, PUSH1, RET, PUSH2, RET
-    vm.load_script(vec![0x22, 0x03, 0x11, 0x40, 0x12, 0x40]);
+    // JMP +4, PUSH1, RET, PUSH2, RET
+    // Offset is relative to JMP opcode position
+    vm.load_script(vec![0x22, 0x04, 0x11, 0x40, 0x12, 0x40]);
     vm.run();
     assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(2)));
 }
@@ -155,8 +156,8 @@ fn test_jmp() {
 #[test]
 fn test_jmpif_true() {
     let mut vm = NeoVM::new(1_000_000);
-    // PUSH1(true), JMPIF +3, PUSH5, RET, PUSH9, RET
-    vm.load_script(vec![0x11, 0x24, 0x03, 0x15, 0x40, 0x19, 0x40]);
+    // PUSH1(true), JMPIF +4, PUSH5, RET, PUSH9, RET
+    vm.load_script(vec![0x11, 0x24, 0x04, 0x15, 0x40, 0x19, 0x40]);
     vm.run();
     assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(9)));
 }
@@ -164,8 +165,8 @@ fn test_jmpif_true() {
 #[test]
 fn test_jmpif_false() {
     let mut vm = NeoVM::new(1_000_000);
-    // PUSH0(false), JMPIF +3, PUSH5, RET, PUSH9, RET
-    vm.load_script(vec![0x10, 0x24, 0x03, 0x15, 0x40, 0x19, 0x40]);
+    // PUSH0(false), JMPIF +4, PUSH5, RET, PUSH9, RET
+    vm.load_script(vec![0x10, 0x24, 0x04, 0x15, 0x40, 0x19, 0x40]);
     vm.run();
     assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
 }

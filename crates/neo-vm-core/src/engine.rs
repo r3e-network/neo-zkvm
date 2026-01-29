@@ -99,6 +99,16 @@ impl NeoVM {
         }
     }
 
+    /// Run the VM until halt or fault
+    pub fn run(&mut self) {
+        while !matches!(self.state, VMState::Halt | VMState::Fault) {
+            if self.execute_next().is_err() {
+                self.state = VMState::Fault;
+                break;
+            }
+        }
+    }
+
     pub fn enable_tracing(&mut self) {
         self.tracing_enabled = true;
         self.trace.initial_state_hash = self.compute_state_hash();
@@ -871,6 +881,14 @@ impl NeoVM {
             }
             // NOP
             0x21 => {}
+            // ASSERT
+            0x39 => {
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if !cond.to_bool() {
+                    self.state = VMState::Fault;
+                    return Err(VMError::InvalidOperation);
+                }
+            }
             // JMP (1-byte offset)
             0x22 => {
                 let ctx = self
