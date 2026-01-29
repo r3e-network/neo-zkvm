@@ -27,7 +27,9 @@
 pub mod engine;
 pub mod opcode;
 pub mod stack_item;
+pub mod storage;
 
 pub use engine::{NeoVM, VMError, VMState};
 pub use opcode::OpCode;
 pub use stack_item::StackItem;
+pub use storage::{MemoryStorage, StorageBackend, StorageContext, TrackedStorage};
