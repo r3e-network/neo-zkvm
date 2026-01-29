@@ -8,11 +8,14 @@ thiserror.workspace = true
 num-bigint.workspace = true
 num-traits.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
 sha2.workspace = true
 sha3.workspace = true
 ripemd.workspace = true
 k256.workspace = true
 hex.workspace = true
+base64 = "0.22"
 
 [[bench]]
 name = "vm_bench"

@@ -2763,12 +2763,15 @@ dependencies = [
 name = "neo-vm-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "bincode",
  "hex",
  "k256",
  "num-bigint 0.4.6",
  "num-traits",
  "ripemd",
  "serde",
+ "serde_json",
  "sha2",
  "sha3",
  "thiserror 2.0.18",
