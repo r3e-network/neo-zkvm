@@ -1,0 +1,108 @@
+; complex_script.neoasm - Advanced Neo Assembly Example
+; =====================================================
+;
+; This example demonstrates advanced Neo VM features:
+; - Array operations
+; - Conditional branching
+; - Stack manipulation
+; - Arithmetic operations
+; - Comparison operators
+;
+; Scenario: Calculate the sum and average of an array of numbers
+
+; === Part 1: Create an Array ===
+; Create array with values [10, 20, 30, 40, 50]
+
+PUSH5           ; Array size
+NEWARRAY        ; Create empty array of size 5
+
+; Set array[0] = 10
+DUP
+PUSH0           ; Index 0
+PUSH10          ; Value 10
+SETITEM
+
+; Set array[1] = 20
+DUP
+PUSH1           ; Index 1
+PUSH2
+PUSH10
+MUL             ; 20
+SETITEM
+
+; Set array[2] = 30
+DUP
+PUSH2           ; Index 2
+PUSH3
+PUSH10
+MUL             ; 30
+SETITEM
+
+; Set array[3] = 40
+DUP
+PUSH3           ; Index 3
+PUSH4
+PUSH10
+MUL             ; 40
+SETITEM
+
+; Set array[4] = 50
+DUP
+PUSH4           ; Index 4
+PUSH5
+PUSH10
+MUL             ; 50
+SETITEM
+
+; Stack: [array]
+
+; === Part 2: Calculate Sum ===
+; Initialize sum = 0, index = 0
+PUSH0           ; sum = 0
+PUSH0           ; index = 0
+
+; Stack: [array, sum, index]
+
+; :sum_loop
+; Get array[index]
+PUSH2
+PICK            ; Copy array
+OVER            ; Copy index
+PICKITEM        ; Get array[index]
+
+; Add to sum
+ROT             ; [array, index, value, sum]
+SWAP            ; [array, index, sum, value]
+ADD             ; sum += value
+SWAP            ; [array, sum, index]
+
+; Increment index
+INC
+
+; Check if index < 5
+DUP
+PUSH5
+LT
+JMPIF -20       ; Loop if index < 5
+
+; Stack: [array, sum, index=5]
+DROP            ; Drop index
+
+; === Part 3: Calculate Average ===
+; average = sum / 5
+DUP             ; Copy sum
+PUSH5
+DIV             ; average = sum / 5
+
+; Stack: [array, sum, average]
+
+; === Part 4: Return Results ===
+; Pack results into array [sum, average]
+PUSH2
+PACK            ; Create result array
+
+; Drop original array
+SWAP
+DROP
+
+RET             ; Return [sum, average]

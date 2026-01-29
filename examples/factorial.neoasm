@@ -1,0 +1,55 @@
+; factorial.neoasm - Factorial Calculator
+; ========================================
+;
+; Calculates N! (N factorial) using iteration.
+; Input: N is pushed onto the stack
+; Output: N! = N × (N-1) × (N-2) × ... × 2 × 1
+;
+; Examples:
+;   0! = 1
+;   1! = 1
+;   5! = 120
+;   10! = 3628800
+;
+; Algorithm:
+;   result = 1
+;   while N > 1:
+;       result = result * N
+;       N = N - 1
+;   return result
+
+; === Initialize ===
+PUSH5           ; N = 5 (calculate 5! = 120)
+PUSH1           ; result = 1
+
+; Stack: [N, result] = [5, 1]
+
+; === Handle N <= 1 ===
+OVER            ; Copy N: [N, result, N]
+PUSH1
+LE              ; N <= 1?
+JMPIF 30        ; If yes, return result
+
+; === Main Loop ===
+; :loop_start (offset ~15)
+
+; result = result * N
+OVER            ; [N, result, N]
+MUL             ; [N, result*N]
+
+; N = N - 1
+SWAP            ; [result, N]
+DEC             ; [result, N-1]
+SWAP            ; [N-1, result]
+
+; Check if N > 1
+OVER            ; [N, result, N]
+PUSH1
+GT              ; N > 1?
+JMPIF -12       ; Loop back if yes
+
+; === Return ===
+; :return (offset ~30)
+SWAP            ; [result, N]
+DROP            ; [result]
+RET             ; Return result

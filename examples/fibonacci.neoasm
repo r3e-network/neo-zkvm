@@ -1,0 +1,82 @@
+; fibonacci.neoasm - Fibonacci Sequence Calculator
+; ================================================
+;
+; Calculates the Nth Fibonacci number using iteration.
+; Input: N is pushed onto the stack before execution
+; Output: F(N) - the Nth Fibonacci number
+;
+; Fibonacci sequence: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, ...
+; F(0) = 0, F(1) = 1, F(N) = F(N-1) + F(N-2)
+;
+; Algorithm:
+;   a = 0, b = 1
+;   for i = 0 to N-1:
+;       temp = a + b
+;       a = b
+;       b = temp
+;   return a
+;
+; Stack layout during loop:
+;   [counter, a, b] where we compute F(counter)
+
+; === Initialize ===
+PUSH10          ; N = 10 (calculate F(10) = 55)
+PUSH0           ; a = 0 (F(0))
+PUSH1           ; b = 1 (F(1))
+
+; Stack: [N, a, b] = [10, 0, 1]
+
+; === Check if N == 0 ===
+PUSH2           ; Pick N
+PICK
+PUSH0
+NUMEQUAL
+JMPIF 50        ; If N == 0, return a (which is 0)
+
+; === Check if N == 1 ===
+PUSH2
+PICK            ; Get N
+PUSH1
+NUMEQUAL
+JMPIF 45        ; If N == 1, return b (which is 1)
+
+; === Main Loop ===
+; Loop: while N > 1
+; :loop_start (offset ~30)
+
+; Compute new_b = a + b
+OVER            ; Copy a: [N, a, b, a]
+OVER            ; Copy b: [N, a, b, a, b]
+ADD             ; new_b = a + b: [N, a, b, new_b]
+
+; Shift: a = b, b = new_b
+; Stack manipulation to update values
+REVERSE3        ; [N, new_b, b, a]
+DROP            ; Drop old a: [N, new_b, b]
+SWAP            ; [N, b, new_b] = [N, new_a, new_b]
+
+; Decrement counter
+ROT             ; [new_a, new_b, N]
+DEC             ; N = N - 1
+ROT             ; [N-1, new_b, new_a]
+ROT             ; [new_a, N-1, new_b]
+SWAP            ; [new_a, new_b, N-1]
+ROT             ; [N-1, new_a, new_b]
+
+; Check if N > 1
+DUP
+PUSH1
+GT
+JMPIF -35       ; Jump back to loop_start if N > 1
+
+; === Return Result ===
+; :return_b (offset ~45)
+DROP            ; Drop N
+DROP            ; Drop a
+RET             ; Return b (the result)
+
+; :return_a (offset ~50)
+DROP            ; Drop b
+SWAP
+DROP            ; Drop N
+RET             ; Return a
