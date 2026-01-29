@@ -144,6 +144,8 @@ loop/1000           time: [8.2 µs 8.5 µs 8.8 µs]
 - [Architecture](docs/architecture.md)
 - [Opcodes Reference](docs/opcodes.md)
 - [CLI Reference](docs/cli.md)
+- [Formal Verification](docs/formal-verification.md)
+- [Completeness Proofs](docs/completeness-proof.md)
 - [Examples](examples/)
 
 ## License
