@@ -278,3 +278,47 @@ mod comparison_tests {
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
     }
 }
+
+#[cfg(test)]
+mod bitwise_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_and_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        // 0x0F (15) AND 0x03 (3) = 0x03 (3)
+        vm.load_script(vec![0x1F, 0x13, 0x91, 0x40]); // PUSH15, PUSH3, AND, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(3)));
+    }
+
+    #[test]
+    fn test_or_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        // 0x08 (8) OR 0x03 (3) = 0x0B (11)
+        vm.load_script(vec![0x18, 0x13, 0x92, 0x40]); // PUSH8, PUSH3, OR, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(11)));
+    }
+
+    #[test]
+    fn test_xor_operation() {
+        let mut vm = NeoVM::new(1_000_000);
+        // 0x0F (15) XOR 0x03 (3) = 0x0C (12)
+        vm.load_script(vec![0x1F, 0x13, 0x93, 0x40]); // PUSH15, PUSH3, XOR, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(12)));
+    }
+}
