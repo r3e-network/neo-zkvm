@@ -1,0 +1,8 @@
+# mdBook configuration
+[book]
+title = "Neo zkVM"
+authors = ["Neo Project"]
+language = "en"
+
+[build]
+build-dir = "book"

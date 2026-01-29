@@ -1,0 +1,5 @@
+; add.neoasm - Simple addition
+PUSH2
+PUSH3
+ADD
+RET

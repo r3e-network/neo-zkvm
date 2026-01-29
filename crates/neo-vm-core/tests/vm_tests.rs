@@ -375,3 +375,20 @@ mod array_tests {
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
     }
 }
+
+#[cfg(test)]
+mod control_flow_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_nop() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x21, 0x15, 0x40]); // NOP, PUSH5, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+}

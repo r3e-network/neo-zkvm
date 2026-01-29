@@ -1,0 +1,5 @@
+; multiply.neoasm
+PUSH4
+PUSH5
+MUL
+RET
