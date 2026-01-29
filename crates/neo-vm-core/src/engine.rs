@@ -75,6 +75,10 @@ pub struct NeoVM {
     pub logs: Vec<String>,
     pub trace: ExecutionTrace,
     pub tracing_enabled: bool,
+    // Slot support for Neo VM compatibility
+    pub local_slots: Vec<StackItem>,
+    pub argument_slots: Vec<StackItem>,
+    pub static_slots: Vec<StackItem>,
 }
 
 impl NeoVM {
@@ -89,6 +93,9 @@ impl NeoVM {
             logs: Vec::new(),
             trace: ExecutionTrace::default(),
             tracing_enabled: false,
+            local_slots: Vec::new(),
+            argument_slots: Vec::new(),
+            static_slots: Vec::new(),
         }
     }
 
@@ -182,6 +189,50 @@ impl NeoVM {
             }
             0x0F => self.eval_stack.push(StackItem::Integer(-1)),
             0x0B => self.eval_stack.push(StackItem::Null),
+            // PUSHDATA1 - Push data with 1-byte length prefix
+            0x0C => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let len = ctx.script[ctx.ip] as usize;
+                ctx.ip += 1;
+                let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
+                ctx.ip += len;
+                self.eval_stack.push(StackItem::ByteString(data));
+            }
+            // PUSHDATA2 - Push data with 2-byte length prefix
+            0x0D => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let len = u16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as usize;
+                ctx.ip += 2;
+                let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
+                ctx.ip += len;
+                self.eval_stack.push(StackItem::ByteString(data));
+            }
+            // PUSHINT8
+            0x00 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let val = ctx.script[ctx.ip] as i8 as i128;
+                ctx.ip += 1;
+                self.eval_stack.push(StackItem::Integer(val));
+            }
+            // PUSHINT16
+            0x01 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let val = i16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as i128;
+                ctx.ip += 2;
+                self.eval_stack.push(StackItem::Integer(val));
+            }
             0x45 => {
                 self.eval_stack.pop();
             }
@@ -484,6 +535,64 @@ impl NeoVM {
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 self.eval_stack.push(StackItem::Boolean(a == b));
             }
+            // NOTEQUAL
+            0x98 => {
+                let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a != b));
+            }
+            // ISNULL
+            0xD8 => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.eval_stack
+                    .push(StackItem::Boolean(matches!(item, StackItem::Null)));
+            }
+            // NZ - Not zero
+            0xB1 => {
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a != 0));
+            }
+            // NUMEQUAL
+            0xB3 => {
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a == b));
+            }
+            // NUMNOTEQUAL
+            0xB4 => {
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Boolean(a != b));
+            }
+            // INVERT (bitwise NOT)
+            0x90 => {
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                self.eval_stack.push(StackItem::Integer(!a));
+            }
             // AND (bitwise)
             0x91 => {
                 let b = self
@@ -669,6 +778,97 @@ impl NeoVM {
                 let start = len - n;
                 self.eval_stack[start..].reverse();
             }
+            // INITSLOT - Initialize local and argument slots
+            0x57 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let local_count = ctx.script[ctx.ip] as usize;
+                let arg_count = ctx.script[ctx.ip + 1] as usize;
+                ctx.ip += 2;
+                self.local_slots = vec![StackItem::Null; local_count];
+                // Pop arguments from stack into argument slots
+                self.argument_slots = Vec::with_capacity(arg_count);
+                for _ in 0..arg_count {
+                    let arg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                    self.argument_slots.push(arg);
+                }
+                self.argument_slots.reverse();
+            }
+            // LDLOC0-LDLOC6 - Load local variable 0-6
+            0x66..=0x6B => {
+                let idx = (op - 0x66) as usize;
+                let item = self
+                    .local_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(item);
+            }
+            // LDLOC - Load local variable
+            0x6C => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = ctx.script[ctx.ip] as usize;
+                ctx.ip += 1;
+                let item = self
+                    .local_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(item);
+            }
+            // STLOC0-STLOC6 - Store local variable 0-6
+            0x6D..=0x72 => {
+                let idx = (op - 0x6D) as usize;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if idx >= self.local_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.local_slots[idx] = item;
+            }
+            // STLOC - Store local variable
+            0x73 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = ctx.script[ctx.ip] as usize;
+                ctx.ip += 1;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if idx >= self.local_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.local_slots[idx] = item;
+            }
+            // LDARG0-LDARG6 - Load argument 0-6
+            0x74..=0x79 => {
+                let idx = (op - 0x74) as usize;
+                let item = self
+                    .argument_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(item);
+            }
+            // LDARG - Load argument
+            0x7A => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = ctx.script[ctx.ip] as usize;
+                ctx.ip += 1;
+                let item = self
+                    .argument_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(item);
+            }
             // NOP
             0x21 => {}
             // JMP (1-byte offset)
@@ -703,6 +903,138 @@ impl NeoVM {
                 ctx.ip += 1;
                 let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 if !cond.to_bool() {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPEQ - Jump if equal
+            0x28 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a == b {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPNE - Jump if not equal
+            0x2A => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a != b {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPGT - Jump if greater than
+            0x2C => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a > b {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPGE - Jump if greater or equal
+            0x2E => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a >= b {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPLT - Jump if less than
+            0x30 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a < b {
+                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                }
+            }
+            // JMPLE - Jump if less or equal
+            0x32 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let offset = ctx.script[ctx.ip] as i8;
+                ctx.ip += 1;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a <= b {
                     ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
                 }
             }
@@ -804,6 +1136,121 @@ impl NeoVM {
                 ]);
                 ctx.ip += 4;
                 self.execute_syscall(id)?;
+            }
+            // NEWARRAY0 - Create empty array
+            0xC2 => {
+                self.eval_stack.push(StackItem::Array(Vec::new()));
+            }
+            // NEWARRAY - Create array with n elements
+            0xC3 => {
+                let n = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)? as usize;
+                let arr = vec![StackItem::Null; n];
+                self.eval_stack.push(StackItem::Array(arr));
+            }
+            // NEWSTRUCT0 - Create empty struct
+            0xC5 => {
+                self.eval_stack.push(StackItem::Struct(Vec::new()));
+            }
+            // NEWSTRUCT - Create struct with n elements
+            0xC6 => {
+                let n = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)? as usize;
+                let s = vec![StackItem::Null; n];
+                self.eval_stack.push(StackItem::Struct(s));
+            }
+            // NEWMAP - Create empty map
+            0xC8 => {
+                self.eval_stack.push(StackItem::Map(Vec::new()));
+            }
+            // SIZE - Get size of array/map/string
+            0xCA => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let size = match &item {
+                    StackItem::Array(a) | StackItem::Struct(a) => a.len(),
+                    StackItem::Map(m) => m.len(),
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b.len(),
+                    _ => return Err(VMError::InvalidType),
+                };
+                self.eval_stack.push(StackItem::Integer(size as i128));
+            }
+            // PICKITEM - Get item from array/map
+            0xCE => {
+                let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let container = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let item = match (container, key) {
+                    (StackItem::Array(a), StackItem::Integer(i)) => a
+                        .get(i as usize)
+                        .cloned()
+                        .ok_or(VMError::InvalidOperation)?,
+                    (StackItem::Struct(s), StackItem::Integer(i)) => s
+                        .get(i as usize)
+                        .cloned()
+                        .ok_or(VMError::InvalidOperation)?,
+                    (StackItem::Map(m), k) => m
+                        .iter()
+                        .find(|(mk, _)| *mk == k)
+                        .map(|(_, v)| v.clone())
+                        .ok_or(VMError::InvalidOperation)?,
+                    _ => return Err(VMError::InvalidType),
+                };
+                self.eval_stack.push(item);
+            }
+            // SETITEM - Set item in array/map
+            0xD0 => {
+                let value = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match (container, key) {
+                    (StackItem::Array(a), StackItem::Integer(i)) => {
+                        let idx = i as usize;
+                        if idx >= a.len() {
+                            return Err(VMError::InvalidOperation);
+                        }
+                        a[idx] = value;
+                    }
+                    (StackItem::Map(m), k) => {
+                        if let Some(entry) = m.iter_mut().find(|(mk, _)| *mk == k) {
+                            entry.1 = value;
+                        } else {
+                            m.push((k, value));
+                        }
+                    }
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // APPEND - Append to array
+            0xCF => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match container {
+                    StackItem::Array(a) => a.push(item),
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // REMOVE - Remove from array/map
+            0xD2 => {
+                let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match (container, key) {
+                    (StackItem::Array(a), StackItem::Integer(i)) => {
+                        let idx = i as usize;
+                        if idx >= a.len() {
+                            return Err(VMError::InvalidOperation);
+                        }
+                        a.remove(idx);
+                    }
+                    (StackItem::Map(m), k) => {
+                        m.retain(|(mk, _)| *mk != k);
+                    }
+                    _ => return Err(VMError::InvalidType),
+                }
             }
             // RET
             0x40 => {

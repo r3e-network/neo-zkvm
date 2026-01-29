@@ -322,3 +322,56 @@ mod bitwise_tests {
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(12)));
     }
 }
+
+#[cfg(test)]
+mod array_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_newarray0() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0xC2, 0x40]); // NEWARRAY0, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Array(vec![])));
+    }
+
+    #[test]
+    fn test_newarray_with_size() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x13, 0xC3, 0xCA, 0x40]); // PUSH3, NEWARRAY, SIZE, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(3)));
+    }
+
+    #[test]
+    fn test_isnull() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x0B, 0xD8, 0x40]); // PUSHNULL, ISNULL, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
+    }
+
+    #[test]
+    fn test_nz() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0xB1, 0x40]); // PUSH5, NZ, RET
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
+    }
+}
