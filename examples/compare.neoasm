@@ -1,0 +1,5 @@
+; compare.neoasm
+PUSH5
+PUSH3
+GT
+RET

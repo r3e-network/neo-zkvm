@@ -1,0 +1,5 @@
+; loop.neoasm
+PUSH0
+PUSH5
+ADD
+RET
