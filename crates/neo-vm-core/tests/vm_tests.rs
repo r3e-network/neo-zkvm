@@ -409,3 +409,21 @@ mod pushdata_tests {
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(127)));
     }
 }
+
+#[cfg(test)]
+mod slot_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_initslot() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH5, INITSLOT(1 local, 1 arg), LDARG0, RET
+        vm.load_script(vec![0x15, 0x57, 0x01, 0x01, 0x74, 0x40]);
+        
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+        
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+}
