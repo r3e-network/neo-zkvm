@@ -401,11 +401,11 @@ mod pushdata_tests {
     fn test_pushint8() {
         let mut vm = NeoVM::new(1_000_000);
         vm.load_script(vec![0x00, 0x7F, 0x40]); // PUSHINT8 127, RET
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(127)));
     }
 }
@@ -419,11 +419,11 @@ mod slot_tests {
         let mut vm = NeoVM::new(1_000_000);
         // PUSH5, INITSLOT(1 local, 1 arg), LDARG0, RET
         vm.load_script(vec![0x15, 0x57, 0x01, 0x01, 0x74, 0x40]);
-        
+
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
         }
-        
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
     }
 }
