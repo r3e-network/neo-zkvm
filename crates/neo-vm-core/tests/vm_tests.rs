@@ -392,3 +392,20 @@ mod control_flow_tests {
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
     }
 }
+
+#[cfg(test)]
+mod pushdata_tests {
+    use neo_vm_core::{NeoVM, StackItem, VMState};
+
+    #[test]
+    fn test_pushint8() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x00, 0x7F, 0x40]); // PUSHINT8 127, RET
+        
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+        
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(127)));
+    }
+}
