@@ -1,4 +1,8 @@
 //! Neo VM Execution Engine
+//!
+//! Neo VM Engine
+//!
+//! Core execution engine for Neo zkVM.
 
 use crate::stack_item::StackItem;
 use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
@@ -22,6 +26,14 @@ pub enum VMError {
     UnknownSyscall(u32),
     #[error("Invalid operation")]
     InvalidOperation,
+    #[error("Invalid script")]
+    InvalidScript,
+    #[error("Invalid public key format for CHECKSIG")]
+    InvalidPublicKey,
+    #[error("Invalid signature format for CHECKSIG")]
+    InvalidSignature,
+    #[error("Signature verification failed")]
+    SignatureVerificationFailed,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +50,11 @@ pub struct ExecutionContext {
     pub ip: usize,
 }
 
-/// Built-in syscall IDs
+// SAFETY: ExecutionContext is designed for single-threaded use within NeoVM.
+unsafe impl Send for ExecutionContext {}
+unsafe impl Sync for ExecutionContext {}
+
+/// Built-in syscall IDs (Neo N3 compatible)
 pub mod syscall {
     pub const SYSTEM_RUNTIME_LOG: u32 = 0x01;
     pub const SYSTEM_RUNTIME_NOTIFY: u32 = 0x02;
@@ -47,6 +63,38 @@ pub mod syscall {
     pub const SYSTEM_STORAGE_PUT: u32 = 0x11;
     pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
 }
+
+/// Gas cost lookup table for O(1) opcode cost retrieval
+/// Uses u16 to support CHECKSIG's high gas cost (32768)
+const GAS_COSTS: [u16; 256] = [
+    // 0x00-0x0F (PUSHINT8-PUSHM1)
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x10-0x1F (PUSH0-PUSH16)
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x20-0x2F
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x30-0x3F (flow control)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    // 0x40-0x4F (RET, DEPTH, CLEAR, stack ops)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x50-0x5F (stack ops)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x60-0x6F (slot ops)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x70-0x7F (slot ops)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x80-0x8F (splice/buffer ops)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x90-0x9F (bitwise/invert/equality)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xA0-0xAF (arithmetic)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xB0-0xBF (comparison/min/max/within)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xC0-0xCF (compound types)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xD0-0xDF (compound types)
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xE0-0xEF (reserved)
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    // 0xF0-0xFF (crypto: SHA256, RIPEMD160, CHECKSIG)
+    512, 512, 512, 32768, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+];
+
+#[inline]
+fn get_gas_cost(op: u8) -> u64 {
+    GAS_COSTS[op as usize] as u64
+}
+
+/// Maximum script size in bytes (1MB)
+pub const MAX_SCRIPT_SIZE: usize = 1024 * 1024;
 
 /// Execution trace step for proof generation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -82,24 +130,31 @@ pub struct NeoVM {
 }
 
 impl NeoVM {
+    /// Default stack capacity for pre-allocation
+    const DEFAULT_STACK_CAPACITY: usize = 64;
+    /// Default invocation depth capacity
+    const DEFAULT_INVOCATION_CAPACITY: usize = 8;
+
+    #[inline]
     pub fn new(gas_limit: u64) -> Self {
         Self {
             state: VMState::None,
-            eval_stack: Vec::new(),
-            invocation_stack: Vec::new(),
+            eval_stack: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
+            invocation_stack: Vec::with_capacity(Self::DEFAULT_INVOCATION_CAPACITY),
             gas_consumed: 0,
             gas_limit,
             notifications: Vec::new(),
             logs: Vec::new(),
             trace: ExecutionTrace::default(),
             tracing_enabled: false,
-            local_slots: Vec::new(),
-            argument_slots: Vec::new(),
-            static_slots: Vec::new(),
+            local_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
+            argument_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
+            static_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
         }
     }
 
     /// Run the VM until halt or fault
+    #[inline]
     pub fn run(&mut self) {
         while !matches!(self.state, VMState::Halt | VMState::Fault) {
             if self.execute_next().is_err() {
@@ -109,11 +164,13 @@ impl NeoVM {
         }
     }
 
+    #[inline]
     pub fn enable_tracing(&mut self) {
         self.tracing_enabled = true;
         self.trace.initial_state_hash = self.compute_state_hash();
     }
 
+    #[inline]
     fn compute_state_hash(&self) -> [u8; 32] {
         use sha2::Digest;
         let mut hasher = Sha256::new();
@@ -124,9 +181,14 @@ impl NeoVM {
         hasher.finalize().into()
     }
 
-    pub fn load_script(&mut self, script: Vec<u8>) {
+    #[inline]
+    pub fn load_script(&mut self, script: Vec<u8>) -> Result<(), VMError> {
+        if script.len() > MAX_SCRIPT_SIZE {
+            return Err(VMError::InvalidScript);
+        }
         self.invocation_stack
             .push(ExecutionContext { script, ip: 0 });
+        Ok(())
     }
 
     pub fn execute_next(&mut self) -> Result<(), VMError> {
@@ -148,7 +210,7 @@ impl NeoVM {
         ctx.ip += 1;
 
         // Gas metering
-        let gas_cost = self.get_gas_cost(op);
+        let gas_cost = get_gas_cost(op);
         self.gas_consumed += gas_cost;
         if self.gas_consumed > self.gas_limit {
             self.state = VMState::Fault;
@@ -166,28 +228,11 @@ impl NeoVM {
             self.trace.steps.push(step);
         }
 
-        self.execute_op(op)
-    }
-
-    fn get_gas_cost(&self, op: u8) -> u64 {
-        match op {
-            // Push operations - low cost
-            0x0B..=0x20 => 1,
-            // Stack operations
-            0x43..=0x55 => 2,
-            // Bitwise and arithmetic operations (0x90-0xBB)
-            0x90..=0xBB => 8,
-            // Jump operations
-            0x21..=0x40 => 2,
-            // Hash operations - high cost
-            0xF0..=0xF2 => 512,
-            // Signature verification - very high cost
-            0xF3 => 32768,
-            // Syscall - varies
-            0x41 => 16,
-            // Default
-            _ => 1,
+        if let Err(e) = self.execute_op(op) {
+            self.state = VMState::Fault;
+            return Err(e);
         }
+        Ok(())
     }
 
     fn execute_op(&mut self, op: u8) -> Result<(), VMError> {
@@ -207,6 +252,9 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let len = ctx.script[ctx.ip] as usize;
                 ctx.ip += 1;
+                if ctx.ip + len > ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
                 let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
                 ctx.ip += len;
                 self.eval_stack.push(StackItem::ByteString(data));
@@ -217,8 +265,14 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip + 2 > ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
                 let len = u16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as usize;
                 ctx.ip += 2;
+                if ctx.ip + len > ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
                 let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
                 ctx.ip += len;
                 self.eval_stack.push(StackItem::ByteString(data));
@@ -229,6 +283,9 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip >= ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
                 let val = ctx.script[ctx.ip] as i8 as i128;
                 ctx.ip += 1;
                 self.eval_stack.push(StackItem::Integer(val));
@@ -239,12 +296,15 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip + 2 > ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
                 let val = i16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as i128;
                 ctx.ip += 2;
                 self.eval_stack.push(StackItem::Integer(val));
             }
             0x45 => {
-                self.eval_stack.pop();
+                self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
             }
             0x4A => {
                 let item = self
@@ -266,7 +326,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a + b));
+                let result = a.checked_add(b).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // SUB
             0x9F => {
@@ -280,7 +341,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a - b));
+                let result = a.checked_sub(b).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // MUL
             0xA0 => {
@@ -294,7 +356,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a * b));
+                let result = a.checked_mul(b).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // DIV
             0xA1 => {
@@ -311,7 +374,8 @@ impl NeoVM {
                 if b == 0 {
                     return Err(VMError::DivisionByZero);
                 }
-                self.eval_stack.push(StackItem::Integer(a / b));
+                let result = a.checked_div(b).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // MOD
             0xA2 => {
@@ -328,7 +392,8 @@ impl NeoVM {
                 if b == 0 {
                     return Err(VMError::DivisionByZero);
                 }
-                self.eval_stack.push(StackItem::Integer(a % b));
+                let result = a.checked_rem(b).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // POW
             0xA3 => {
@@ -363,8 +428,10 @@ impl NeoVM {
                 if !(0..=256).contains(&shift) {
                     return Err(VMError::InvalidOperation);
                 }
-                self.eval_stack
-                    .push(StackItem::Integer(value << shift as u32));
+                let result = value
+                    .checked_shl(shift as u32)
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // SHR
             0xA9 => {
@@ -381,8 +448,10 @@ impl NeoVM {
                 if !(0..=256).contains(&shift) {
                     return Err(VMError::InvalidOperation);
                 }
-                self.eval_stack
-                    .push(StackItem::Integer(value >> shift as u32));
+                let result = value
+                    .checked_shr(shift as u32)
+                    .ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // MIN
             0xB9 => {
@@ -454,7 +523,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a.abs()));
+                let result = a.checked_abs().ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // NEGATE
             0x9B => {
@@ -463,7 +533,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(-a));
+                let result = a.checked_neg().ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // INC
             0x9C => {
@@ -472,7 +543,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a + 1));
+                let result = a.checked_add(1).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // DEC
             0x9D => {
@@ -481,7 +553,8 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a - 1));
+                let result = a.checked_sub(1).ok_or(VMError::InvalidOperation)?;
+                self.eval_stack.push(StackItem::Integer(result));
             }
             // LT
             0xB5 => {
@@ -807,7 +880,7 @@ impl NeoVM {
                 self.argument_slots.reverse();
             }
             // LDLOC0-LDLOC6 - Load local variable 0-6
-            0x66..=0x6B => {
+            0x66..=0x6C => {
                 let idx = (op - 0x66) as usize;
                 let item = self
                     .local_slots
@@ -816,8 +889,8 @@ impl NeoVM {
                     .ok_or(VMError::InvalidOperation)?;
                 self.eval_stack.push(item);
             }
-            // LDLOC - Load local variable
-            0x6C => {
+            // LDLOC_S - Load local variable (short form)
+            0x6D => {
                 let ctx = self
                     .invocation_stack
                     .last_mut()
@@ -832,15 +905,15 @@ impl NeoVM {
                 self.eval_stack.push(item);
             }
             // STLOC0-STLOC6 - Store local variable 0-6
-            0x6D..=0x72 => {
-                let idx = (op - 0x6D) as usize;
-                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+            0x6E..=0x72 => {
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let idx = (op - 0x6E) as usize;
                 if idx >= self.local_slots.len() {
-                    return Err(VMError::InvalidOperation);
+                    self.local_slots.resize(idx + 1, StackItem::Null);
                 }
-                self.local_slots[idx] = item;
+                self.local_slots[idx] = val;
             }
-            // STLOC - Store local variable
+            // STLOC_S - Store local variable (short form)
             0x73 => {
                 let ctx = self
                     .invocation_stack
@@ -1130,14 +1203,14 @@ impl NeoVM {
                     _ => return Err(VMError::InvalidType),
                 };
 
-                let result = (|| {
-                    let vk = VerifyingKey::from_sec1_bytes(&pubkey_bytes).ok()?;
-                    let signature = Signature::from_slice(&sig_bytes).ok()?;
-                    let msg_hash = Sha256::digest(&msg_bytes);
-                    vk.verify(&msg_hash, &signature).ok()
-                })();
+                let result = VerifyingKey::from_sec1_bytes(&pubkey_bytes)
+                    .map_err(|_| VMError::InvalidPublicKey)?;
+                let signature =
+                    Signature::from_slice(&sig_bytes).map_err(|_| VMError::InvalidSignature)?;
+                let msg_hash = Sha256::digest(&msg_bytes);
 
-                self.eval_stack.push(StackItem::Boolean(result.is_some()));
+                let verified = result.verify(&msg_hash, &signature).is_ok();
+                self.eval_stack.push(StackItem::Boolean(verified));
             }
             // SYSCALL
             0x41 => {
@@ -1272,7 +1345,9 @@ impl NeoVM {
             }
             // RET
             0x40 => {
-                self.invocation_stack.pop();
+                self.invocation_stack
+                    .pop()
+                    .ok_or(VMError::InvalidOperation)?;
                 if self.invocation_stack.is_empty() {
                     self.state = VMState::Halt;
                 }
@@ -1315,7 +1390,7 @@ mod tests {
     #[test]
     fn test_push_operations() {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(vec![0x11, 0x12, 0x13, 0x40]);
+        let _ = vm.load_script(vec![0x11, 0x12, 0x13, 0x40]);
 
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
@@ -1328,7 +1403,7 @@ mod tests {
     #[test]
     fn test_add_operation() {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
+        let _ = vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
 
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
@@ -1340,7 +1415,7 @@ mod tests {
     #[test]
     fn test_sub_operation() {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(vec![0x15, 0x12, 0x9F, 0x40]);
+        let _ = vm.load_script(vec![0x15, 0x12, 0x9F, 0x40]);
 
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
@@ -1352,7 +1427,7 @@ mod tests {
     #[test]
     fn test_mul_operation() {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(vec![0x13, 0x14, 0xA0, 0x40]);
+        let _ = vm.load_script(vec![0x13, 0x14, 0xA0, 0x40]);
 
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();
@@ -1364,7 +1439,7 @@ mod tests {
     #[test]
     fn test_comparison_lt() {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(vec![0x12, 0x15, 0xB5, 0x40]);
+        let _ = vm.load_script(vec![0x12, 0x15, 0xB5, 0x40]);
 
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             vm.execute_next().unwrap();

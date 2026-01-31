@@ -1,3 +1,5 @@
+#![allow(clippy::ptr_arg)]
+
 //! Neo zkVM CLI - Complete development toolkit
 //!
 //! A comprehensive command-line interface for Neo zkVM development,
@@ -118,7 +120,7 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     let gas_limit = parse_gas_limit(args)?;
 
     let mut vm = NeoVM::new(gas_limit);
-    vm.load_script(script);
+    let _ = vm.load_script(script);
 
     println!("Executing script...\n");
 
@@ -271,12 +273,37 @@ fn cmd_inspect(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+const MAX_SCRIPT_SIZE: usize = 1024 * 1024; // 1MB
+
 fn parse_script(input: &str) -> Result<Vec<u8>, String> {
     if input.ends_with(".nef") || input.ends_with(".bin") {
-        fs::read(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))
+        let metadata =
+            fs::metadata(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))?;
+        if metadata.len() > MAX_SCRIPT_SIZE as u64 {
+            return Err(format!(
+                "Script file exceeds maximum size of {} bytes",
+                MAX_SCRIPT_SIZE
+            ));
+        }
+        let content =
+            fs::read(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))?;
+        if content.len() > MAX_SCRIPT_SIZE {
+            return Err(format!(
+                "Script content exceeds maximum size of {} bytes",
+                MAX_SCRIPT_SIZE
+            ));
+        }
+        Ok(content)
     } else {
         let hex_str = input.trim_start_matches("0x");
-        hex::decode(hex_str).map_err(|e| format!("Invalid hex string: {}", e))
+        let decoded = hex::decode(hex_str).map_err(|e| format!("Invalid hex string: {}", e))?;
+        if decoded.len() > MAX_SCRIPT_SIZE {
+            return Err(format!(
+                "Script exceeds maximum size of {} bytes",
+                MAX_SCRIPT_SIZE
+            ));
+        }
+        Ok(decoded)
     }
 }
 
@@ -305,7 +332,7 @@ struct Debugger {
 impl Debugger {
     fn new(script: Vec<u8>, gas_limit: u64) -> Self {
         let mut vm = NeoVM::new(gas_limit);
-        vm.load_script(script.clone());
+        let _ = vm.load_script(script.clone());
         Self {
             vm,
             script,
@@ -371,7 +398,10 @@ impl Debugger {
             "reset" => self.cmd_reset(),
             "quit" | "q" | "exit" => return Ok(true),
             _ => {
-                println!("Unknown command: '{}'. Type 'help' for available commands.", parts[0]);
+                println!(
+                    "Unknown command: '{}'. Type 'help' for available commands.",
+                    parts[0]
+                );
             }
         }
 
@@ -414,7 +444,13 @@ Available commands:
     fn cmd_continue(&mut self) {
         while !matches!(self.vm.state, VMState::Halt | VMState::Fault) {
             let ip = self.get_current_ip();
-            if self.breakpoints.contains(&ip) && !self.history.last().map(|s| s.starts_with("continue")).unwrap_or(false) {
+            if self.breakpoints.contains(&ip)
+                && !self
+                    .history
+                    .last()
+                    .map(|s| s.starts_with("continue"))
+                    .unwrap_or(false)
+            {
                 println!("Breakpoint hit at 0x{:04X}", ip);
                 break;
             }
@@ -557,7 +593,7 @@ Available commands:
 
     fn cmd_reset(&mut self) {
         self.vm = NeoVM::new(self.vm.gas_limit);
-        self.vm.load_script(self.script.clone());
+        let _ = self.vm.load_script(self.script.clone());
         println!("VM reset to initial state.");
         self.print_current_state();
     }

@@ -17,12 +17,20 @@ pub struct ProofOutput {
     pub state: u8,
     pub result: Option<StackItem>,
     pub gas_consumed: u64,
+    pub error: Option<String>,
 }
 
 /// Execute Neo VM and return proof output
 pub fn execute(input: ProofInput) -> ProofOutput {
     let mut vm = NeoVM::new(input.gas_limit);
-    vm.load_script(input.script);
+    if let Err(e) = vm.load_script(input.script) {
+        return ProofOutput {
+            state: 1,
+            gas_consumed: vm.gas_consumed,
+            result: Some(StackItem::Boolean(false)),
+            error: Some(e.to_string()),
+        };
+    }
 
     // Push arguments
     for arg in input.arguments {
@@ -47,5 +55,6 @@ pub fn execute(input: ProofInput) -> ProofOutput {
         state,
         result: vm.eval_stack.pop(),
         gas_consumed: vm.gas_consumed,
+        error: None,
     }
 }

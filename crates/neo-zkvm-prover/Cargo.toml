@@ -13,5 +13,9 @@ anyhow.workspace = true
 tracing.workspace = true
 sha2.workspace = true
 
+[features]
+default = ["sp1"]
+sp1 = []
+
 [build-dependencies]
 sp1-build = "4.0"

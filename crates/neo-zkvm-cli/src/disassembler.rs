@@ -22,14 +22,13 @@ impl<'a> Disassembler<'a> {
         while ip < self.script.len() {
             let (name, size) = self.decode_instruction(ip);
             let bytes = &self.script[ip..ip + size.min(self.script.len() - ip)];
-            let hex_bytes = bytes.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+            let hex_bytes = bytes
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
 
-            output.push_str(&format!(
-                "{:04X}:  {:16}  {}\n",
-                ip,
-                hex_bytes,
-                name
-            ));
+            output.push_str(&format!("{:04X}:  {:16}  {}\n", ip, hex_bytes, name));
 
             ip += size;
         }
@@ -78,7 +77,10 @@ impl<'a> Disassembler<'a> {
                 let len = self.read_u16(ip + 1) as usize;
                 let data = self.read_bytes(ip + 3, len.min(32));
                 let suffix = if len > 32 { "..." } else { "" };
-                (format!("PUSHDATA2 0x{}{}", hex::encode(&data), suffix), 3 + len)
+                (
+                    format!("PUSHDATA2 0x{}{}", hex::encode(&data), suffix),
+                    3 + len,
+                )
             }
             0x0E => {
                 let len = self.read_u32(ip + 1) as usize;

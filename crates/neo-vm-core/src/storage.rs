@@ -29,10 +29,12 @@ pub struct MemoryStorage {
 }
 
 impl MemoryStorage {
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[inline]
     fn make_key(context: &StorageContext, key: &[u8]) -> Vec<u8> {
         let mut full_key = context.script_hash.to_vec();
         full_key.extend_from_slice(key);
@@ -40,12 +42,17 @@ impl MemoryStorage {
     }
 
     /// Compute Merkle root of storage
+    #[inline]
     pub fn merkle_root(&self) -> [u8; 32] {
         if self.data.is_empty() {
             return [0u8; 32];
         }
 
-        let leaves: Vec<[u8; 32]> = self.data.iter()
+        // Collect and sort leaves by key for deterministic Merkle root
+        // This ensures cross-platform/environment determinism
+        let mut leaves: Vec<[u8; 32]> = self
+            .data
+            .iter()
             .map(|(k, v)| {
                 let mut hasher = Sha256::new();
                 hasher.update(k);
@@ -54,9 +61,13 @@ impl MemoryStorage {
             })
             .collect();
 
+        // Sort leaves to ensure deterministic ordering
+        leaves.sort();
+
         Self::compute_merkle_root(&leaves)
     }
 
+    #[inline]
     fn compute_merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
         if leaves.is_empty() {
             return [0u8; 32];
@@ -65,19 +76,22 @@ impl MemoryStorage {
             return leaves[0];
         }
 
-        let mut next_level = Vec::new();
-        for chunk in leaves.chunks(2) {
-            let mut hasher = Sha256::new();
-            hasher.update(chunk[0]);
-            if chunk.len() > 1 {
-                hasher.update(chunk[1]);
-            } else {
+        let mut current: Vec<[u8; 32]> = leaves.to_vec();
+        while current.len() > 1 {
+            let mut next_level = Vec::with_capacity(current.len().div_ceil(2));
+            for chunk in current.chunks(2) {
+                let mut hasher = Sha256::new();
                 hasher.update(chunk[0]);
+                if chunk.len() > 1 {
+                    hasher.update(chunk[1]);
+                } else {
+                    hasher.update([0u8; 32]);
+                }
+                next_level.push(hasher.finalize().into());
             }
-            next_level.push(hasher.finalize().into());
+            current = next_level;
         }
-
-        Self::compute_merkle_root(&next_level)
+        current.first().copied().unwrap_or([0u8; 32])
     }
 }
 
@@ -123,6 +137,48 @@ pub struct StorageProof {
     pub value: Option<Vec<u8>>,
     pub merkle_path: Vec<[u8; 32]>,
     pub root: [u8; 32],
+}
+
+impl StorageProof {
+    /// Verify a storage proof against a given root
+    pub fn verify(&self, expected_root: [u8; 32]) -> bool {
+        // Compute leaf hash from key and value
+        let leaf = if let Some(ref value) = self.value {
+            let mut hasher = Sha256::new();
+            hasher.update(&self.key);
+            hasher.update(value);
+            hasher.finalize().into()
+        } else {
+            // For deleted/missing values, use zero hash with key
+            let mut hasher = Sha256::new();
+            hasher.update(&self.key);
+            hasher.update([0u8; 32]);
+            hasher.finalize().into()
+        };
+
+        // Compute root from leaf and merkle path
+        let computed_root = Self::compute_root_from_path(&leaf, &self.merkle_path);
+
+        computed_root == expected_root
+    }
+
+    /// Compute root hash from leaf and path
+    fn compute_root_from_path(leaf: &[u8; 32], path: &[[u8; 32]]) -> [u8; 32] {
+        let mut current = *leaf;
+        for sibling in path {
+            let mut hasher = Sha256::new();
+            // Determine left/right based on hash ordering
+            if current < *sibling {
+                hasher.update(current);
+                hasher.update(*sibling);
+            } else {
+                hasher.update(*sibling);
+                hasher.update(current);
+            }
+            current = hasher.finalize().into();
+        }
+        current
+    }
 }
 
 /// Storage change record

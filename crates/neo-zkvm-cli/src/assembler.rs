@@ -7,6 +7,8 @@
 //! - Syntax sugar for common patterns
 //! - Comprehensive error messages
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -24,11 +26,21 @@ impl std::fmt::Display for AssemblerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UnknownOpcode(op, line) => write!(f, "Unknown opcode '{}' at line {}", op, line),
-            Self::InvalidOperand(msg, line) => write!(f, "Invalid operand at line {}: {}", line, msg),
-            Self::UndefinedLabel(label, line) => write!(f, "Undefined label '{}' at line {}", label, line),
-            Self::DuplicateLabel(label, line) => write!(f, "Duplicate label '{}' at line {}", label, line),
-            Self::UndefinedMacro(name, line) => write!(f, "Undefined macro '{}' at line {}", name, line),
-            Self::InvalidMacroDefinition(msg, line) => write!(f, "Invalid macro at line {}: {}", line, msg),
+            Self::InvalidOperand(msg, line) => {
+                write!(f, "Invalid operand at line {}: {}", line, msg)
+            }
+            Self::UndefinedLabel(label, line) => {
+                write!(f, "Undefined label '{}' at line {}", label, line)
+            }
+            Self::DuplicateLabel(label, line) => {
+                write!(f, "Duplicate label '{}' at line {}", label, line)
+            }
+            Self::UndefinedMacro(name, line) => {
+                write!(f, "Undefined macro '{}' at line {}", name, line)
+            }
+            Self::InvalidMacroDefinition(msg, line) => {
+                write!(f, "Invalid macro at line {}: {}", line, msg)
+            }
             Self::SyntaxError(msg, line) => write!(f, "Syntax error at line {}: {}", line, msg),
         }
     }
@@ -40,11 +52,14 @@ struct Macro {
     body: Vec<String>,
 }
 
+const MAX_MACRO_DEPTH: usize = 100;
+
 pub struct Assembler {
     labels: HashMap<String, usize>,
     macros: HashMap<String, Macro>,
-    pending_labels: Vec<(usize, String, usize)>, // (bytecode_pos, label, line)
+    pending_labels: Vec<(usize, String, usize, bool)>,
     warnings: Vec<String>,
+    macro_depth: usize,
 }
 
 impl Assembler {
@@ -54,6 +69,7 @@ impl Assembler {
             macros: HashMap::new(),
             pending_labels: Vec::new(),
             warnings: Vec::new(),
+            macro_depth: 0,
         }
     }
 
@@ -153,16 +169,37 @@ impl Assembler {
         Ok(result)
     }
 
-    fn expand_macro(&self, line: &str, line_num: usize) -> Result<Vec<String>, String> {
+    fn expand_macro(&mut self, line: &str, line_num: usize) -> Result<Vec<String>, String> {
+        if self.macro_depth >= MAX_MACRO_DEPTH {
+            return Err(format!(
+                "Macro expansion exceeded maximum depth {} at line {}",
+                MAX_MACRO_DEPTH, line_num
+            )
+            .to_string());
+        }
+        self.macro_depth += 1;
+
         let parts: Vec<&str> = line.split_whitespace().collect();
         let name = parts[0].trim_start_matches('%');
 
-        let macro_def = self
-            .macros
-            .get(name)
-            .ok_or_else(|| AssemblerError::UndefinedMacro(name.to_string(), line_num).to_string())?;
+        let macro_def = self.macros.get(name).ok_or_else(|| {
+            AssemblerError::UndefinedMacro(name.to_string(), line_num).to_string()
+        })?;
 
         let args: Vec<&str> = parts[1..].to_vec();
+
+        if args.len() < macro_def.params.len() {
+            self.macro_depth -= 1;
+            return Err(format!(
+                "Macro '{}' requires {} arguments but got {} at line {}",
+                name,
+                macro_def.params.len(),
+                args.len(),
+                line_num
+            )
+            .to_string());
+        }
+
         let mut result = Vec::new();
 
         for body_line in &macro_def.body {
@@ -175,6 +212,7 @@ impl Assembler {
             result.push(expanded);
         }
 
+        self.macro_depth -= 1;
         Ok(result)
     }
 
@@ -238,27 +276,124 @@ impl Assembler {
 
     fn is_simple_opcode(&self, s: &str) -> bool {
         let op = s.to_uppercase();
-        matches!(op.as_str(),
-            "PUSH0" | "PUSH1" | "PUSH2" | "PUSH3" | "PUSH4" | "PUSH5" | "PUSH6" | "PUSH7" |
-            "PUSH8" | "PUSH9" | "PUSH10" | "PUSH11" | "PUSH12" | "PUSH13" | "PUSH14" | 
-            "PUSH15" | "PUSH16" | "PUSHM1" | "PUSHNULL" | "TRUE" | "FALSE" |
-            "NOP" | "RET" | "ABORT" | "ASSERT" | "THROW" |
-            "DEPTH" | "DROP" | "NIP" | "CLEAR" | "DUP" | "OVER" | "PICK" | "TUCK" |
-            "SWAP" | "ROT" | "ROLL" | "REVERSE3" | "REVERSE4" | "REVERSEN" | "XDROP" |
-            "ADD" | "SUB" | "MUL" | "DIV" | "MOD" | "POW" | "SQRT" | "SHL" | "SHR" |
-            "INC" | "DEC" | "SIGN" | "ABS" | "NEGATE" | "NEG" |
-            "INVERT" | "AND" | "OR" | "XOR" | "EQUAL" | "NOTEQUAL" |
-            "NOT" | "BOOLAND" | "BOOLOR" | "NZ" |
-            "LT" | "LE" | "GT" | "GE" | "MIN" | "MAX" | "WITHIN" |
-            "NUMEQUAL" | "NUMNOTEQUAL" |
-            "NEWARRAY0" | "NEWARRAY" | "NEWSTRUCT0" | "NEWSTRUCT" | "NEWMAP" |
-            "SIZE" | "HASKEY" | "KEYS" | "VALUES" | "PICKITEM" | "APPEND" |
-            "SETITEM" | "REVERSEITEMS" | "REMOVE" | "CLEARITEMS" | "POPITEM" |
-            "PACK" | "UNPACK" | "ISNULL" |
-            "SHA256" | "RIPEMD160" | "HASH160" | "CHECKSIG" |
-            "LDLOC0" | "LDLOC1" | "LDLOC2" | "LDLOC3" | "LDLOC4" | "LDLOC5" |
-            "STLOC0" | "STLOC1" | "STLOC2" | "STLOC3" | "STLOC4" | "STLOC5" |
-            "LDARG0" | "LDARG1" | "LDARG2" | "LDARG3" | "LDARG4" | "LDARG5"
+        matches!(
+            op.as_str(),
+            "PUSH0"
+                | "PUSH1"
+                | "PUSH2"
+                | "PUSH3"
+                | "PUSH4"
+                | "PUSH5"
+                | "PUSH6"
+                | "PUSH7"
+                | "PUSH8"
+                | "PUSH9"
+                | "PUSH10"
+                | "PUSH11"
+                | "PUSH12"
+                | "PUSH13"
+                | "PUSH14"
+                | "PUSH15"
+                | "PUSH16"
+                | "PUSHM1"
+                | "PUSHNULL"
+                | "TRUE"
+                | "FALSE"
+                | "NOP"
+                | "RET"
+                | "ABORT"
+                | "ASSERT"
+                | "THROW"
+                | "DEPTH"
+                | "DROP"
+                | "NIP"
+                | "CLEAR"
+                | "DUP"
+                | "OVER"
+                | "PICK"
+                | "TUCK"
+                | "SWAP"
+                | "ROT"
+                | "ROLL"
+                | "REVERSE3"
+                | "REVERSE4"
+                | "REVERSEN"
+                | "XDROP"
+                | "ADD"
+                | "SUB"
+                | "MUL"
+                | "DIV"
+                | "MOD"
+                | "POW"
+                | "SQRT"
+                | "SHL"
+                | "SHR"
+                | "INC"
+                | "DEC"
+                | "SIGN"
+                | "ABS"
+                | "NEGATE"
+                | "NEG"
+                | "INVERT"
+                | "AND"
+                | "OR"
+                | "XOR"
+                | "EQUAL"
+                | "NOTEQUAL"
+                | "NOT"
+                | "BOOLAND"
+                | "BOOLOR"
+                | "NZ"
+                | "LT"
+                | "LE"
+                | "GT"
+                | "GE"
+                | "MIN"
+                | "MAX"
+                | "WITHIN"
+                | "NUMEQUAL"
+                | "NUMNOTEQUAL"
+                | "NEWARRAY0"
+                | "NEWARRAY"
+                | "NEWSTRUCT0"
+                | "NEWSTRUCT"
+                | "NEWMAP"
+                | "SIZE"
+                | "HASKEY"
+                | "KEYS"
+                | "VALUES"
+                | "PICKITEM"
+                | "APPEND"
+                | "SETITEM"
+                | "REVERSEITEMS"
+                | "REMOVE"
+                | "CLEARITEMS"
+                | "POPITEM"
+                | "PACK"
+                | "UNPACK"
+                | "ISNULL"
+                | "SHA256"
+                | "RIPEMD160"
+                | "HASH160"
+                | "CHECKSIG"
+                | "LDLOC0"
+                | "LDLOC1"
+                | "LDLOC2"
+                | "LDLOC3"
+                | "LDLOC4"
+                | "LDLOC5"
+                | "STLOC0"
+                | "STLOC1"
+                | "STLOC2"
+                | "STLOC3"
+                | "STLOC4"
+                | "STLOC5"
+                | "LDARG0"
+                | "LDARG1"
+                | "LDARG2"
+                | "LDARG3"
+                | "LDARG4"
+                | "LDARG5"
         )
     }
 
@@ -312,13 +447,31 @@ impl Assembler {
             "PUSHDATA1" => {
                 bytecode.push(0x0C);
                 let data = self.parse_data(operands, line_num)?;
-                bytecode.push(data.len() as u8);
+                let len = data.len();
+                if len > 255 {
+                    return Err(format!(
+                        "PUSHDATA1 length {} exceeds maximum 255 at line {}",
+                        len, line_num
+                    )
+                    .to_string());
+                }
+                bytecode.push(len as u8);
                 bytecode.extend_from_slice(&data);
             }
             "PUSHDATA2" => {
                 bytecode.push(0x0D);
                 let data = self.parse_data(operands, line_num)?;
-                bytecode.extend_from_slice(&(data.len() as u16).to_le_bytes());
+                let len = data.len();
+                if len > u16::MAX as usize {
+                    return Err(format!(
+                        "PUSHDATA2 length {} exceeds maximum {} at line {}",
+                        len,
+                        u16::MAX,
+                        line_num
+                    )
+                    .to_string());
+                }
+                bytecode.extend_from_slice(&(len as u16).to_le_bytes());
                 bytecode.extend_from_slice(&data);
             }
             "PUSHM1" => bytecode.push(0x0F),
@@ -545,7 +698,11 @@ impl Assembler {
         line_num: usize,
     ) -> Result<(), String> {
         if operands.is_empty() {
-            return Err(AssemblerError::InvalidOperand("Missing jump target".to_string(), line_num).to_string());
+            return Err(AssemblerError::InvalidOperand(
+                "Missing jump target".to_string(),
+                line_num,
+            )
+            .to_string());
         }
 
         let target = operands[0];
@@ -555,7 +712,8 @@ impl Assembler {
             bytecode.push(offset as u8);
         } else {
             // It's a label - record for later resolution
-            self.pending_labels.push((bytecode.len(), target.to_string(), line_num));
+            self.pending_labels
+                .push((bytecode.len(), target.to_string(), line_num, false)); // false = short jump
             bytecode.push(0); // Placeholder
         }
 
@@ -569,7 +727,11 @@ impl Assembler {
         line_num: usize,
     ) -> Result<(), String> {
         if operands.is_empty() {
-            return Err(AssemblerError::InvalidOperand("Missing jump target".to_string(), line_num).to_string());
+            return Err(AssemblerError::InvalidOperand(
+                "Missing jump target".to_string(),
+                line_num,
+            )
+            .to_string());
         }
 
         let target = operands[0];
@@ -577,7 +739,8 @@ impl Assembler {
         if let Ok(offset) = target.parse::<i32>() {
             bytecode.extend_from_slice(&offset.to_le_bytes());
         } else {
-            self.pending_labels.push((bytecode.len(), target.to_string(), line_num));
+            self.pending_labels
+                .push((bytecode.len(), target.to_string(), line_num, true)); // true = long jump
             bytecode.extend_from_slice(&[0, 0, 0, 0]); // Placeholder
         }
 
@@ -585,17 +748,28 @@ impl Assembler {
     }
 
     fn resolve_labels(&self, bytecode: &mut Vec<u8>) -> Result<(), String> {
-        for (pos, label, line_num) in &self.pending_labels {
-            let target = self
-                .labels
-                .get(label)
-                .ok_or_else(|| AssemblerError::UndefinedLabel(label.clone(), *line_num).to_string())?;
+        for (pos, label, line_num, is_long_jump) in &self.pending_labels {
+            let target = self.labels.get(label).ok_or_else(|| {
+                AssemblerError::UndefinedLabel(label.clone(), *line_num).to_string()
+            })?;
 
-            // Calculate relative offset (from instruction start, not operand position)
-            let instr_start = pos - 1; // The opcode is 1 byte before
+            let instr_start = pos - 1;
             let offset = (*target as isize) - (instr_start as isize);
 
-            if offset >= -128 && offset <= 127 {
+            if *is_long_jump {
+                if i32::MIN as isize <= offset && offset <= i32::MAX as isize {
+                    let offset_bytes = (offset as i32).to_le_bytes();
+                    bytecode[*pos] = offset_bytes[0];
+                    bytecode[*pos + 1] = offset_bytes[1];
+                    bytecode[*pos + 2] = offset_bytes[2];
+                    bytecode[*pos + 3] = offset_bytes[3];
+                } else {
+                    return Err(format!(
+                        "Jump offset {} too large for long jump at line {}",
+                        offset, line_num
+                    ));
+                }
+            } else if (-128..=127).contains(&offset) {
                 bytecode[*pos] = offset as i8 as u8;
             } else {
                 return Err(format!(
@@ -610,7 +784,11 @@ impl Assembler {
 
     fn parse_int(&self, operands: &[&str], line_num: usize) -> Result<i64, String> {
         if operands.is_empty() {
-            return Err(AssemblerError::InvalidOperand("Missing integer value".to_string(), line_num).to_string());
+            return Err(AssemblerError::InvalidOperand(
+                "Missing integer value".to_string(),
+                line_num,
+            )
+            .to_string());
         }
 
         let s = operands[0];
@@ -619,13 +797,19 @@ impl Assembler {
         } else {
             s.parse()
         }
-        .map_err(|_| AssemblerError::InvalidOperand(format!("Invalid integer: {}", s), line_num).to_string())
+        .map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Invalid integer: {}", s), line_num).to_string()
+        })
     }
 
     fn parse_u8(&self, operands: &[&str], line_num: usize) -> Result<u8, String> {
         let val = self.parse_int(operands, line_num)?;
-        if val < 0 || val > 255 {
-            return Err(AssemblerError::InvalidOperand(format!("Value {} out of u8 range", val), line_num).to_string());
+        if !(0..=255).contains(&val) {
+            return Err(AssemblerError::InvalidOperand(
+                format!("Value {} out of u8 range", val),
+                line_num,
+            )
+            .to_string());
         }
         Ok(val as u8)
     }
@@ -634,25 +818,30 @@ impl Assembler {
         let s = s.trim_start_matches("0x").trim_start_matches("0X");
         u8::from_str_radix(s, 16)
             .or_else(|_| s.parse())
-            .map_err(|_| AssemblerError::InvalidOperand(format!("Invalid byte: {}", s), line_num).to_string())
+            .map_err(|_| {
+                AssemblerError::InvalidOperand(format!("Invalid byte: {}", s), line_num).to_string()
+            })
     }
 
     fn parse_data(&self, operands: &[&str], line_num: usize) -> Result<Vec<u8>, String> {
         if operands.is_empty() {
-            return Err(AssemblerError::InvalidOperand("Missing data".to_string(), line_num).to_string());
+            return Err(
+                AssemblerError::InvalidOperand("Missing data".to_string(), line_num).to_string(),
+            );
         }
 
         let s = operands.join(" ");
 
         // String literal
         if s.starts_with('"') && s.ends_with('"') {
-            return Ok(s[1..s.len() - 1].as_bytes().to_vec());
+            return Ok(s.as_bytes()[1..s.len() - 1].to_vec());
         }
 
         // Hex data
         let hex_str = s.trim_start_matches("0x").replace(" ", "");
-        hex::decode(&hex_str)
-            .map_err(|_| AssemblerError::InvalidOperand(format!("Invalid hex data: {}", s), line_num).to_string())
+        hex::decode(&hex_str).map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Invalid hex data: {}", s), line_num).to_string()
+        })
     }
 
     fn parse_slot_args(&self, operands: &[&str], line_num: usize) -> Result<(u8, u8), String> {
@@ -664,19 +853,22 @@ impl Assembler {
             .to_string());
         }
 
-        let locals = operands[0]
-            .parse()
-            .map_err(|_| AssemblerError::InvalidOperand("Invalid locals count".to_string(), line_num).to_string())?;
-        let args = operands[1]
-            .parse()
-            .map_err(|_| AssemblerError::InvalidOperand("Invalid args count".to_string(), line_num).to_string())?;
+        let locals = operands[0].parse().map_err(|_| {
+            AssemblerError::InvalidOperand("Invalid locals count".to_string(), line_num).to_string()
+        })?;
+        let args = operands[1].parse().map_err(|_| {
+            AssemblerError::InvalidOperand("Invalid args count".to_string(), line_num).to_string()
+        })?;
 
         Ok((locals, args))
     }
 
     fn parse_syscall_id(&self, operands: &[&str], line_num: usize) -> Result<u32, String> {
         if operands.is_empty() {
-            return Err(AssemblerError::InvalidOperand("Missing syscall ID".to_string(), line_num).to_string());
+            return Err(
+                AssemblerError::InvalidOperand("Missing syscall ID".to_string(), line_num)
+                    .to_string(),
+            );
         }
 
         let s = operands[0];
@@ -698,6 +890,9 @@ impl Assembler {
         } else {
             s.parse()
         }
-        .map_err(|_| AssemblerError::InvalidOperand(format!("Invalid syscall ID: {}", s), line_num).to_string())
+        .map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Invalid syscall ID: {}", s), line_num)
+                .to_string()
+        })
     }
 }

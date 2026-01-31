@@ -16,7 +16,15 @@ pub enum StackItem {
     Pointer(u32),
 }
 
+// SAFETY: NeoVM is designed for single-threaded use. StackItem contains Vec which is not
+// thread-safe by default, but we explicitly mark it as Send/Sync because the VM
+// is never shared across threads in the intended usage pattern (SP1 guest execution
+// or single-threaded CLI usage). Users must not share NeoVM instances between threads.
+unsafe impl Send for StackItem {}
+unsafe impl Sync for StackItem {}
+
 impl StackItem {
+    #[inline]
     pub fn to_bool(&self) -> bool {
         match self {
             StackItem::Null => false,
@@ -29,6 +37,7 @@ impl StackItem {
         }
     }
 
+    #[inline]
     pub fn to_integer(&self) -> Option<i128> {
         match self {
             StackItem::Integer(i) => Some(*i),

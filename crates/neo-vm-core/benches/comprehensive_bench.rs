@@ -1,11 +1,11 @@
 //! Comprehensive Neo VM Benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_vm_core::{NeoVM, VMState};
 
 fn bench_arithmetic(c: &mut Criterion) {
     let mut group = c.benchmark_group("arithmetic");
-    
+
     // ADD benchmark
     group.bench_function("add", |b| {
         b.iter(|| {
@@ -47,7 +47,7 @@ fn bench_arithmetic(c: &mut Criterion) {
 
 fn bench_stack_ops(c: &mut Criterion) {
     let mut group = c.benchmark_group("stack");
-    
+
     group.bench_function("dup", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
@@ -75,7 +75,7 @@ fn bench_stack_ops(c: &mut Criterion) {
 
 fn bench_loop(c: &mut Criterion) {
     let mut group = c.benchmark_group("loop");
-    
+
     for iterations in [10, 100, 1000].iter() {
         group.bench_with_input(
             BenchmarkId::new("iterations", iterations),
@@ -87,7 +87,7 @@ fn bench_loop(c: &mut Criterion) {
                     script.extend_from_slice(&[0x9D]); // DEC
                 }
                 script.push(0x40); // RET
-                
+
                 b.iter(|| {
                     let mut vm = NeoVM::new(1_000_000);
                     vm.load_script(script.clone());
