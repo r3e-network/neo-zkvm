@@ -2,7 +2,7 @@
 //!
 //! Tests error conditions and fault states.
 
-use neo_vm_core::{NeoVM, VMState};
+use neo_vm_core::{NeoVM, VMError, VMState};
 
 // Helper to run VM until completion
 fn run_vm(vm: &mut NeoVM) {
@@ -345,4 +345,32 @@ fn test_append_to_non_array() {
     let _ = vm.load_script(vec![0x15, 0x11, 0xCF, 0x40]); // PUSH5, PUSH1, APPEND (5 is not array)
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
+}
+
+// ============================================================================
+// Script Boundary Tests
+// ============================================================================
+
+#[test]
+fn test_jmp_missing_offset_faults() {
+    let mut vm = NeoVM::new(1_000_000);
+    vm.load_script(vec![0x22]).unwrap(); // JMP with no offset
+    let err = vm.execute_next().unwrap_err();
+    assert!(matches!(err, VMError::InvalidScript));
+}
+
+#[test]
+fn test_syscall_missing_bytes_faults() {
+    let mut vm = NeoVM::new(1_000_000);
+    vm.load_script(vec![0x41, 0x01, 0x02]).unwrap(); // SYSCALL with 2 bytes
+    let err = vm.execute_next().unwrap_err();
+    assert!(matches!(err, VMError::InvalidScript));
+}
+
+#[test]
+fn test_newarray_negative_size_faults() {
+    let mut vm = NeoVM::new(1_000_000);
+    vm.load_script(vec![0x0F, 0xC3]).unwrap(); // PUSHM1, NEWARRAY
+    let err = vm.execute_next().and_then(|_| vm.execute_next()).unwrap_err();
+    assert!(matches!(err, VMError::InvalidOperation));
 }
