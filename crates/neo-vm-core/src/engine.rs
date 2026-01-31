@@ -210,6 +210,62 @@ impl NeoVM {
         hasher.finalize().into()
     }
 
+    fn read_u8(ctx: &mut ExecutionContext) -> Result<u8, VMError> {
+        if ctx.ip >= ctx.script.len() {
+            return Err(VMError::InvalidScript);
+        }
+        let byte = ctx.script[ctx.ip];
+        ctx.ip += 1;
+        Ok(byte)
+    }
+
+    fn read_i8(ctx: &mut ExecutionContext) -> Result<i8, VMError> {
+        Ok(Self::read_u8(ctx)? as i8)
+    }
+
+    fn read_u16_le(ctx: &mut ExecutionContext) -> Result<u16, VMError> {
+        if ctx.ip + 1 >= ctx.script.len() {
+            return Err(VMError::InvalidScript);
+        }
+        let val = u16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]);
+        ctx.ip += 2;
+        Ok(val)
+    }
+
+    fn read_u32_le(ctx: &mut ExecutionContext) -> Result<u32, VMError> {
+        if ctx.ip + 3 >= ctx.script.len() {
+            return Err(VMError::InvalidScript);
+        }
+        let val = u32::from_le_bytes([
+            ctx.script[ctx.ip],
+            ctx.script[ctx.ip + 1],
+            ctx.script[ctx.ip + 2],
+            ctx.script[ctx.ip + 3],
+        ]);
+        ctx.ip += 4;
+        Ok(val)
+    }
+
+    fn pop_usize_nonneg(&mut self) -> Result<usize, VMError> {
+        let value = self
+            .eval_stack
+            .pop()
+            .and_then(|x| x.to_integer())
+            .ok_or(VMError::StackUnderflow)?;
+        if value < 0 {
+            return Err(VMError::InvalidOperation);
+        }
+        Ok(value as usize)
+    }
+
+    fn relative_target(base_ip: usize, offset: i8, script_len: usize) -> Result<usize, VMError> {
+        let target = base_ip as isize + offset as isize;
+        if target < 0 || target as usize > script_len {
+            return Err(VMError::InvalidScript);
+        }
+        Ok(target as usize)
+    }
+
     /// Push an item to the eval stack with depth checking
     #[inline]
     fn push(&mut self, item: StackItem) -> Result<(), VMError> {
@@ -299,8 +355,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let len = ctx.script[ctx.ip] as usize;
-                ctx.ip += 1;
+                let len = Self::read_u8(ctx)? as usize;
                 if ctx.ip + len > ctx.script.len() {
                     return Err(VMError::InvalidScript);
                 }
@@ -314,11 +369,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                if ctx.ip + 2 > ctx.script.len() {
-                    return Err(VMError::InvalidScript);
-                }
-                let len = u16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as usize;
-                ctx.ip += 2;
+                let len = Self::read_u16_le(ctx)? as usize;
                 if ctx.ip + len > ctx.script.len() {
                     return Err(VMError::InvalidScript);
                 }
@@ -332,11 +383,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                if ctx.ip >= ctx.script.len() {
-                    return Err(VMError::InvalidScript);
-                }
-                let val = ctx.script[ctx.ip] as i8 as i128;
-                ctx.ip += 1;
+                let val = Self::read_u8(ctx)? as i8 as i128;
                 self.push(StackItem::Integer(val))?;
             }
             // PUSHINT16
@@ -345,11 +392,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                if ctx.ip + 2 > ctx.script.len() {
-                    return Err(VMError::InvalidScript);
-                }
-                let val = i16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as i128;
-                ctx.ip += 2;
+                let val = i16::from_le_bytes(Self::read_u16_le(ctx)?.to_le_bytes()) as i128;
                 self.push(StackItem::Integer(val))?;
             }
             0x45 => {
@@ -805,11 +848,7 @@ impl NeoVM {
             }
             // PICK
             0x4D => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let len = self.eval_stack.len();
                 if n >= len {
                     return Err(VMError::StackUnderflow);
@@ -819,11 +858,7 @@ impl NeoVM {
             }
             // ROLL
             0x52 => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let len = self.eval_stack.len();
                 if n >= len {
                     return Err(VMError::StackUnderflow);
@@ -855,11 +890,7 @@ impl NeoVM {
             }
             // XDROP - Remove item at index n
             0x48 => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let len = self.eval_stack.len();
                 if n >= len {
                     return Err(VMError::StackUnderflow);
@@ -898,11 +929,7 @@ impl NeoVM {
             }
             // REVERSEN - Reverse top n items
             0x55 => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let len = self.eval_stack.len();
                 if n > len {
                     return Err(VMError::StackUnderflow);
@@ -916,9 +943,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let local_count = ctx.script[ctx.ip] as usize;
-                let arg_count = ctx.script[ctx.ip + 1] as usize;
-                ctx.ip += 2;
+                let local_count = Self::read_u8(ctx)? as usize;
+                let arg_count = Self::read_u8(ctx)? as usize;
                 self.local_slots = vec![StackItem::Null; local_count];
                 // Pop arguments from stack into argument slots
                 self.argument_slots = Vec::with_capacity(arg_count);
@@ -944,8 +970,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let idx = ctx.script[ctx.ip] as usize;
-                ctx.ip += 1;
+                let idx = Self::read_u8(ctx)? as usize;
                 let item = self
                     .local_slots
                     .get(idx)
@@ -968,8 +993,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let idx = ctx.script[ctx.ip] as usize;
-                ctx.ip += 1;
+                let idx = Self::read_u8(ctx)? as usize;
                 let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 if idx >= self.local_slots.len() {
                     return Err(VMError::InvalidOperation);
@@ -992,8 +1016,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let idx = ctx.script[ctx.ip] as usize;
-                ctx.ip += 1;
+                let idx = Self::read_u8(ctx)? as usize;
                 let item = self
                     .argument_slots
                     .get(idx)
@@ -1017,8 +1040,9 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip = ((ctx.ip as isize - 1) + offset as isize) as usize;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
+                ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
             }
             // JMPIF (1-byte offset)
             0x24 => {
@@ -1026,11 +1050,11 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 if cond.to_bool() {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPIFNOT (1-byte offset)
@@ -1039,11 +1063,11 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 if !cond.to_bool() {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPEQ - Jump if equal
@@ -1052,8 +1076,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1065,7 +1089,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a == b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPNE - Jump if not equal
@@ -1074,8 +1098,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1087,7 +1111,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a != b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPGT - Jump if greater than
@@ -1096,8 +1120,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1109,7 +1133,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a > b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPGE - Jump if greater or equal
@@ -1118,8 +1142,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1131,7 +1155,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a >= b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPLT - Jump if less than
@@ -1140,8 +1164,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1153,7 +1177,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a < b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // JMPLE - Jump if less or equal
@@ -1162,8 +1186,8 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                ctx.ip += 1;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
                 let b = self
                     .eval_stack
                     .pop()
@@ -1175,24 +1199,25 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 if a <= b {
-                    ctx.ip = ((ctx.ip as isize - 2) + offset as isize) as usize;
+                    ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
             // CALL (1-byte offset)
             0x34 => {
                 self.check_invocation_depth()?;
-                let ctx = self
-                    .invocation_stack
-                    .last_mut()
-                    .ok_or(VMError::StackUnderflow)?;
-                let offset = ctx.script[ctx.ip] as i8;
-                let return_ip = ctx.ip + 1;
-                let target_ip = ((ctx.ip as isize - 1) + offset as isize) as usize;
-                let script = ctx.script.clone();
-                self.invocation_stack.push(ExecutionContext {
-                    script,
-                    ip: target_ip,
-                });
+                let (return_ip, target_ip, script) = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                    let offset = Self::read_i8(ctx)?;
+                    let return_ip = ctx.ip;
+                    let target_ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
+                    let script = ctx.script.clone();
+                    (return_ip, target_ip, script)
+                };
+                self.invocation_stack.push(ExecutionContext { script, ip: target_ip });
                 // Store return address (simplified)
                 self.push(StackItem::Pointer(return_ip as u32))?;
             }
@@ -1268,14 +1293,7 @@ impl NeoVM {
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                // Read 4-byte syscall ID
-                let id = u32::from_le_bytes([
-                    ctx.script[ctx.ip],
-                    ctx.script[ctx.ip + 1],
-                    ctx.script[ctx.ip + 2],
-                    ctx.script[ctx.ip + 3],
-                ]);
-                ctx.ip += 4;
+                let id = Self::read_u32_le(ctx)?;
                 self.execute_syscall(id)?;
             }
             // NEWARRAY0 - Create empty array
@@ -1284,11 +1302,7 @@ impl NeoVM {
             }
             // NEWARRAY - Create array with n elements
             0xC3 => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let arr = vec![StackItem::Null; n];
                 self.push(StackItem::Array(arr))?;
             }
@@ -1298,11 +1312,7 @@ impl NeoVM {
             }
             // NEWSTRUCT - Create struct with n elements
             0xC6 => {
-                let n = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)? as usize;
+                let n = self.pop_usize_nonneg()?;
                 let s = vec![StackItem::Null; n];
                 self.push(StackItem::Struct(s))?;
             }

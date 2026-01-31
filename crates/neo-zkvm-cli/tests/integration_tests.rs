@@ -352,12 +352,13 @@ fn test_control_flow_assert() {
 
 #[test]
 fn test_control_flow_jump_backward() {
-    // Test backward jump (loop)
+    // Test backward jump with a bounded loop that halts
     let script = vec![
-        0x10, // PUSH0 (counter)
-        0x22, 0x03, // JMP +3 (jump to INC)
-        0x9C, // INC (increment)
-        0x22, 0xFB, // JMP -5 (jump back to counter)
+        0x12, // PUSH2 (counter)
+        0x4A, // DUP
+        0x26, 0x05, // JMPIFNOT +5 (jump to RET when counter == 0)
+        0x9D, // DEC
+        0x22, 0xFC, // JMP -4 (jump back to DUP)
         0x40, // RET
     ];
     let input = ProofInput {
