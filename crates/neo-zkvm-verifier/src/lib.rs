@@ -23,7 +23,7 @@
 use bincode::Options;
 use neo_zkvm_prover::{MockProof, NeoProof, ProofMode, PublicInputs, NEO_ZKVM_ELF};
 use sha2::{Digest, Sha256};
-use sp1_sdk::{ProverClient, SP1ProofWithPublicValues};
+use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues};
 
 const BINCODE_LIMIT: u64 = 10 * 1024 * 1024; // 10MB limit
 
@@ -62,23 +62,30 @@ pub fn verify(proof: &NeoProof) -> bool {
 
 /// Verify with detailed result
 pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
-    // Check execution state first
-    if proof.output.state != 0 {
-        return VerificationResult {
-            valid: false,
-            error: Some("Execution faulted".to_string()),
-            proof_type: ProofType::Unknown,
-        };
-    }
-
-    // Handle different proof modes
     match proof.proof_mode {
-        ProofMode::Execute => VerificationResult {
-            valid: true,
-            error: None,
-            proof_type: ProofType::Empty,
-        },
+        ProofMode::Execute => {
+            if proof.output.state != 0 {
+                return VerificationResult {
+                    valid: false,
+                    error: Some("Execution faulted".to_string()),
+                    proof_type: ProofType::Unknown,
+                };
+            }
+            VerificationResult {
+                valid: true,
+                error: None,
+                proof_type: ProofType::Empty,
+            }
+        }
         ProofMode::Mock => {
+            if proof.output.state != 0 {
+                return VerificationResult {
+                    valid: false,
+                    error: Some("Execution faulted".to_string()),
+                    proof_type: ProofType::Unknown,
+                };
+            }
+
             let result = verify_mock_proof(proof);
             VerificationResult {
                 valid: result,
@@ -102,8 +109,15 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
         return verify(proof);
     }
 
-    match bincode::deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
+    match bincode_options().deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
         Ok(sp1_proof) => {
+            let public_inputs = match decode_public_inputs(&sp1_proof.public_values) {
+                Ok(inputs) => inputs,
+                Err(_) => return false,
+            };
+            if !public_inputs_equal(&public_inputs, &proof.public_inputs) {
+                return false;
+            }
             let prover = ProverClient::from_env();
             prover.verify(&sp1_proof, vkey).is_ok()
         }
@@ -156,6 +170,25 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
     // Determine proof type from the proof structure
     let proof_type = detect_sp1_proof_type(&sp1_proof);
 
+    let public_inputs = match decode_public_inputs(&sp1_proof.public_values) {
+        Ok(inputs) => inputs,
+        Err(e) => {
+            return VerificationResult {
+                valid: false,
+                error: Some(e),
+                proof_type,
+            }
+        }
+    };
+
+    if !public_inputs_equal(&public_inputs, &proof.public_inputs) {
+        return VerificationResult {
+            valid: false,
+            error: Some("Public inputs do not match SP1 proof values".to_string()),
+            proof_type,
+        };
+    }
+
     // Create client and verify
     let prover = ProverClient::from_env();
     let (_, vk) = prover.setup(NEO_ZKVM_ELF);
@@ -180,6 +213,20 @@ fn detect_sp1_proof_type(_proof: &SP1ProofWithPublicValues) -> ProofType {
     ProofType::Sp1Compressed
 }
 
+fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, String> {
+    bincode_options()
+        .deserialize(values.as_slice())
+        .map_err(|e| format!("Failed to decode public values: {e}"))
+}
+
+fn public_inputs_equal(a: &PublicInputs, b: &PublicInputs) -> bool {
+    a.script_hash == b.script_hash
+        && a.input_hash == b.input_hash
+        && a.output_hash == b.output_hash
+        && a.gas_consumed == b.gas_consumed
+        && a.execution_success == b.execution_success
+}
+
 fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(inputs.script_hash);
@@ -196,6 +243,7 @@ mod tests {
     use neo_vm_core::StackItem;
     use neo_vm_guest::ProofInput;
     use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
+    use sp1_sdk::SP1PublicValues;
 
     #[test]
     fn test_verify_mock_proof() {
@@ -250,5 +298,26 @@ mod tests {
         assert!(result.valid);
         assert!(result.error.is_none());
         assert_eq!(result.proof_type, ProofType::Mock);
+    }
+
+    #[test]
+    fn test_decode_public_inputs_roundtrip() {
+        let inputs = PublicInputs {
+            script_hash: [1u8; 32],
+            input_hash: [2u8; 32],
+            output_hash: [3u8; 32],
+            gas_consumed: 42,
+            execution_success: true,
+        };
+
+        let mut public_values = SP1PublicValues::new();
+        public_values.write(&inputs);
+
+        let decoded = decode_public_inputs(&public_values).expect("decode should succeed");
+        assert_eq!(decoded.script_hash, inputs.script_hash);
+        assert_eq!(decoded.input_hash, inputs.input_hash);
+        assert_eq!(decoded.output_hash, inputs.output_hash);
+        assert_eq!(decoded.gas_consumed, inputs.gas_consumed);
+        assert_eq!(decoded.execution_success, inputs.execution_success);
     }
 }
