@@ -1180,6 +1180,7 @@ impl NeoVM {
             }
             // CALL (1-byte offset)
             0x34 => {
+                self.check_invocation_depth()?;
                 let ctx = self
                     .invocation_stack
                     .last_mut()

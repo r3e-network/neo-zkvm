@@ -84,12 +84,12 @@ assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
 ### Generate & Verify Proof
 
 ```rust
-use neo_zkvm_prover::{NeoProver, ProverConfig, ProveMode};
+use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
 use neo_zkvm_verifier::verify;
 use neo_vm_guest::ProofInput;
 
 let prover = NeoProver::new(ProverConfig {
-    prove_mode: ProveMode::Sp1,
+    proof_mode: ProofMode::Mock, // Use Mock for testing, Sp1/Plonk/Groth16 for production
     ..Default::default()
 });
 
@@ -100,7 +100,7 @@ let input = ProofInput {
 };
 
 let proof = prover.prove(input);
-assert!(verify(&proof));
+assert!(prover.verify(&proof));
 ```
 
 ### Use Storage

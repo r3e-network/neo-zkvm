@@ -93,12 +93,21 @@ fn main() {
 
 ```bash
 # Run a hex-encoded script
-neo-zkvm run 1213 9E40
+neo-zkvm run 12139E40
 
 # Output:
-# State: Halt
-# Gas: 11
-# Stack: [Integer(5)]
+# Executing script...
+#
+# ═══════════════════════════════════════
+#   EXECUTION RESULT
+# ═══════════════════════════════════════
+#   State:        Halt
+#   Gas consumed: 12
+#   Stack depth:  1
+# ───────────────────────────────────────
+#   Stack (top → bottom):
+#     [0] Integer(5)
+# ═══════════════════════════════════════
 ```
 
 ### Assembly Language
@@ -135,7 +144,7 @@ The real power of Neo zkVM is generating zero-knowledge proofs of execution.
 ```rust
 use neo_vm_core::StackItem;
 use neo_vm_guest::ProofInput;
-use neo_zkvm_prover::{NeoProver, ProverConfig, ProveMode};
+use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
 use neo_zkvm_verifier::verify;
 
 fn main() {
@@ -148,7 +157,7 @@ fn main() {
     
     // Create prover with mock mode (fast, for testing)
     let config = ProverConfig {
-        prove_mode: ProveMode::Mock,
+        proof_mode: ProofMode::Mock,
         ..Default::default()
     };
     let prover = NeoProver::new(config);
@@ -280,27 +289,28 @@ Neo zkVM supports different proving modes for various use cases:
 | `Execute` | Instant | Development, debugging |
 | `Mock` | Fast | Testing, CI/CD |
 | `Sp1` | Slow | Off-chain verification |
-| `Sp1Plonk` | Slowest | On-chain verification |
+| `Plonk` | Slowest | On-chain verification (Ethereum) |
+| `Groth16` | Slowest | On-chain verification (smallest proof) |
 
 ```rust
-use neo_zkvm_prover::{ProverConfig, ProveMode};
+use neo_zkvm_prover::{ProverConfig, ProofMode};
 
 // For development
 let dev_config = ProverConfig {
-    prove_mode: ProveMode::Execute,
-    max_cycles: 1_000_000,
+    proof_mode: ProofMode::Execute,
+    ..Default::default()
 };
 
 // For testing
 let test_config = ProverConfig {
-    prove_mode: ProveMode::Mock,
-    max_cycles: 1_000_000,
+    proof_mode: ProofMode::Mock,
+    ..Default::default()
 };
 
 // For production
 let prod_config = ProverConfig {
-    prove_mode: ProveMode::Sp1,
-    max_cycles: 10_000_000,
+    proof_mode: ProofMode::Sp1,
+    ..Default::default()
 };
 ```
 
