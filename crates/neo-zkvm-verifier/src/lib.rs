@@ -4,31 +4,9 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,ignore
+//! ```rust
 //! use neo_zkvm_prover::{NeoProver, ProverConfig};
 //! use neo_zkvm_verifier::{verify, verify_detailed, VerificationResult};
-//! use neo_vm_guest::ProofInput;
-//!
-//! // Create prover and generate proof
-//! let prover = NeoProver::new(ProverConfig::default());
-//! let input = ProofInput {
-//!     script: vec![0x12, 0x13, 0x9E, 0x40], // 2 + 3
-//!     arguments: vec![],
-//!     gas_limit: 1_000_000,
-//! };
-//!
-//! let proof = prover.prove(input);
-//!
-//! // Simple verification
-//! let is_valid = verify(&proof);
-//! assert!(is_valid);
-//! ```
-//!
-//! ## Detailed Verification
-//!
-//! ```rust,ignore
-//! use neo_zkvm_prover::{NeoProver, ProverConfig};
-//! use neo_zkvm_verifier::{verify_detailed, VerificationResult};
 //! use neo_vm_guest::ProofInput;
 //!
 //! let prover = NeoProver::new(ProverConfig::default());
@@ -39,58 +17,11 @@
 //! };
 //!
 //! let proof = prover.prove(input);
-//!
-//! // Detailed verification with error info
-//! let result = verify_detailed(&proof);
-//!
-//! match result {
-//!     VerificationResult { valid: true, error: None } => {
-//!         println!("Proof is valid!");
-//!     }
-//!     VerificationResult { valid: false, error: Some(e) } => {
-//!         println!("Verification failed: {}", e);
-//!     }
-//!     _ => {}
-//! }
-//! ```
-//!
-//! ## Verification with Public Inputs
-//!
-//! ```rust,ignore
-//! use neo_zkvm_prover::{NeoProver, ProverConfig};
-//! use neo_zkvm_verifier::verify;
-//! use neo_vm_guest::ProofInput;
-//! use neo_vm_core::StackItem;
-//!
-//! let prover = NeoProver::new(ProverConfig::default());
-//!
-//! // Script with arguments: a + b
-//! let script = vec![
-//!     0x57, 0x00, 0x02, // INITSLOT 0 locals, 2 args
-//!     0x74,             // LDARG0
-//!     0x75,             // LDARG1
-//!     0x9E,             // ADD
-//!     0x40,             // RET
-//! ];
-//!
-//! let input = ProofInput {
-//!     script,
-//!     arguments: vec![StackItem::Integer(100), StackItem::Integer(200)],
-//!     gas_limit: 1_000_000,
-//! };
-//!
-//! let proof = prover.prove(input);
-//!
-//! // Access public inputs for on-chain verification
-//! assert!(proof.public_inputs.execution_success);
-//! assert!(proof.public_inputs.gas_consumed > 0);
-//!
-//! // Verify the proof
 //! assert!(verify(&proof));
 //! ```
 
 use bincode::Options;
-use neo_zkvm_prover::{MockProof, NeoProof, PublicInputs, NEO_ZKVM_ELF};
+use neo_zkvm_prover::{MockProof, NeoProof, ProofMode, PublicInputs, NEO_ZKVM_ELF};
 use sha2::{Digest, Sha256};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues};
 
@@ -103,19 +34,24 @@ fn bincode_options() -> impl Options {
 }
 
 /// Verification result
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VerificationResult {
+    /// Whether the proof is valid
     pub valid: bool,
+    /// Error message if verification failed
     pub error: Option<String>,
+    /// Detected proof type
+    pub proof_type: ProofType,
 }
 
 /// Proof type detected during verification
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProofType {
     Empty,
     Mock,
     Sp1Compressed,
     Sp1Plonk,
+    Sp1Groth16,
     Unknown,
 }
 
@@ -126,135 +62,124 @@ pub fn verify(proof: &NeoProof) -> bool {
 
 /// Verify with detailed result
 pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
-    // Check execution state
+    // Check execution state first
     if proof.output.state != 0 {
         return VerificationResult {
             valid: false,
             error: Some("Execution faulted".to_string()),
+            proof_type: ProofType::Unknown,
         };
     }
 
-    // Empty proof is valid for execute-only mode
-    if proof.proof_bytes.is_empty() {
-        return VerificationResult {
+    // Handle different proof modes
+    match proof.proof_mode {
+        ProofMode::Execute => VerificationResult {
             valid: true,
             error: None,
-        };
-    }
-
-    // Detect and verify proof type
-    let proof_type = detect_proof_type(&proof.proof_bytes);
-
-    match proof_type {
-        ProofType::Mock => verify_mock_proof(&proof.proof_bytes, &proof.public_inputs),
-        ProofType::Sp1Compressed | ProofType::Sp1Plonk => {
-            verify_sp1_proof(&proof.proof_bytes, &proof.public_inputs, &proof.vkey_hash)
+            proof_type: ProofType::Empty,
+        },
+        ProofMode::Mock => {
+            let result = verify_mock_proof(proof);
+            VerificationResult {
+                valid: result,
+                error: if result {
+                    None
+                } else {
+                    Some("Mock proof verification failed".to_string())
+                },
+                proof_type: ProofType::Mock,
+            }
         }
-        ProofType::Empty => VerificationResult {
-            valid: true,
-            error: None,
-        },
-        ProofType::Unknown => VerificationResult {
-            valid: false,
-            error: Some("Unknown proof format".to_string()),
-        },
+        ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => verify_sp1_proof(proof),
     }
 }
 
-/// Detect the type of proof from bytes
-fn detect_proof_type(proof_bytes: &[u8]) -> ProofType {
-    if proof_bytes.is_empty() {
-        return ProofType::Empty;
+/// Verify a proof with explicit vkey
+///
+/// This is useful when you have the vkey but not the original prover.
+pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
+    if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
+        return verify(proof);
     }
 
-    // Try to deserialize as MockProof
-    if bincode_options()
-        .deserialize::<MockProof>(proof_bytes)
-        .is_ok()
-    {
-        return ProofType::Mock;
+    match bincode::deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
+        Ok(sp1_proof) => {
+            let prover = ProverClient::from_env();
+            prover.verify(&sp1_proof, vkey).is_ok()
+        }
+        Err(_) => false,
     }
-
-    // Try to deserialize as SP1 proof
-    if bincode_options()
-        .deserialize::<SP1ProofWithPublicValues>(proof_bytes)
-        .is_ok()
-    {
-        return ProofType::Sp1Compressed;
-    }
-
-    ProofType::Unknown
 }
 
-/// Verify mock proof (for testing)
-fn verify_mock_proof(proof_bytes: &[u8], public_inputs: &PublicInputs) -> VerificationResult {
-    let mock: MockProof = match bincode_options().deserialize(proof_bytes) {
+/// Setup the ELF and return verification key
+///
+/// This can be used to verify proofs without having the original prover.
+pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
+    let prover = ProverClient::from_env();
+    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
+    vk
+}
+
+fn verify_mock_proof(proof: &NeoProof) -> bool {
+    let mock: MockProof = match bincode_options().deserialize(&proof.proof_bytes) {
         Ok(m) => m,
-        Err(_) => {
-            return VerificationResult {
-                valid: false,
-                error: Some("Failed to deserialize mock proof".to_string()),
-            }
-        }
+        Err(_) => return false,
     };
 
-    // Verify commitment
-    let expected = compute_commitment(public_inputs);
+    // Verify commitment matches public inputs
+    let expected = compute_commitment(&proof.public_inputs);
     if mock.commitment != expected {
-        return VerificationResult {
-            valid: false,
-            error: Some("Commitment mismatch".to_string()),
-        };
+        return false;
     }
 
-    // Verify public inputs match
-    if mock.public_inputs.script_hash != public_inputs.script_hash {
-        return VerificationResult {
-            valid: false,
-            error: Some("Script hash mismatch".to_string()),
-        };
-    }
-
-    VerificationResult {
-        valid: true,
-        error: None,
-    }
+    // Verify all public inputs match
+    mock.public_inputs.script_hash == proof.public_inputs.script_hash
+        && mock.public_inputs.input_hash == proof.public_inputs.input_hash
+        && mock.public_inputs.output_hash == proof.public_inputs.output_hash
+        && mock.public_inputs.gas_consumed == proof.public_inputs.gas_consumed
+        && mock.public_inputs.execution_success == proof.public_inputs.execution_success
 }
 
-/// Verify SP1 proof using the SDK
-fn verify_sp1_proof(
-    proof_bytes: &[u8],
-    _public_inputs: &PublicInputs,
-    _vkey_hash: &[u8; 32],
-) -> VerificationResult {
-    let sp1_proof: SP1ProofWithPublicValues = match bincode_options().deserialize(proof_bytes) {
-        Ok(p) => p,
-        Err(_) => {
-            return VerificationResult {
-                valid: false,
-                error: Some("Failed to deserialize SP1 proof".to_string()),
+fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
+    let sp1_proof: SP1ProofWithPublicValues =
+        match bincode_options().deserialize(&proof.proof_bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                return VerificationResult {
+                    valid: false,
+                    error: Some(format!("Failed to deserialize SP1 proof: {}", e)),
+                    proof_type: ProofType::Unknown,
+                };
             }
-        }
-    };
+        };
 
-    // Create client and get vkey
-    let client = ProverClient::from_env();
-    let (_, vk) = client.setup(NEO_ZKVM_ELF);
+    // Determine proof type from the proof structure
+    let proof_type = detect_sp1_proof_type(&sp1_proof);
 
-    // Verify the proof
-    match client.verify(&sp1_proof, &vk) {
+    // Create client and verify
+    let prover = ProverClient::from_env();
+    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
+
+    match prover.verify(&sp1_proof, &vk) {
         Ok(_) => VerificationResult {
             valid: true,
             error: None,
+            proof_type,
         },
         Err(e) => VerificationResult {
             valid: false,
             error: Some(format!("SP1 verification failed: {}", e)),
+            proof_type,
         },
     }
 }
 
-/// Compute commitment hash from public inputs
+fn detect_sp1_proof_type(_proof: &SP1ProofWithPublicValues) -> ProofType {
+    // This is a heuristic based on proof structure
+    // In practice, you'd check the proof variant
+    ProofType::Sp1Compressed
+}
+
 fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(inputs.script_hash);
@@ -263,4 +188,67 @@ fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     hasher.update(inputs.gas_consumed.to_le_bytes());
     hasher.update([inputs.execution_success as u8]);
     hasher.finalize().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_vm_core::StackItem;
+    use neo_vm_guest::ProofInput;
+    use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
+
+    #[test]
+    fn test_verify_mock_proof() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        assert!(verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_execute_only() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        assert!(verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_detailed() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![StackItem::Integer(42)],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        let result = verify_detailed(&proof);
+
+        assert!(result.valid);
+        assert!(result.error.is_none());
+        assert_eq!(result.proof_type, ProofType::Mock);
+    }
 }

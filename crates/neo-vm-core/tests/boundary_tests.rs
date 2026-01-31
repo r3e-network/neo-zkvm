@@ -610,6 +610,7 @@ fn test_ret_single_context_halts() {
 // ============================================================================
 
 #[test]
+#[allow(clippy::same_item_push)]
 fn test_stack_depth_limit() {
     let mut vm = NeoVM::new(1_000_000);
     // Push many items to test depth handling
@@ -629,6 +630,7 @@ fn test_stack_depth_limit() {
 // ============================================================================
 
 #[test]
+#[allow(clippy::same_item_push)]
 fn test_gas_exhaustion() {
     let mut vm = NeoVM::new(10); // Very low gas limit
                                  // Create a script that needs more gas than available
@@ -696,6 +698,7 @@ fn test_sub_underflow_detection() {
 }
 
 #[test]
+#[allow(clippy::erasing_op)]
 fn test_mul_overflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
     // i128::MAX * 2 should overflow

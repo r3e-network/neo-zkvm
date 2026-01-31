@@ -115,12 +115,12 @@ fn test_one_less_gas() {
 fn test_hash_ops_cost_more() {
     // Hash operations should cost more than arithmetic
     let mut vm_hash = NeoVM::new(1_000_000);
-    vm_hash.load_script(vec![0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0xF0, 0x40]); // PUSHDATA1 "hello", SHA256
+    let _ = vm_hash.load_script(vec![0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0xF0, 0x40]); // PUSHDATA1 "hello", SHA256
     run_vm(&mut vm_hash);
     let hash_gas = vm_hash.gas_consumed;
 
     let mut vm_add = NeoVM::new(1_000_000);
-    vm_add.load_script(vec![0x15, 0x13, 0x9E, 0x40]); // 5 + 3
+    let _ = vm_add.load_script(vec![0x15, 0x13, 0x9E, 0x40]); // 5 + 3
     run_vm(&mut vm_add);
     let add_gas = vm_add.gas_consumed;
 
@@ -133,12 +133,12 @@ fn test_hash_ops_cost_more() {
 #[test]
 fn test_stack_ops_cheaper_than_arithmetic() {
     let mut vm_stack = NeoVM::new(1_000_000);
-    vm_stack.load_script(vec![0x15, 0x4A, 0x40]); // PUSH5, DUP
+    let _ = vm_stack.load_script(vec![0x15, 0x4A, 0x40]); // PUSH5, DUP
     run_vm(&mut vm_stack);
     let stack_gas = vm_stack.gas_consumed;
 
     let mut vm_arith = NeoVM::new(1_000_000);
-    vm_arith.load_script(vec![0x15, 0x13, 0x9E, 0x40]); // 5 + 3
+    let _ = vm_arith.load_script(vec![0x15, 0x13, 0x9E, 0x40]); // 5 + 3
     run_vm(&mut vm_arith);
     let arith_gas = vm_arith.gas_consumed;
 
@@ -251,7 +251,7 @@ fn test_gas_consumed_equals_limit() {
 
     // Run with exact gas
     let mut vm2 = NeoVM::new(exact_gas);
-    vm2.load_script(vec![0x15, 0x40]);
+    let _ = vm2.load_script(vec![0x15, 0x40]);
     run_vm(&mut vm2);
 
     assert!(matches!(vm2.state, VMState::Halt));

@@ -14,8 +14,8 @@ tracing.workspace = true
 sha2.workspace = true
 
 [features]
-default = ["sp1"]
-sp1 = []
+default = []
+mock-elf = []  # Use empty ELF for testing without SP1 toolchain
 
 [build-dependencies]
 sp1-build = "4.0"

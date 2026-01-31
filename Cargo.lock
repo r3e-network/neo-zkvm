@@ -2799,11 +2799,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-zkvm-examples"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "neo-vm-core",
+ "neo-vm-guest",
+ "neo-zkvm-prover",
+ "neo-zkvm-verifier",
+]
+
+[[package]]
 name = "neo-zkvm-program"
 version = "0.1.0"
 dependencies = [
  "bincode",
  "serde",
+ "sha2",
  "sp1-build",
  "sp1-zkvm",
 ]
@@ -2828,6 +2840,7 @@ name = "neo-zkvm-verifier"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "neo-vm-core",
  "neo-vm-guest",
  "neo-zkvm-prover",
  "serde",

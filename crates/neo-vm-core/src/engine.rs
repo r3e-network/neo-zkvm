@@ -14,6 +14,8 @@ use thiserror::Error;
 pub enum VMError {
     #[error("Stack underflow")]
     StackUnderflow,
+    #[error("Stack overflow: max depth {0} exceeded")]
+    StackOverflow(usize),
     #[error("Invalid opcode: {0}")]
     InvalidOpcode(u8),
     #[error("Out of gas")]
@@ -34,6 +36,8 @@ pub enum VMError {
     InvalidSignature,
     #[error("Signature verification failed")]
     SignatureVerificationFailed,
+    #[error("Invocation depth exceeded: max {0}")]
+    InvocationDepthExceeded(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +100,12 @@ fn get_gas_cost(op: u8) -> u64 {
 /// Maximum script size in bytes (1MB)
 pub const MAX_SCRIPT_SIZE: usize = 1024 * 1024;
 
+/// Default maximum stack depth
+pub const DEFAULT_MAX_STACK_DEPTH: usize = 2048;
+
+/// Default maximum invocation depth
+pub const DEFAULT_MAX_INVOCATION_DEPTH: usize = 1024;
+
 /// Execution trace step for proof generation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceStep {
@@ -119,6 +129,8 @@ pub struct NeoVM {
     pub invocation_stack: Vec<ExecutionContext>,
     pub gas_consumed: u64,
     pub gas_limit: u64,
+    pub max_stack_depth: usize,
+    pub max_invocation_depth: usize,
     pub notifications: Vec<StackItem>,
     pub logs: Vec<String>,
     pub trace: ExecutionTrace,
@@ -135,14 +147,31 @@ impl NeoVM {
     /// Default invocation depth capacity
     const DEFAULT_INVOCATION_CAPACITY: usize = 8;
 
+    /// Create a new VM with default limits
     #[inline]
     pub fn new(gas_limit: u64) -> Self {
+        Self::with_limits(
+            gas_limit,
+            DEFAULT_MAX_STACK_DEPTH,
+            DEFAULT_MAX_INVOCATION_DEPTH,
+        )
+    }
+
+    /// Create a new VM with custom limits
+    #[inline]
+    pub fn with_limits(
+        gas_limit: u64,
+        max_stack_depth: usize,
+        max_invocation_depth: usize,
+    ) -> Self {
         Self {
             state: VMState::None,
             eval_stack: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             invocation_stack: Vec::with_capacity(Self::DEFAULT_INVOCATION_CAPACITY),
             gas_consumed: 0,
             gas_limit,
+            max_stack_depth,
+            max_invocation_depth,
             notifications: Vec::new(),
             logs: Vec::new(),
             trace: ExecutionTrace::default(),
@@ -181,11 +210,31 @@ impl NeoVM {
         hasher.finalize().into()
     }
 
+    /// Push an item to the eval stack with depth checking
+    #[inline]
+    fn push(&mut self, item: StackItem) -> Result<(), VMError> {
+        if self.eval_stack.len() >= self.max_stack_depth {
+            return Err(VMError::StackOverflow(self.max_stack_depth));
+        }
+        self.eval_stack.push(item);
+        Ok(())
+    }
+
+    /// Check if pushing to the invocation stack would exceed the limit
+    #[inline]
+    fn check_invocation_depth(&self) -> Result<(), VMError> {
+        if self.invocation_stack.len() >= self.max_invocation_depth {
+            return Err(VMError::InvocationDepthExceeded(self.max_invocation_depth));
+        }
+        Ok(())
+    }
+
     #[inline]
     pub fn load_script(&mut self, script: Vec<u8>) -> Result<(), VMError> {
         if script.len() > MAX_SCRIPT_SIZE {
             return Err(VMError::InvalidScript);
         }
+        self.check_invocation_depth()?;
         self.invocation_stack
             .push(ExecutionContext { script, ip: 0 });
         Ok(())
@@ -237,13 +286,13 @@ impl NeoVM {
 
     fn execute_op(&mut self, op: u8) -> Result<(), VMError> {
         match op {
-            0x10 => self.eval_stack.push(StackItem::Integer(0)),
+            0x10 => self.push(StackItem::Integer(0))?,
             0x11..=0x20 => {
                 let n = (op - 0x10) as i128;
-                self.eval_stack.push(StackItem::Integer(n));
+                self.push(StackItem::Integer(n))?;
             }
-            0x0F => self.eval_stack.push(StackItem::Integer(-1)),
-            0x0B => self.eval_stack.push(StackItem::Null),
+            0x0F => self.push(StackItem::Integer(-1))?,
+            0x0B => self.push(StackItem::Null)?,
             // PUSHDATA1 - Push data with 1-byte length prefix
             0x0C => {
                 let ctx = self
@@ -257,7 +306,7 @@ impl NeoVM {
                 }
                 let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
                 ctx.ip += len;
-                self.eval_stack.push(StackItem::ByteString(data));
+                self.push(StackItem::ByteString(data))?;
             }
             // PUSHDATA2 - Push data with 2-byte length prefix
             0x0D => {
@@ -275,7 +324,7 @@ impl NeoVM {
                 }
                 let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
                 ctx.ip += len;
-                self.eval_stack.push(StackItem::ByteString(data));
+                self.push(StackItem::ByteString(data))?;
             }
             // PUSHINT8
             0x00 => {
@@ -288,7 +337,7 @@ impl NeoVM {
                 }
                 let val = ctx.script[ctx.ip] as i8 as i128;
                 ctx.ip += 1;
-                self.eval_stack.push(StackItem::Integer(val));
+                self.push(StackItem::Integer(val))?;
             }
             // PUSHINT16
             0x01 => {
@@ -301,7 +350,7 @@ impl NeoVM {
                 }
                 let val = i16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as i128;
                 ctx.ip += 2;
-                self.eval_stack.push(StackItem::Integer(val));
+                self.push(StackItem::Integer(val))?;
             }
             0x45 => {
                 self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
@@ -312,7 +361,7 @@ impl NeoVM {
                     .last()
                     .ok_or(VMError::StackUnderflow)?
                     .clone();
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // ADD
             0x9E => {
@@ -327,7 +376,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_add(b).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // SUB
             0x9F => {
@@ -342,7 +391,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_sub(b).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // MUL
             0xA0 => {
@@ -357,7 +406,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_mul(b).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // DIV
             0xA1 => {
@@ -375,7 +424,7 @@ impl NeoVM {
                     return Err(VMError::DivisionByZero);
                 }
                 let result = a.checked_div(b).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // MOD
             0xA2 => {
@@ -393,7 +442,7 @@ impl NeoVM {
                     return Err(VMError::DivisionByZero);
                 }
                 let result = a.checked_rem(b).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // POW
             0xA3 => {
@@ -411,7 +460,7 @@ impl NeoVM {
                     return Err(VMError::InvalidOperation);
                 }
                 let result = base.pow(exp as u32);
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // SHL
             0xA8 => {
@@ -431,7 +480,7 @@ impl NeoVM {
                 let result = value
                     .checked_shl(shift as u32)
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // SHR
             0xA9 => {
@@ -451,7 +500,7 @@ impl NeoVM {
                 let result = value
                     .checked_shr(shift as u32)
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // MIN
             0xB9 => {
@@ -465,7 +514,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a.min(b)));
+                self.push(StackItem::Integer(a.min(b)))?;
             }
             // MAX
             0xBA => {
@@ -479,7 +528,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a.max(b)));
+                self.push(StackItem::Integer(a.max(b)))?;
             }
             // WITHIN (a <= x < b)
             0xBB => {
@@ -498,7 +547,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a <= x && x < b));
+                self.push(StackItem::Boolean(a <= x && x < b))?;
             }
             // SIGN
             0x99 => {
@@ -514,7 +563,7 @@ impl NeoVM {
                 } else {
                     0
                 };
-                self.eval_stack.push(StackItem::Integer(sign));
+                self.push(StackItem::Integer(sign))?;
             }
             // ABS
             0x9A => {
@@ -524,7 +573,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_abs().ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // NEGATE
             0x9B => {
@@ -534,7 +583,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_neg().ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // INC
             0x9C => {
@@ -544,7 +593,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_add(1).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // DEC
             0x9D => {
@@ -554,7 +603,7 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
                 let result = a.checked_sub(1).ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(StackItem::Integer(result));
+                self.push(StackItem::Integer(result))?;
             }
             // LT
             0xB5 => {
@@ -568,7 +617,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a < b));
+                self.push(StackItem::Boolean(a < b))?;
             }
             // LE
             0xB6 => {
@@ -582,7 +631,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a <= b));
+                self.push(StackItem::Boolean(a <= b))?;
             }
             // GT
             0xB7 => {
@@ -596,7 +645,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a > b));
+                self.push(StackItem::Boolean(a > b))?;
             }
             // GE
             0xB8 => {
@@ -610,19 +659,19 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a >= b));
+                self.push(StackItem::Boolean(a >= b))?;
             }
             // EQUAL
             0x97 => {
                 let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a == b));
+                self.push(StackItem::Boolean(a == b))?;
             }
             // NOTEQUAL
             0x98 => {
                 let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a != b));
+                self.push(StackItem::Boolean(a != b))?;
             }
             // ISNULL
             0xD8 => {
@@ -637,7 +686,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a != 0));
+                self.push(StackItem::Boolean(a != 0))?;
             }
             // NUMEQUAL
             0xB3 => {
@@ -651,7 +700,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a == b));
+                self.push(StackItem::Boolean(a == b))?;
             }
             // NUMNOTEQUAL
             0xB4 => {
@@ -665,7 +714,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(a != b));
+                self.push(StackItem::Boolean(a != b))?;
             }
             // INVERT (bitwise NOT)
             0x90 => {
@@ -674,7 +723,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(!a));
+                self.push(StackItem::Integer(!a))?;
             }
             // AND (bitwise)
             0x91 => {
@@ -688,7 +737,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a & b));
+                self.push(StackItem::Integer(a & b))?;
             }
             // OR (bitwise)
             0x92 => {
@@ -702,7 +751,7 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a | b));
+                self.push(StackItem::Integer(a | b))?;
             }
             // XOR (bitwise)
             0x93 => {
@@ -716,12 +765,12 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Integer(a ^ b));
+                self.push(StackItem::Integer(a ^ b))?;
             }
             // NOT (logical)
             0xAA => {
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack.push(StackItem::Boolean(!a.to_bool()));
+                self.push(StackItem::Boolean(!a.to_bool()))?;
             }
             // BOOLAND
             0xAB => {
@@ -752,7 +801,7 @@ impl NeoVM {
                     return Err(VMError::StackUnderflow);
                 }
                 let item = self.eval_stack.remove(len - 3);
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // PICK
             0x4D => {
@@ -766,7 +815,7 @@ impl NeoVM {
                     return Err(VMError::StackUnderflow);
                 }
                 let item = self.eval_stack[len - 1 - n].clone();
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // ROLL
             0x52 => {
@@ -780,7 +829,7 @@ impl NeoVM {
                     return Err(VMError::StackUnderflow);
                 }
                 let item = self.eval_stack.remove(len - 1 - n);
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // OVER
             0x4B => {
@@ -789,12 +838,12 @@ impl NeoVM {
                     return Err(VMError::StackUnderflow);
                 }
                 let item = self.eval_stack[len - 2].clone();
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // DEPTH
             0x43 => {
                 let depth = self.eval_stack.len() as i128;
-                self.eval_stack.push(StackItem::Integer(depth));
+                self.push(StackItem::Integer(depth))?;
             }
             // NIP - Remove second-to-top item
             0x46 => {
@@ -887,7 +936,7 @@ impl NeoVM {
                     .get(idx)
                     .cloned()
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // LDLOC_S - Load local variable (short form)
             0x6D => {
@@ -902,7 +951,7 @@ impl NeoVM {
                     .get(idx)
                     .cloned()
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // STLOC0-STLOC6 - Store local variable 0-6
             0x6E..=0x72 => {
@@ -935,7 +984,7 @@ impl NeoVM {
                     .get(idx)
                     .cloned()
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // LDARG - Load argument
             0x7A => {
@@ -950,7 +999,7 @@ impl NeoVM {
                     .get(idx)
                     .cloned()
                     .ok_or(VMError::InvalidOperation)?;
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // NOP
             0x21 => {}
@@ -1144,7 +1193,7 @@ impl NeoVM {
                     ip: target_ip,
                 });
                 // Store return address (simplified)
-                self.eval_stack.push(StackItem::Pointer(return_ip as u32));
+                self.push(StackItem::Pointer(return_ip as u32))?;
             }
             // SHA256
             0xF0 => {
@@ -1157,7 +1206,7 @@ impl NeoVM {
                 let mut hasher = Sha256::new();
                 hasher.update(&bytes);
                 let result = hasher.finalize().to_vec();
-                self.eval_stack.push(StackItem::ByteString(result));
+                self.push(StackItem::ByteString(result))?;
             }
             // RIPEMD160
             0xF1 => {
@@ -1170,7 +1219,7 @@ impl NeoVM {
                 let mut hasher = Ripemd160::new();
                 hasher.update(&bytes);
                 let result = hasher.finalize().to_vec();
-                self.eval_stack.push(StackItem::ByteString(result));
+                self.push(StackItem::ByteString(result))?;
             }
             // SHA256 + RIPEMD160 (Hash160)
             0xF2 => {
@@ -1182,7 +1231,7 @@ impl NeoVM {
                 };
                 let sha_result = Sha256::digest(&bytes);
                 let result = Ripemd160::digest(sha_result).to_vec();
-                self.eval_stack.push(StackItem::ByteString(result));
+                self.push(StackItem::ByteString(result))?;
             }
             // CHECKSIG (ECDSA secp256k1)
             0xF3 => {
@@ -1210,7 +1259,7 @@ impl NeoVM {
                 let msg_hash = Sha256::digest(&msg_bytes);
 
                 let verified = result.verify(&msg_hash, &signature).is_ok();
-                self.eval_stack.push(StackItem::Boolean(verified));
+                self.push(StackItem::Boolean(verified))?;
             }
             // SYSCALL
             0x41 => {
@@ -1230,7 +1279,7 @@ impl NeoVM {
             }
             // NEWARRAY0 - Create empty array
             0xC2 => {
-                self.eval_stack.push(StackItem::Array(Vec::new()));
+                self.push(StackItem::Array(Vec::new()))?;
             }
             // NEWARRAY - Create array with n elements
             0xC3 => {
@@ -1240,11 +1289,11 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)? as usize;
                 let arr = vec![StackItem::Null; n];
-                self.eval_stack.push(StackItem::Array(arr));
+                self.push(StackItem::Array(arr))?;
             }
             // NEWSTRUCT0 - Create empty struct
             0xC5 => {
-                self.eval_stack.push(StackItem::Struct(Vec::new()));
+                self.push(StackItem::Struct(Vec::new()))?;
             }
             // NEWSTRUCT - Create struct with n elements
             0xC6 => {
@@ -1254,11 +1303,11 @@ impl NeoVM {
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)? as usize;
                 let s = vec![StackItem::Null; n];
-                self.eval_stack.push(StackItem::Struct(s));
+                self.push(StackItem::Struct(s))?;
             }
             // NEWMAP - Create empty map
             0xC8 => {
-                self.eval_stack.push(StackItem::Map(Vec::new()));
+                self.push(StackItem::Map(Vec::new()))?;
             }
             // SIZE - Get size of array/map/string
             0xCA => {
@@ -1269,7 +1318,7 @@ impl NeoVM {
                     StackItem::ByteString(b) | StackItem::Buffer(b) => b.len(),
                     _ => return Err(VMError::InvalidType),
                 };
-                self.eval_stack.push(StackItem::Integer(size as i128));
+                self.push(StackItem::Integer(size as i128))?;
             }
             // PICKITEM - Get item from array/map
             0xCE => {
@@ -1291,7 +1340,7 @@ impl NeoVM {
                         .ok_or(VMError::InvalidOperation)?,
                     _ => return Err(VMError::InvalidType),
                 };
-                self.eval_stack.push(item);
+                self.push(item)?;
             }
             // SETITEM - Set item in array/map
             0xD0 => {
@@ -1375,7 +1424,7 @@ impl NeoVM {
             }
             syscall::SYSTEM_RUNTIME_GETTIME => {
                 // Return a mock timestamp for zkVM
-                self.eval_stack.push(StackItem::Integer(0));
+                self.push(StackItem::Integer(0))?;
                 Ok(())
             }
             _ => Err(VMError::UnknownSyscall(id)),

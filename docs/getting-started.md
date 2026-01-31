@@ -178,31 +178,34 @@ neo-zkvm prove 12139e40
 
 ## Working with Storage
 
-Neo zkVM supports persistent storage operations.
+Neo zkVM supports persistent storage operations with Merkle proof support.
 
 ```rust
-use neo_vm_core::{MemoryStorage, StorageBackend, TrackedStorage};
+use neo_vm_core::{MemoryStorage, StorageBackend, StorageContext, TrackedStorage};
 
 fn main() {
     // Create in-memory storage
     let mut storage = MemoryStorage::new();
     
+    // Create a storage context
+    let ctx = StorageContext::default();
+    
     // Store a value
-    storage.put(b"mykey".to_vec(), b"myvalue".to_vec());
+    storage.put(&ctx, b"mykey", b"myvalue");
     
     // Retrieve the value
-    let value = storage.get(b"mykey");
+    let value = storage.get(&ctx, b"mykey");
     println!("Value: {:?}", value);
     
     // Use tracked storage for change logging
-    let mut tracked = TrackedStorage::new(storage);
-    tracked.put(b"key2".to_vec(), b"value2".to_vec());
+    let mut tracked = TrackedStorage::new();
+    tracked.put(&ctx, b"key2", b"value2");
     
     // Get all changes
-    println!("Changes: {:?}", tracked.get_changes());
+    println!("Changes: {:?}", tracked.changes());
     
     // Compute Merkle root
-    println!("Merkle root: {:?}", tracked.compute_merkle_root());
+    println!("Merkle root: {:?}", tracked.merkle_root());
 }
 ```
 
@@ -211,22 +214,23 @@ fn main() {
 Neo zkVM includes built-in native contracts for common operations.
 
 ```rust
-use neo_vm_core::{NativeRegistry, StdLib, CryptoLib};
+use neo_vm_core::{NativeContract, NativeRegistry, StdLib, CryptoLib, StackItem};
 
 fn main() {
-    // Create registry and register contracts
-    let mut registry = NativeRegistry::new();
-    registry.register(Box::new(StdLib));
-    registry.register(Box::new(CryptoLib));
+    // Create registry with built-in contracts
+    let registry = NativeRegistry::new();
     
-    // Use StdLib for base64 encoding
-    let data = b"Hello, Neo!";
-    let encoded = StdLib::base64_encode(data);
-    println!("Base64: {}", encoded);
+    // Use StdLib for serialization
+    let stdlib = StdLib::new();
+    let item = StackItem::Integer(42);
+    let serialized = stdlib.invoke("serialize", vec![item]).unwrap();
+    println!("Serialized: {:?}", serialized);
     
     // Use CryptoLib for hashing
-    let hash = CryptoLib::sha256(data);
-    println!("SHA256: {}", hex::encode(&hash));
+    let cryptolib = CryptoLib::new();
+    let data = StackItem::ByteString(b"Hello, Neo!".to_vec());
+    let hash = cryptolib.invoke("sha256", vec![data]).unwrap();
+    println!("SHA256: {:?}", hash);
 }
 ```
 

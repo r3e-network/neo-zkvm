@@ -1,0 +1,28 @@
+[package]
+name = "neo-zkvm-examples"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "basic"
+path = "src/basic.rs"
+
+[[bin]]
+name = "storage_example"
+path = "src/storage_example.rs"
+
+[[bin]]
+name = "proof_generation"
+path = "src/proof_generation.rs"
+
+[[bin]]
+name = "native_contracts"
+path = "src/native_contracts.rs"
+
+[dependencies]
+neo-vm-core = { workspace = true }
+neo-vm-guest = { workspace = true }
+neo-zkvm-prover = { workspace = true }
+neo-zkvm-verifier = { workspace = true }
+hex = { workspace = true }

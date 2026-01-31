@@ -54,7 +54,10 @@ fn main() {
     println!("Execution result: {:?}", proof.output.result);
     println!("Gas consumed: {}", proof.output.gas_consumed);
     println!("Proof size: {} bytes", proof.proof_bytes.len());
-    println!("Script hash: 0x{}", hex_encode(&proof.public_inputs.script_hash[..8]));
+    println!(
+        "Script hash: 0x{}",
+        hex_encode(&proof.public_inputs.script_hash[..8])
+    );
 
     // Verify the proof
     let is_valid = verify(&proof);
@@ -112,7 +115,10 @@ fn main() {
 
     let exec_result = exec_prover.prove(input3);
     println!("Execute-only result: {:?}", exec_result.output.result);
-    println!("Proof bytes (should be empty): {} bytes", exec_result.proof_bytes.len());
+    println!(
+        "Proof bytes (should be empty): {} bytes",
+        exec_result.proof_bytes.len()
+    );
 
     // =========================================================================
     // Part 5: Public Inputs Analysis
@@ -120,11 +126,23 @@ fn main() {
     println!("\n--- Part 5: Public Inputs Analysis ---\n");
 
     println!("Public inputs for verification:");
-    println!("  Script hash:       0x{}", hex_encode(&proof.public_inputs.script_hash));
-    println!("  Input hash:        0x{}", hex_encode(&proof.public_inputs.input_hash));
-    println!("  Output hash:       0x{}", hex_encode(&proof.public_inputs.output_hash));
+    println!(
+        "  Script hash:       0x{}",
+        hex_encode(&proof.public_inputs.script_hash)
+    );
+    println!(
+        "  Input hash:        0x{}",
+        hex_encode(&proof.public_inputs.input_hash)
+    );
+    println!(
+        "  Output hash:       0x{}",
+        hex_encode(&proof.public_inputs.output_hash)
+    );
     println!("  Gas consumed:      {}", proof.public_inputs.gas_consumed);
-    println!("  Execution success: {}", proof.public_inputs.execution_success);
+    println!(
+        "  Execution success: {}",
+        proof.public_inputs.execution_success
+    );
 
     println!("\n=== Proof Generation Example Complete ===");
 }

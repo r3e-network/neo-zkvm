@@ -41,8 +41,9 @@ fn factorial_example() {
 /// Example: Fibonacci Sequence
 ///
 /// Computes the 10th Fibonacci number.
+#[allow(dead_code)]
 fn fibonacci_example() {
-    use neo_vm_core::{NeoVM, StackItem, VMState};
+    use neo_vm_core::{NeoVM, VMState};
 
     // F(10) = 55
     // Using iterative approach
@@ -174,7 +175,7 @@ fn error_handling_example() {
 ///
 /// Demonstrates common bitwise operations.
 fn bitwise_example() {
-    use neo_vm_core::{NeoVM, StackItem, VMState};
+    use neo_vm_core::{NeoVM, VMState};
 
     // (15 | 8) & 7 = 15 & 7 = 7
     let script = vec![
@@ -227,7 +228,7 @@ fn loop_example() {
 ///
 /// Demonstrates min and max operations.
 fn minmax_example() {
-    use neo_vm_core::{NeoVM, StackItem, VMState};
+    use neo_vm_core::{NeoVM, VMState};
 
     // min(-5, 10) = -5
     let script = vec![
@@ -253,8 +254,9 @@ fn minmax_example() {
 /// Example: Sign Operations
 ///
 /// Demonstrates sign-related operations.
+#[allow(dead_code)]
 fn sign_example() {
-    use neo_vm_core::{NeoVM, StackItem, VMState};
+    use neo_vm_core::{NeoVM, VMState};
 
     // SIGN(-10) = -1
     let script = vec![

@@ -2,7 +2,7 @@
 //!
 //! Tests error conditions and fault states.
 
-use neo_vm_core::{NeoVM, StackItem, VMState};
+use neo_vm_core::{NeoVM, VMState};
 
 // Helper to run VM until completion
 fn run_vm(vm: &mut NeoVM) {

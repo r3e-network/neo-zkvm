@@ -12,7 +12,7 @@ pub struct ProofInput {
 }
 
 /// Output from zkVM execution
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProofOutput {
     pub state: u8,
     pub result: Option<StackItem>,
@@ -32,8 +32,16 @@ pub fn execute(input: ProofInput) -> ProofOutput {
         };
     }
 
-    // Push arguments
+    // Push arguments (bypassing depth check for initial args - they should fit)
     for arg in input.arguments {
+        if vm.eval_stack.len() >= 2048 {
+            return ProofOutput {
+                state: 1,
+                gas_consumed: vm.gas_consumed,
+                result: Some(StackItem::Boolean(false)),
+                error: Some("Stack overflow".to_string()),
+            };
+        }
         vm.eval_stack.push(arg);
     }
 

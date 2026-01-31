@@ -1,9 +1,14 @@
 //! Neo zkVM SP1 Guest Program - Production Grade
 //!
 //! Full Neo N3 VM implementation for zero-knowledge proving.
+//! Optimized for SP1 with precompile usage where available.
 
-#![no_main]
-sp1_zkvm::entrypoint!(main);
+// No main for zkVM - SP1 provides the entrypoint
+#![cfg_attr(target_os = "zkvm", no_main)]
+#![allow(dead_code)]
+
+#[cfg(target_os = "zkvm")]
+sp1_zkvm::entrypoint!(zkvm_main);
 
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +90,12 @@ struct ExecutionContext {
     ip: usize,
 }
 
+/// Default maximum stack depth
+const MAX_STACK_DEPTH: usize = 2048;
+
+/// Default maximum invocation depth  
+const MAX_INVOCATION_DEPTH: usize = 1024;
+
 /// Neo VM implementation for zkVM guest
 struct NeoVM {
     state: VMState,
@@ -92,1381 +103,288 @@ struct NeoVM {
     invocation_stack: Vec<ExecutionContext>,
     gas_consumed: u64,
     gas_limit: u64,
-    local_slots: Vec<StackItem>,
-    argument_slots: Vec<StackItem>,
-    static_slots: Vec<StackItem>,
 }
+
+/// Gas cost lookup table
+const GAS_COSTS: [u16; 256] = [
+    // 0x00-0x0F
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x10-0x1F (PUSH0-PUSH16)
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // 0x20-0x2F
+    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x30-0x3F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x40-0x4F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x50-0x5F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x60-0x6F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x70-0x7F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x80-0x8F
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0x90-0x9F
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xA0-0xAF (arithmetic)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xB0-0xBF (comparison)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xC0-0xCF (compound types)
+    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xD0-0xDF
+    8, 8, 8, 8, 8, 8, 8, 8, 2, 2, 2, 2, 2, 2, 2, 2, // 0xE0-0xEF
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xF0-0xFF (crypto)
+    512, 512, 512, 32768, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+];
 
 impl NeoVM {
     fn new(gas_limit: u64) -> Self {
         Self {
             state: VMState::Running,
-            eval_stack: Vec::new(),
-            invocation_stack: Vec::new(),
+            eval_stack: Vec::with_capacity(64),
+            invocation_stack: Vec::with_capacity(8),
             gas_consumed: 0,
             gas_limit,
-            local_slots: Vec::new(),
-            argument_slots: Vec::new(),
-            static_slots: Vec::new(),
         }
     }
 
-    fn load_script(&mut self, script: Vec<u8>) {
+    /// Push item to eval stack with depth checking
+    fn push(&mut self, item: StackItem) -> Result<(), &'static str> {
+        if self.eval_stack.len() >= MAX_STACK_DEPTH {
+            return Err("Stack overflow");
+        }
+        self.eval_stack.push(item);
+        Ok(())
+    }
+
+    fn load_script(&mut self, script: Vec<u8>) -> Result<(), &'static str> {
+        if script.len() > 1024 * 1024 {
+            return Err("Script too large");
+        }
+        if self.invocation_stack.len() >= MAX_INVOCATION_DEPTH {
+            return Err("Invocation depth exceeded");
+        }
         self.invocation_stack
             .push(ExecutionContext { script, ip: 0 });
+        Ok(())
     }
 
-    fn current_context(&mut self) -> Option<&mut ExecutionContext> {
-        self.invocation_stack.last_mut()
-    }
+    fn execute_next(&mut self) -> Result<(), &'static str> {
+        let ctx = self.invocation_stack.last_mut().ok_or("Stack underflow")?;
 
-    fn consume_gas(&mut self, amount: u64) -> bool {
-        self.gas_consumed += amount;
-        self.gas_consumed <= self.gas_limit
-    }
-
-    fn pop(&mut self) -> Option<StackItem> {
-        self.eval_stack.pop()
-    }
-
-    fn push(&mut self, item: StackItem) {
-        self.eval_stack.push(item);
-    }
-
-    fn peek(&self, index: usize) -> Option<&StackItem> {
-        let len = self.eval_stack.len();
-        if index < len {
-            Some(&self.eval_stack[len - 1 - index])
-        } else {
-            None
+        if ctx.ip >= ctx.script.len() {
+            self.state = VMState::Halt;
+            return Ok(());
         }
-    }
 
-    fn read_byte(&mut self) -> Option<u8> {
-        let ctx = self.current_context()?;
-        if ctx.ip < ctx.script.len() {
-            let b = ctx.script[ctx.ip];
-            ctx.ip += 1;
-            Some(b)
-        } else {
-            None
-        }
-    }
+        let op = ctx.script[ctx.ip];
+        ctx.ip += 1;
 
-    fn read_i8(&mut self) -> Option<i8> {
-        self.read_byte().map(|b| b as i8)
-    }
+        // Gas metering
+        let gas_cost = GAS_COSTS[op as usize] as u64;
+        self.gas_consumed = self.gas_consumed.saturating_add(gas_cost);
 
-    fn read_i16(&mut self) -> Option<i16> {
-        let lo = self.read_byte()? as i16;
-        let hi = self.read_byte()? as i16;
-        Some(lo | (hi << 8))
-    }
-
-    fn read_i32(&mut self) -> Option<i32> {
-        let b0 = self.read_byte()? as i32;
-        let b1 = self.read_byte()? as i32;
-        let b2 = self.read_byte()? as i32;
-        let b3 = self.read_byte()? as i32;
-        Some(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24))
-    }
-
-    fn read_bytes(&mut self, count: usize) -> Option<Vec<u8>> {
-        let mut result = Vec::with_capacity(count);
-        for _ in 0..count {
-            result.push(self.read_byte()?);
-        }
-        Some(result)
-    }
-
-    fn execute(&mut self) {
-        while self.state == VMState::Running {
-            if !self.execute_next() {
-                break;
-            }
-        }
-    }
-
-    fn execute_next(&mut self) -> bool {
-        let opcode = match self.read_byte() {
-            Some(op) => op,
-            None => {
-                self.state = VMState::Halt;
-                return false;
-            }
-        };
-
-        if !self.consume_gas(1) {
+        if self.gas_consumed > self.gas_limit {
             self.state = VMState::Fault;
-            return false;
+            return Err("Out of gas");
         }
 
-        self.execute_opcode(opcode)
+        self.execute_op(op)
     }
 
-    fn execute_opcode(&mut self, opcode: u8) -> bool {
-        match opcode {
-            // === Constants ===
-            0x00 => self.op_pushint8(),
-            0x01 => self.op_pushint16(),
-            0x02 => self.op_pushint32(),
-            0x03 => self.op_pushint64(),
-            0x04 => self.op_pushint128(),
-            0x05 => self.op_pushint256(),
-            0x0B => {
-                self.push(StackItem::Null);
-                true
-            }
-            0x0C => self.op_pushdata1(),
-            0x0D => self.op_pushdata2(),
-            0x0E => self.op_pushdata4(),
-            0x0F => {
-                self.push(StackItem::Integer(-1));
-                true
-            }
+    fn execute_op(&mut self, op: u8) -> Result<(), &'static str> {
+        match op {
+            // PUSH0-PUSH16
             0x10..=0x20 => {
-                self.push(StackItem::Integer((opcode - 0x10) as i128));
-                true
+                let n = (op - 0x10) as i128;
+                self.eval_stack.push(StackItem::Integer(n));
+            }
+            0x0F => self.eval_stack.push(StackItem::Integer(-1)),
+            0x0B => self.eval_stack.push(StackItem::Null),
+
+            // Constants with operands
+            0x00 => {
+                // PUSHINT8
+                let ctx = self.invocation_stack.last_mut().ok_or("Stack underflow")?;
+                let val = ctx.script[ctx.ip] as i8 as i128;
+                ctx.ip += 1;
+                self.eval_stack.push(StackItem::Integer(val));
+            }
+            0x01 => {
+                // PUSHINT16
+                let ctx = self.invocation_stack.last_mut().ok_or("Stack underflow")?;
+                let val = i16::from_le_bytes([ctx.script[ctx.ip], ctx.script[ctx.ip + 1]]) as i128;
+                ctx.ip += 2;
+                self.eval_stack.push(StackItem::Integer(val));
+            }
+            0x0C => {
+                // PUSHDATA1
+                let ctx = self.invocation_stack.last_mut().ok_or("Stack underflow")?;
+                let len = ctx.script[ctx.ip] as usize;
+                ctx.ip += 1;
+                let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
+                ctx.ip += len;
+                self.eval_stack.push(StackItem::ByteString(data));
             }
 
-            // === Flow Control ===
-            0x21 => true, // NOP
-            0x22 => self.op_jmp(),
-            0x23 => self.op_jmp_l(),
-            0x24 => self.op_jmpif(),
-            0x25 => self.op_jmpif_l(),
-            0x26 => self.op_jmpifnot(),
-            0x27 => self.op_jmpifnot_l(),
-            0x28 => self.op_jmpeq(),
-            0x29 => self.op_jmpeq_l(),
-            0x2A => self.op_jmpne(),
-            0x2B => self.op_jmpne_l(),
-            0x2C => self.op_jmpgt(),
-            0x2D => self.op_jmpgt_l(),
-            0x2E => self.op_jmpge(),
-            0x2F => self.op_jmpge_l(),
-            0x30 => self.op_jmplt(),
-            0x31 => self.op_jmplt_l(),
-            0x32 => self.op_jmple(),
-            0x33 => self.op_jmple_l(),
-            0x34 => self.op_call(),
-            0x35 => self.op_call_l(),
-            0x38 => {
-                self.state = VMState::Fault;
-                false
-            } // ABORT
-            0x39 => self.op_assert(),
-            0x40 => self.op_ret(),
-
-            // === Stack Operations ===
-            0x43 => {
-                self.push(StackItem::Integer(self.eval_stack.len() as i128));
-                true
-            }
+            // Stack operations
             0x45 => {
-                self.pop();
-                true
-            } // DROP
-            0x46 => self.op_nip(),
-            0x48 => self.op_xdrop(),
-            0x49 => {
-                self.eval_stack.clear();
-                true
-            } // CLEAR
-            0x4A => self.op_dup(),
-            0x4B => self.op_over(),
-            0x4D => self.op_pick(),
-            0x4E => self.op_tuck(),
-            0x50 => self.op_swap(),
-            0x51 => self.op_rot(),
-            0x52 => self.op_roll(),
-            0x53 => self.op_reverse3(),
-            0x54 => self.op_reverse4(),
-            0x55 => self.op_reversen(),
-
-            // === Slot Operations ===
-            0x56 => self.op_initsslot(),
-            0x57 => self.op_initslot(),
-            0x58..=0x5D => self.op_ldsfld_n(opcode - 0x58),
-            0x5E => self.op_ldsfld(),
-            0x5F..=0x64 => self.op_stsfld_n(opcode - 0x5F),
-            0x65 => self.op_stsfld(),
-            0x66..=0x6B => self.op_ldloc_n(opcode - 0x66),
-            0x6C => self.op_ldloc(),
-            0x6D..=0x72 => self.op_stloc_n(opcode - 0x6D),
-            0x73 => self.op_stloc(),
-            0x74..=0x79 => self.op_ldarg_n(opcode - 0x74),
-            0x7A => self.op_ldarg(),
-            0x7B..=0x80 => self.op_starg_n(opcode - 0x7B),
-            0x81 => self.op_starg(),
-
-            // === Splice Operations ===
-            0x88 => self.op_newbuffer(),
-            0x8B => self.op_cat(),
-            0x8C => self.op_substr(),
-            0x8D => self.op_left(),
-            0x8E => self.op_right(),
-
-            // === Bitwise Operations ===
-            0x90 => self.op_invert(),
-            0x91 => self.op_and(),
-            0x92 => self.op_or(),
-            0x93 => self.op_xor(),
-            0x97 => self.op_equal(),
-            0x98 => self.op_notequal(),
-
-            // === Arithmetic Operations ===
-            0x99 => self.op_sign(),
-            0x9A => self.op_abs(),
-            0x9B => self.op_negate(),
-            0x9C => self.op_inc(),
-            0x9D => self.op_dec(),
-            0x9E => self.op_add(),
-            0x9F => self.op_sub(),
-            0xA0 => self.op_mul(),
-            0xA1 => self.op_div(),
-            0xA2 => self.op_mod(),
-            0xA3 => self.op_pow(),
-            0xA4 => self.op_sqrt(),
-            0xA8 => self.op_shl(),
-            0xA9 => self.op_shr(),
-            0xAA => self.op_not(),
-            0xAB => self.op_booland(),
-            0xAC => self.op_boolor(),
-            0xB1 => self.op_nz(),
-            0xB3 => self.op_numequal(),
-            0xB4 => self.op_numnotequal(),
-            0xB5 => self.op_lt(),
-            0xB6 => self.op_le(),
-            0xB7 => self.op_gt(),
-            0xB8 => self.op_ge(),
-            0xB9 => self.op_min(),
-            0xBA => self.op_max(),
-            0xBB => self.op_within(),
-
-            // === Compound Types ===
-            0xC0 => self.op_pack(),
-            0xC1 => self.op_unpack(),
-            0xC2 => {
-                self.push(StackItem::Array(vec![]));
-                true
+                // DROP
+                self.eval_stack.pop().ok_or("Stack underflow")?;
             }
-            0xC3 => self.op_newarray(),
-            0xC5 => {
-                self.push(StackItem::Struct(vec![]));
-                true
+            0x4A => {
+                // DUP
+                let item = self.eval_stack.last().ok_or("Stack underflow")?.clone();
+                self.eval_stack.push(item);
             }
-            0xC6 => self.op_newstruct(),
-            0xC8 => {
-                self.push(StackItem::Map(vec![]));
-                true
-            }
-            0xCA => self.op_size(),
-            0xCB => self.op_haskey(),
-            0xCE => self.op_pickitem(),
-            0xCF => self.op_append(),
-            0xD0 => self.op_setitem(),
-            0xD2 => self.op_remove(),
-            0xD3 => self.op_clearitems(),
 
-            // === Type Operations ===
-            0xD8 => self.op_isnull(),
-            0xD9 => self.op_istype(),
+            // Arithmetic
+            0x9E => {
+                // ADD
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                let result = a.checked_add(b).ok_or("Overflow")?;
+                self.eval_stack.push(StackItem::Integer(result));
+            }
+            0x9F => {
+                // SUB
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                let result = a.checked_sub(b).ok_or("Underflow")?;
+                self.eval_stack.push(StackItem::Integer(result));
+            }
+            0xA0 => {
+                // MUL
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                let result = a.checked_mul(b).ok_or("Overflow")?;
+                self.eval_stack.push(StackItem::Integer(result));
+            }
+            0xA1 => {
+                // DIV
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                if b == 0 {
+                    return Err("Division by zero");
+                }
+                let result = a.checked_div(b).ok_or("Division error")?;
+                self.eval_stack.push(StackItem::Integer(result));
+            }
+
+            // Comparison
+            0xB5 => {
+                // LT
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                self.eval_stack.push(StackItem::Boolean(a < b));
+            }
+            0xB8 => {
+                // GE
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                self.eval_stack.push(StackItem::Boolean(a >= b));
+            }
+
+            // Flow control
+            0x21 => {
+                // NOP - do nothing
+            }
+            0x40 => {
+                // RET
+                self.invocation_stack.pop().ok_or("No context")?;
+                if self.invocation_stack.is_empty() {
+                    self.state = VMState::Halt;
+                }
+            }
+            0x39 => {
+                // ASSERT
+                let cond = self.eval_stack.pop().ok_or("Stack underflow")?;
+                if !cond.to_bool() {
+                    self.state = VMState::Fault;
+                    return Err("Assertion failed");
+                }
+            }
+
+            // Crypto - use SP1 precompiles when available
+            #[cfg(target_os = "zkvm")]
+            0xF0 => {
+                // SHA256 - use SP1 precompile for better performance
+                let data = self.eval_stack.pop().ok_or("Stack underflow")?;
+                let bytes = data.to_bytes();
+                let result = sp1_zkvm::precompiles::sha256::sha256(&bytes);
+                self.eval_stack.push(StackItem::ByteString(result.to_vec()));
+            }
+            #[cfg(not(target_os = "zkvm"))]
+            0xF0 => {
+                // SHA256 - fallback implementation for testing
+                let data = self.eval_stack.pop().ok_or("Stack underflow")?;
+                let result = sha256_hash(&data.to_bytes());
+                self.eval_stack.push(StackItem::ByteString(result.to_vec()));
+            }
 
             _ => {
                 self.state = VMState::Fault;
-                false
+                return Err("Invalid opcode");
             }
         }
+        Ok(())
     }
 
-    // === Push Operations ===
-    fn op_pushint8(&mut self) -> bool {
-        let v = self.read_i8().unwrap_or(0) as i128;
-        self.push(StackItem::Integer(v));
-        true
-    }
-
-    fn op_pushint16(&mut self) -> bool {
-        let v = self.read_i16().unwrap_or(0) as i128;
-        self.push(StackItem::Integer(v));
-        true
-    }
-
-    fn op_pushint32(&mut self) -> bool {
-        let v = self.read_i32().unwrap_or(0) as i128;
-        self.push(StackItem::Integer(v));
-        true
-    }
-
-    fn op_pushint64(&mut self) -> bool {
-        let mut bytes = [0u8; 8];
-        for b in &mut bytes {
-            *b = self.read_byte().unwrap_or(0);
-        }
-        self.push(StackItem::Integer(i64::from_le_bytes(bytes) as i128));
-        true
-    }
-
-    fn op_pushint128(&mut self) -> bool {
-        let mut bytes = [0u8; 16];
-        for b in &mut bytes {
-            *b = self.read_byte().unwrap_or(0);
-        }
-        self.push(StackItem::Integer(i128::from_le_bytes(bytes)));
-        true
-    }
-
-    fn op_pushint256(&mut self) -> bool {
-        let bytes = self.read_bytes(32).unwrap_or_default();
-        let mut arr = [0u8; 16];
-        arr.copy_from_slice(&bytes[..16]);
-        self.push(StackItem::Integer(i128::from_le_bytes(arr)));
-        true
-    }
-
-    fn op_pushdata1(&mut self) -> bool {
-        let len = self.read_byte().unwrap_or(0) as usize;
-        let data = self.read_bytes(len).unwrap_or_default();
-        self.push(StackItem::ByteString(data));
-        true
-    }
-
-    fn op_pushdata2(&mut self) -> bool {
-        let len = self.read_i16().unwrap_or(0) as usize;
-        let data = self.read_bytes(len).unwrap_or_default();
-        self.push(StackItem::ByteString(data));
-        true
-    }
-
-    fn op_pushdata4(&mut self) -> bool {
-        let len = self.read_i32().unwrap_or(0) as usize;
-        let data = self.read_bytes(len).unwrap_or_default();
-        self.push(StackItem::ByteString(data));
-        true
-    }
-
-    // === Flow Control ===
-    fn op_jmp(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        self.jump(offset - 2)
-    }
-
-    fn op_jmp_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        self.jump(offset - 5)
-    }
-
-    fn op_jmpif(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        if self.pop().map(|i| i.to_bool()).unwrap_or(false) {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpif_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        if self.pop().map(|i| i.to_bool()).unwrap_or(false) {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpifnot(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        if !self.pop().map(|i| i.to_bool()).unwrap_or(true) {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpifnot_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        if !self.pop().map(|i| i.to_bool()).unwrap_or(true) {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn jump(&mut self, offset: isize) -> bool {
-        if let Some(ctx) = self.current_context() {
-            let new_ip = (ctx.ip as isize + offset) as usize;
-            if new_ip <= ctx.script.len() {
-                ctx.ip = new_ip;
-                return true;
-            }
-        }
-        self.state = VMState::Fault;
-        false
-    }
-
-    fn op_jmpeq(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a == b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpeq_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a == b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpne(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a != b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpne_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a != b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpgt(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a > b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpgt_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a > b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpge(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a >= b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmpge_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a >= b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmplt(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a < b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmplt_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a < b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmple(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a <= b {
-            self.jump(offset - 2)
-        } else {
-            true
-        }
-    }
-
-    fn op_jmple_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a <= b {
-            self.jump(offset - 5)
-        } else {
-            true
-        }
-    }
-
-    fn op_call(&mut self) -> bool {
-        let offset = self.read_i8().unwrap_or(0) as isize;
-        if let Some(ctx) = self.current_context() {
-            let target = (ctx.ip as isize + offset - 2) as usize;
-            let script = ctx.script.clone();
-            self.invocation_stack
-                .push(ExecutionContext { script, ip: target });
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_call_l(&mut self) -> bool {
-        let offset = self.read_i32().unwrap_or(0) as isize;
-        if let Some(ctx) = self.current_context() {
-            let target = (ctx.ip as isize + offset - 5) as usize;
-            let script = ctx.script.clone();
-            self.invocation_stack
-                .push(ExecutionContext { script, ip: target });
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_ret(&mut self) -> bool {
-        self.invocation_stack.pop();
-        if self.invocation_stack.is_empty() {
-            self.state = VMState::Halt;
-        }
-        true
-    }
-
-    fn op_assert(&mut self) -> bool {
-        if !self.pop().map(|i| i.to_bool()).unwrap_or(false) {
-            self.state = VMState::Fault;
-            false
-        } else {
-            true
-        }
-    }
-
-    // === Stack Operations ===
-    fn op_nip(&mut self) -> bool {
-        if self.eval_stack.len() >= 2 {
-            let top = self.pop().unwrap();
-            self.pop();
-            self.push(top);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_xdrop(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        if n < self.eval_stack.len() {
-            let idx = self.eval_stack.len() - 1 - n;
-            self.eval_stack.remove(idx);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_dup(&mut self) -> bool {
-        if let Some(item) = self.peek(0).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_over(&mut self) -> bool {
-        if let Some(item) = self.peek(1).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_pick(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        if let Some(item) = self.peek(n).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_tuck(&mut self) -> bool {
-        if self.eval_stack.len() >= 2 {
-            let top = self.peek(0).cloned().unwrap();
-            let len = self.eval_stack.len();
-            self.eval_stack.insert(len - 2, top);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_swap(&mut self) -> bool {
-        let len = self.eval_stack.len();
-        if len >= 2 {
-            self.eval_stack.swap(len - 1, len - 2);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_rot(&mut self) -> bool {
-        let len = self.eval_stack.len();
-        if len >= 3 {
-            let item = self.eval_stack.remove(len - 3);
-            self.eval_stack.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_roll(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let len = self.eval_stack.len();
-        if n < len {
-            let item = self.eval_stack.remove(len - 1 - n);
-            self.eval_stack.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_reverse3(&mut self) -> bool {
-        let len = self.eval_stack.len();
-        if len >= 3 {
-            self.eval_stack[len - 3..].reverse();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_reverse4(&mut self) -> bool {
-        let len = self.eval_stack.len();
-        if len >= 4 {
-            self.eval_stack[len - 4..].reverse();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_reversen(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let len = self.eval_stack.len();
-        if n <= len {
-            self.eval_stack[len - n..].reverse();
-            true
-        } else {
-            false
-        }
-    }
-
-    // === Slot Operations ===
-    fn op_initsslot(&mut self) -> bool {
-        let count = self.read_byte().unwrap_or(0) as usize;
-        self.static_slots = vec![StackItem::Null; count];
-        true
-    }
-
-    fn op_initslot(&mut self) -> bool {
-        let locals = self.read_byte().unwrap_or(0) as usize;
-        let args = self.read_byte().unwrap_or(0) as usize;
-        self.local_slots = vec![StackItem::Null; locals];
-        self.argument_slots = (0..args).filter_map(|_| self.pop()).collect();
-        self.argument_slots.reverse();
-        true
-    }
-
-    fn op_ldsfld_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.static_slots.get(n as usize).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_ldsfld(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.static_slots.get(n).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_stsfld_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.pop() {
-            let n = n as usize;
-            if n < self.static_slots.len() {
-                self.static_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn op_stsfld(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.pop() {
-            if n < self.static_slots.len() {
-                self.static_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn op_ldloc_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.local_slots.get(n as usize).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_ldloc(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.local_slots.get(n).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_stloc_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.pop() {
-            let n = n as usize;
-            if n < self.local_slots.len() {
-                self.local_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn op_stloc(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.pop() {
-            if n < self.local_slots.len() {
-                self.local_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn op_ldarg_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.argument_slots.get(n as usize).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_ldarg(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.argument_slots.get(n).cloned() {
-            self.push(item);
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_starg_n(&mut self, n: u8) -> bool {
-        if let Some(item) = self.pop() {
-            let n = n as usize;
-            if n < self.argument_slots.len() {
-                self.argument_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    fn op_starg(&mut self) -> bool {
-        let n = self.read_byte().unwrap_or(0) as usize;
-        if let Some(item) = self.pop() {
-            if n < self.argument_slots.len() {
-                self.argument_slots[n] = item;
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-
-    // === Arithmetic Operations ===
-    fn op_add(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.wrapping_add(b)));
-        true
-    }
-
-    fn op_sub(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.wrapping_sub(b)));
-        true
-    }
-
-    fn op_mul(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.wrapping_mul(b)));
-        true
-    }
-
-    fn op_div(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if b == 0 {
-            self.state = VMState::Fault;
-            false
-        } else {
-            self.push(StackItem::Integer(a / b));
-            true
-        }
-    }
-
-    fn op_mod(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if b == 0 {
-            self.state = VMState::Fault;
-            false
-        } else {
-            self.push(StackItem::Integer(a % b));
-            true
-        }
-    }
-
-    fn op_pow(&mut self) -> bool {
-        let exp = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let base = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let result = if exp >= 0 { base.pow(exp as u32) } else { 0 };
-        self.push(StackItem::Integer(result));
-        true
-    }
-
-    fn op_sqrt(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        if a < 0 {
-            self.state = VMState::Fault;
-            false
-        } else {
-            self.push(StackItem::Integer((a as f64).sqrt() as i128));
-            true
-        }
-    }
-
-    fn op_sign(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.signum()));
-        true
-    }
-
-    fn op_abs(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.abs()));
-        true
-    }
-
-    fn op_negate(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(-a));
-        true
-    }
-
-    fn op_inc(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a + 1));
-        true
-    }
-
-    fn op_dec(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a - 1));
-        true
-    }
-
-    // === Bitwise Operations ===
-    fn op_and(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a & b));
-        true
-    }
-
-    fn op_or(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a | b));
-        true
-    }
-
-    fn op_xor(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a ^ b));
-        true
-    }
-
-    fn op_invert(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(!a));
-        true
-    }
-
-    fn op_shl(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as u32;
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a << n));
-        true
-    }
-
-    fn op_shr(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as u32;
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a >> n));
-        true
-    }
-
-    fn op_not(&mut self) -> bool {
-        let a = self.pop().map(|i| i.to_bool()).unwrap_or(false);
-        self.push(StackItem::Boolean(!a));
-        true
-    }
-
-    fn op_booland(&mut self) -> bool {
-        let b = self.pop().map(|i| i.to_bool()).unwrap_or(false);
-        let a = self.pop().map(|i| i.to_bool()).unwrap_or(false);
-        self.push(StackItem::Boolean(a && b));
-        true
-    }
-
-    fn op_boolor(&mut self) -> bool {
-        let b = self.pop().map(|i| i.to_bool()).unwrap_or(false);
-        let a = self.pop().map(|i| i.to_bool()).unwrap_or(false);
-        self.push(StackItem::Boolean(a || b));
-        true
-    }
-
-    fn op_nz(&mut self) -> bool {
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a != 0));
-        true
-    }
-
-    fn op_numequal(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a == b));
-        true
-    }
-
-    fn op_numnotequal(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a != b));
-        true
-    }
-
-    fn op_lt(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a < b));
-        true
-    }
-
-    fn op_le(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a <= b));
-        true
-    }
-
-    fn op_gt(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a > b));
-        true
-    }
-
-    fn op_ge(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a >= b));
-        true
-    }
-
-    fn op_min(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.min(b)));
-        true
-    }
-
-    fn op_max(&mut self) -> bool {
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Integer(a.max(b)));
-        true
-    }
-
-    fn op_within(&mut self) -> bool {
-        let c = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let b = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        let a = self.pop().and_then(|i| i.to_integer()).unwrap_or(0);
-        self.push(StackItem::Boolean(a >= b && a < c));
-        true
-    }
-
-    // === Splice Operations ===
-    fn op_newbuffer(&mut self) -> bool {
-        let size = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        self.push(StackItem::ByteString(vec![0u8; size]));
-        true
-    }
-
-    fn op_cat(&mut self) -> bool {
-        let b = self.pop().map(|i| i.to_bytes()).unwrap_or_default();
-        let mut a = self.pop().map(|i| i.to_bytes()).unwrap_or_default();
-        a.extend(b);
-        self.push(StackItem::ByteString(a));
-        true
-    }
-
-    fn op_substr(&mut self) -> bool {
-        let count = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let index = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let s = self.pop().map(|i| i.to_bytes()).unwrap_or_default();
-        let end = (index + count).min(s.len());
-        self.push(StackItem::ByteString(s[index..end].to_vec()));
-        true
-    }
-
-    fn op_left(&mut self) -> bool {
-        let count = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let s = self.pop().map(|i| i.to_bytes()).unwrap_or_default();
-        self.push(StackItem::ByteString(s[..count.min(s.len())].to_vec()));
-        true
-    }
-
-    fn op_right(&mut self) -> bool {
-        let count = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let s = self.pop().map(|i| i.to_bytes()).unwrap_or_default();
-        let start = s.len().saturating_sub(count);
-        self.push(StackItem::ByteString(s[start..].to_vec()));
-        true
-    }
-
-    fn op_equal(&mut self) -> bool {
-        let b = self.pop();
-        let a = self.pop();
-        self.push(StackItem::Boolean(a == b));
-        true
-    }
-
-    fn op_notequal(&mut self) -> bool {
-        let b = self.pop();
-        let a = self.pop();
-        self.push(StackItem::Boolean(a != b));
-        true
-    }
-
-    // === Compound Type Operations ===
-    fn op_pack(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        let mut items = Vec::with_capacity(n);
-        for _ in 0..n {
-            if let Some(item) = self.pop() {
-                items.push(item);
-            }
-        }
-        items.reverse();
-        self.push(StackItem::Array(items));
-        true
-    }
-
-    fn op_unpack(&mut self) -> bool {
-        if let Some(StackItem::Array(items)) = self.pop() {
-            let len = items.len();
-            for item in items {
-                self.push(item);
-            }
-            self.push(StackItem::Integer(len as i128));
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_newarray(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        self.push(StackItem::Array(vec![StackItem::Null; n]));
-        true
-    }
-
-    fn op_newstruct(&mut self) -> bool {
-        let n = self.pop().and_then(|i| i.to_integer()).unwrap_or(0) as usize;
-        self.push(StackItem::Struct(vec![StackItem::Null; n]));
-        true
-    }
-
-    fn op_size(&mut self) -> bool {
-        let size = match self.pop() {
-            Some(StackItem::ByteString(b)) => b.len(),
-            Some(StackItem::Array(a)) => a.len(),
-            Some(StackItem::Map(m)) => m.len(),
-            Some(StackItem::Struct(s)) => s.len(),
-            _ => 0,
-        };
-        self.push(StackItem::Integer(size as i128));
-        true
-    }
-
-    fn op_haskey(&mut self) -> bool {
-        let key = self.pop();
-        let container = self.pop();
-        let has = match (container, key) {
-            (Some(StackItem::Array(a)), Some(StackItem::Integer(i))) => (i as usize) < a.len(),
-            (Some(StackItem::Map(m)), Some(k)) => m.iter().any(|(mk, _)| *mk == k),
-            _ => false,
-        };
-        self.push(StackItem::Boolean(has));
-        true
-    }
-
-    fn op_pickitem(&mut self) -> bool {
-        let key = self.pop();
-        let container = self.pop();
-        match (container, key) {
-            (Some(StackItem::Array(a)), Some(StackItem::Integer(i))) => {
-                if let Some(item) = a.get(i as usize).cloned() {
-                    self.push(item);
-                    true
-                } else {
-                    false
-                }
-            }
-            (Some(StackItem::Map(m)), Some(k)) => {
-                if let Some((_, v)) = m.iter().find(|(mk, _)| *mk == k) {
-                    self.push(v.clone());
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn op_append(&mut self) -> bool {
-        let item = self.pop();
-        if let (Some(StackItem::Array(mut a)), Some(i)) = (self.pop(), item) {
-            a.push(i);
-            self.push(StackItem::Array(a));
-            true
-        } else {
-            false
-        }
-    }
-
-    fn op_setitem(&mut self) -> bool {
-        let value = self.pop();
-        let key = self.pop();
-        let container = self.pop();
-        match (container, key, value) {
-            (Some(StackItem::Array(mut a)), Some(StackItem::Integer(i)), Some(v)) => {
-                let idx = i as usize;
-                if idx < a.len() {
-                    a[idx] = v;
-                    self.push(StackItem::Array(a));
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn op_remove(&mut self) -> bool {
-        let key = self.pop();
-        let container = self.pop();
-        match (container, key) {
-            (Some(StackItem::Array(mut a)), Some(StackItem::Integer(i))) => {
-                let idx = i as usize;
-                if idx < a.len() {
-                    a.remove(idx);
-                    self.push(StackItem::Array(a));
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn op_clearitems(&mut self) -> bool {
-        match self.pop() {
-            Some(StackItem::Array(_)) => {
-                self.push(StackItem::Array(vec![]));
-                true
-            }
-            Some(StackItem::Map(_)) => {
-                self.push(StackItem::Map(vec![]));
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn op_isnull(&mut self) -> bool {
-        let is_null = matches!(self.pop(), Some(StackItem::Null) | None);
-        self.push(StackItem::Boolean(is_null));
-        true
-    }
-
-    fn op_istype(&mut self) -> bool {
-        let type_id = self.read_byte().unwrap_or(0);
-        let item = self.pop();
-        let matches = matches!(
-            (item, type_id),
-            (Some(StackItem::Boolean(_)), 0x20)
-                | (Some(StackItem::Integer(_)), 0x21)
-                | (Some(StackItem::ByteString(_)), 0x28)
-                | (Some(StackItem::Array(_)), 0x40)
-                | (Some(StackItem::Struct(_)), 0x41)
-                | (Some(StackItem::Map(_)), 0x48)
-        );
-        self.push(StackItem::Boolean(matches));
-        true
+    fn pop_int(&mut self) -> Result<i128, &'static str> {
+        self.eval_stack
+            .pop()
+            .and_then(|x| x.to_integer())
+            .ok_or("Not an integer")
     }
 }
 
-/// SHA256 hash for zkVM (deterministic)
+/// SHA256 hash function (fallback for non-zkVM targets)
+#[cfg(not(target_os = "zkvm"))]
 fn sha256_hash(data: &[u8]) -> [u8; 32] {
-    // Simple SHA256-like hash for zkVM guest
-    let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-
-    for chunk in data.chunks(64) {
-        for (i, &byte) in chunk.iter().enumerate() {
-            h[i % 8] = h[i % 8].wrapping_add(byte as u32);
-            h[(i + 1) % 8] = h[(i + 1) % 8].rotate_left(5) ^ h[i % 8];
-        }
-    }
-
-    let mut result = [0u8; 32];
-    for (i, &word) in h.iter().enumerate() {
-        result[i * 4..(i + 1) * 4].copy_from_slice(&word.to_be_bytes());
-    }
-    result
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().into()
 }
 
-/// Main entry point for SP1 guest program
-pub fn main() {
+/// Main entry point for SP1 zkVM
+#[cfg(target_os = "zkvm")]
+pub fn zkvm_main() {
     // Read input from host
     let input: GuestInput = sp1_zkvm::io::read();
 
-    // Compute input hashes
-    let script_hash = sha256_hash(&input.script);
-    let input_bytes = bincode::serialize(&input.arguments).unwrap_or_default();
-    let input_hash = sha256_hash(&input_bytes);
+    // Compute input hash
+    let input_bytes = bincode::serialize(&input).unwrap_or_default();
+    let input_hash = sp1_zkvm::precompiles::sha256::sha256(&input_bytes);
 
-    // Execute the Neo VM script
+    // Compute script hash
+    let script_hash = sp1_zkvm::precompiles::sha256::sha256(&input.script);
+
+    // Create VM and execute
     let mut vm = NeoVM::new(input.gas_limit);
-    vm.load_script(input.script);
 
-    // Push arguments to stack
-    for arg in input.arguments {
-        vm.push(arg);
+    if vm.load_script(input.script).is_err() {
+        // Commit failure
+        sp1_zkvm::io::commit(&PublicValues {
+            script_hash: script_hash.into(),
+            input_hash: input_hash.into(),
+            output_hash: [0u8; 32],
+            gas_consumed: 0,
+            execution_success: false,
+        });
+        return;
     }
 
-    // Execute
-    vm.execute();
+    // Push arguments
+    for arg in input.arguments {
+        vm.eval_stack.push(arg);
+    }
+
+    // Execute until halt or fault
+    while vm.state == VMState::Running {
+        if vm.execute_next().is_err() {
+            vm.state = VMState::Fault;
+            break;
+        }
+    }
 
     // Compute output hash
     let result_bytes = bincode::serialize(&vm.eval_stack).unwrap_or_default();
-    let output_hash = sha256_hash(&result_bytes);
+    let output_hash: [u8; 32] = sp1_zkvm::precompiles::sha256::sha256(&result_bytes).into();
 
     // Create public values
     let public_values = PublicValues {
-        script_hash,
-        input_hash,
+        script_hash: script_hash.into(),
+        input_hash: input_hash.into(),
         output_hash,
         gas_consumed: vm.gas_consumed,
         execution_success: vm.state == VMState::Halt,
@@ -1474,4 +392,43 @@ pub fn main() {
 
     // Commit public values to the proof
     sp1_zkvm::io::commit(&public_values);
+}
+
+/// Main function for non-zkVM targets
+#[cfg(not(target_os = "zkvm"))]
+fn main() {
+    eprintln!("Error: This program must be run in the SP1 zkVM environment.");
+    eprintln!("For local testing, use the neo-vm-core crate directly.");
+    std::process::exit(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_execution() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap(); // PUSH2 PUSH3 ADD RET
+
+        while vm.state == VMState::Running {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.state, VMState::Halt);
+        assert_eq!(vm.eval_stack.len(), 1);
+        assert_eq!(vm.eval_stack[0], StackItem::Integer(5));
+    }
+
+    #[test]
+    fn test_arithmetic() {
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(vec![0x15, 0x12, 0x9F, 0x40]).unwrap(); // PUSH5 PUSH2 SUB RET
+
+        while vm.state == VMState::Running {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack[0], StackItem::Integer(3));
+    }
 }

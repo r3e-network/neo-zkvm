@@ -1,88 +1,43 @@
-//! Build script to embed SP1 guest program ELF
+//! Build script for SP1 integration
 //!
-//! This build script compiles the neo-zkvm-program and embeds the resulting
-//! ELF binary into the prover crate for use with SP1 zkVM.
-//!
-//! To build the guest program:
-//!   cargo build --package neo-zkvm-program --release
-//!
-//! The ELF will be copied to the prover's out directory and embedded.
-
-use std::env;
-use std::path::PathBuf;
-use std::process::Command;
+//! Uses sp1-build to compile the guest program and generate the ELF binary.
+//! Falls back to empty ELF if SP1 toolchain is not available.
 
 fn main() {
-    // Get the package directory
-    let package_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Get output directory
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    let elf_dir = std::path::PathBuf::from(&out_dir).join("elf");
+    std::fs::create_dir_all(&elf_dir).ok();
 
-    // Path to the guest program
-    let guest_program = package_dir.parent().unwrap().join("neo-zkvm-program");
+    let elf_path = elf_dir.join("riscv32im-succinct-zkvm-elf");
 
-    let out_dir = env::var("OUT_DIR").unwrap_or_else(|_| "target/out".to_string());
-    let out_dir = PathBuf::from(out_dir);
+    // Check if SP1 toolchain is available
+    let has_sp1 = std::process::Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|output| output.contains("succinct"))
+        .unwrap_or(false);
 
-    // Create output directory
-    std::fs::create_dir_all(&out_dir).unwrap_or_default();
+    if has_sp1 {
+        // Build the guest program with SP1
+        sp1_build::build_program(&format!(
+            "{}/../neo-zkvm-program",
+            env!("CARGO_MANIFEST_DIR")
+        ));
 
-    let elf_path = out_dir.join("neo-zkvm-program.bin");
+        println!("cargo:rerun-if-changed=../neo-zkvm-program/src");
+    } else {
+        println!("cargo:warning=SP1 toolchain not found, using dummy ELF");
+        println!("cargo:warning=Install with: curl -L https://sp1.succinct.xyz | bash && sp1up");
 
-    // Try to build the guest program
-    println!("Checking for neo-zkvm-program build...");
-
-    let status = Command::new("cargo")
-        .args(vec![
-            "build",
-            "--package",
-            "neo-zkvm-program",
-            "--release",
-            "--manifest-path",
-            guest_program
-                .join("Cargo.toml")
-                .to_str()
-                .unwrap_or("Cargo.toml"),
-        ])
-        .current_dir(&package_dir)
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            // Copy the ELF binary
-            let release_elf = guest_program
-                .join("target")
-                .join("release")
-                .join("neo-zkvm-program");
-
-            // Try different possible binary names
-            let source_elf = if release_elf.exists() {
-                release_elf
-            } else {
-                guest_program
-                    .join("target")
-                    .join("release")
-                    .join("neo_zkvm_program")
-            };
-
-            if source_elf.exists() {
-                if let Err(e) = std::fs::copy(&source_elf, &elf_path) {
-                    println!("Warning: Could not copy ELF: {}", e);
-                } else {
-                    println!("ELF binary embedded at: {:?}", elf_path);
-                }
-            } else {
-                println!(
-                    "Warning: Guest program binary not found at {:?}",
-                    source_elf
-                );
-                println!("SP1 proof generation will use mock proofs only.");
-            }
+        // Create a dummy ELF file so include_bytes! doesn't fail
+        if !elf_path.exists() {
+            std::fs::write(&elf_path, b"DUMMY_ELF_NOT_FOR_PRODUCTION").ok();
         }
-        _ => {
-            println!("Warning: Failed to build neo-zkvm-program");
-            println!("SP1 proof generation will use mock proofs only.");
-        }
+
+        // Tell cargo we're using mock mode
+        println!("cargo:rustc-cfg=feature=\"mock-elf\"");
     }
-
-    // Tell cargo to rerun if the guest program source changes
-    println!("cargo:rerun-if-changed={}", guest_program.display());
 }
