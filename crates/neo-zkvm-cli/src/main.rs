@@ -7,7 +7,7 @@
 
 use neo_vm_core::{NeoVM, VMState};
 use neo_vm_guest::ProofInput;
-use neo_zkvm_prover::{NeoProver, ProverConfig};
+use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 use std::collections::HashMap;
 use std::env;
@@ -20,7 +20,7 @@ mod disassembler;
 use assembler::Assembler;
 use disassembler::Disassembler;
 
-const VERSION: &str = "0.2.0";
+const VERSION: &str = "0.2.1";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -99,10 +99,17 @@ EXAMPLES:
     # Inspect script structure
     neo-zkvm inspect 12139E40
 
-    # Generate ZK proof
+    # Generate ZK proof (default mode: sp1)
     neo-zkvm prove 12139E40
 
-For more information, visit: https://github.com/neonlabsorg/neo-zkvm"#,
+    # Generate ZK proof with explicit mode
+    neo-zkvm prove 12139E40 --proof-mode groth16
+    neo-zkvm prove 12139E40 -m mock
+
+    # Allow explicit SP1 fallback to mock when setup is unavailable
+    neo-zkvm prove 12139E40 -m sp1 --allow-fallback
+
+For more information, visit: https://github.com/neo-project/neo-zkvm"#,
         VERSION
     );
 }
@@ -120,7 +127,8 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     let gas_limit = parse_gas_limit(args)?;
 
     let mut vm = NeoVM::new(gas_limit);
-    let _ = vm.load_script(script);
+    vm.load_script(script)
+        .map_err(|e| format!("Failed to load script: {}", e))?;
 
     println!("Executing script...\n");
 
@@ -163,14 +171,19 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
 fn cmd_prove(args: &[String]) -> Result<(), String> {
     if args.is_empty() {
         return Err(
-            "Missing script argument.\n\nUsage: neo-zkvm prove <script>\n\nExamples:\n  \
-             neo-zkvm prove 12139E40\n  neo-zkvm prove script.bin"
+            "Missing script argument.\n\nUsage: neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback]\n\nExamples:\n  \
+             neo-zkvm prove 12139E40\n  neo-zkvm prove script.bin\n  neo-zkvm prove 12139E40 \
+             --proof-mode groth16\n  neo-zkvm prove 12139E40 -m mock\n  neo-zkvm prove 12139E40 -m sp1 \
+             --allow-fallback"
                 .to_string(),
         );
     }
 
     let script = parse_script(&args[0])?;
     let gas_limit = parse_gas_limit(args)?;
+    let proof_mode = parse_proof_mode(args)?;
+    let explicitly_requested_mode = parse_requested_proof_mode(args)?.is_some();
+    let allow_fallback = parse_allow_fallback(args);
 
     println!("Generating ZK proof...\n");
 
@@ -180,12 +193,29 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
         gas_limit,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode,
+        ..ProverConfig::default()
+    });
     let proof = prover.prove(input);
+
+    if should_error_on_fallback(
+        proof_mode,
+        proof.proof_mode,
+        explicitly_requested_mode,
+        allow_fallback,
+    ) {
+        return Err(format!(
+            "Requested proof mode {:?} but prover produced {:?}. Re-run with --allow-fallback to accept mock fallback, or fix SP1 setup.",
+            proof_mode, proof.proof_mode
+        ));
+    }
 
     println!("═══════════════════════════════════════");
     println!("  PROOF GENERATION RESULT");
     println!("═══════════════════════════════════════");
+    println!("  Requested: {:?}", proof_mode);
+    println!("  Mode:     {:?}", proof.proof_mode);
     println!("  Result:   {:?}", proof.output.result);
     println!("  Verified: {}", verify(&proof));
     println!("═══════════════════════════════════════");
@@ -250,7 +280,7 @@ fn cmd_debug(args: &[String]) -> Result<(), String> {
     let script = parse_script(&args[0])?;
     let gas_limit = parse_gas_limit(args)?;
 
-    let mut debugger = Debugger::new(script, gas_limit);
+    let mut debugger = Debugger::new(script, gas_limit)?;
     debugger.run()?;
 
     Ok(())
@@ -318,6 +348,54 @@ fn parse_gas_limit(args: &[String]) -> Result<u64, String> {
     Ok(1_000_000) // Default gas limit
 }
 
+fn parse_requested_proof_mode(args: &[String]) -> Result<Option<ProofMode>, String> {
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--proof-mode" || arg == "-m" {
+            let mode = args
+                .get(i + 1)
+                .ok_or_else(|| "Missing value for --proof-mode".to_string())?
+                .to_ascii_lowercase();
+
+            return match mode.as_str() {
+                "execute" => Ok(Some(ProofMode::Execute)),
+                "mock" => Ok(Some(ProofMode::Mock)),
+                "sp1" => Ok(Some(ProofMode::Sp1)),
+                "plonk" => Ok(Some(ProofMode::Plonk)),
+                "groth16" => Ok(Some(ProofMode::Groth16)),
+                _ => Err(
+                    "Invalid proof mode. Expected one of: execute, mock, sp1, plonk, groth16"
+                        .to_string(),
+                ),
+            };
+        }
+    }
+
+    Ok(None)
+}
+
+fn parse_proof_mode(args: &[String]) -> Result<ProofMode, String> {
+    Ok(parse_requested_proof_mode(args)?.unwrap_or(ProofMode::Sp1))
+}
+
+fn parse_allow_fallback(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--allow-fallback")
+}
+
+fn should_error_on_fallback(
+    requested_mode: ProofMode,
+    actual_mode: ProofMode,
+    explicitly_requested_mode: bool,
+    allow_fallback: bool,
+) -> bool {
+    explicitly_requested_mode
+        && !allow_fallback
+        && matches!(
+            requested_mode,
+            ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
+        )
+        && actual_mode != requested_mode
+}
+
 // ============================================================================
 // Debugger
 // ============================================================================
@@ -330,15 +408,16 @@ struct Debugger {
 }
 
 impl Debugger {
-    fn new(script: Vec<u8>, gas_limit: u64) -> Self {
+    fn new(script: Vec<u8>, gas_limit: u64) -> Result<Self, String> {
         let mut vm = NeoVM::new(gas_limit);
-        let _ = vm.load_script(script.clone());
-        Self {
+        vm.load_script(script.clone())
+            .map_err(|e| format!("Failed to load script in debugger: {}", e))?;
+        Ok(Self {
             vm,
             script,
             breakpoints: Vec::new(),
             history: Vec::new(),
-        }
+        })
     }
 
     fn run(&mut self) -> Result<(), String> {
@@ -352,7 +431,9 @@ impl Debugger {
 
         loop {
             print!("(neodbg) ");
-            stdout.flush().unwrap();
+            stdout
+                .flush()
+                .map_err(|e| format!("Failed to flush stdout: {}", e))?;
 
             let mut line = String::new();
             if stdin.lock().read_line(&mut line).is_err() {
@@ -395,7 +476,7 @@ impl Debugger {
             "print" | "p" => self.cmd_print(&parts[1..]),
             "stack" => self.cmd_stack(),
             "disasm" => self.cmd_disasm(),
-            "reset" => self.cmd_reset(),
+            "reset" => self.cmd_reset()?,
             "quit" | "q" | "exit" => return Ok(true),
             _ => {
                 println!(
@@ -591,11 +672,14 @@ Available commands:
         println!("{}", disasm.disassemble());
     }
 
-    fn cmd_reset(&mut self) {
+    fn cmd_reset(&mut self) -> Result<(), String> {
         self.vm = NeoVM::new(self.vm.gas_limit);
-        let _ = self.vm.load_script(self.script.clone());
+        self.vm
+            .load_script(self.script.clone())
+            .map_err(|e| format!("Failed to reload script: {}", e))?;
         println!("VM reset to initial state.");
         self.print_current_state();
+        Ok(())
     }
 
     fn get_current_ip(&self) -> usize {
@@ -780,5 +864,117 @@ impl<'a> Inspector<'a> {
         max_gas *= 10;
 
         (min_gas, max_gas)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neo_zkvm_prover::ProofMode;
+
+    #[test]
+    fn test_parse_proof_mode_defaults_to_sp1() {
+        let args = vec!["12139E40".to_string()];
+        let mode = parse_proof_mode(&args).unwrap();
+        assert_eq!(mode, ProofMode::Sp1);
+    }
+
+    #[test]
+    fn test_parse_proof_mode_accepts_all_modes() {
+        let cases = [
+            ("execute", ProofMode::Execute),
+            ("mock", ProofMode::Mock),
+            ("sp1", ProofMode::Sp1),
+            ("plonk", ProofMode::Plonk),
+            ("groth16", ProofMode::Groth16),
+        ];
+
+        for (mode_str, expected_mode) in cases {
+            let args = vec![
+                "12139E40".to_string(),
+                "--proof-mode".to_string(),
+                mode_str.to_string(),
+            ];
+            let mode = parse_proof_mode(&args).unwrap();
+            assert_eq!(mode, expected_mode);
+        }
+    }
+
+    #[test]
+    fn test_parse_proof_mode_accepts_short_alias() {
+        let args = vec!["12139E40".to_string(), "-m".to_string(), "mock".to_string()];
+        let mode = parse_proof_mode(&args).unwrap();
+        assert_eq!(mode, ProofMode::Mock);
+    }
+
+    #[test]
+    fn test_parse_proof_mode_rejects_invalid_mode() {
+        let args = vec![
+            "12139E40".to_string(),
+            "--proof-mode".to_string(),
+            "bad-mode".to_string(),
+        ];
+        let err = parse_proof_mode(&args).unwrap_err();
+        assert!(err.contains("Invalid proof mode"));
+    }
+
+    #[test]
+    fn test_parse_proof_mode_requires_value() {
+        let args = vec!["12139E40".to_string(), "--proof-mode".to_string()];
+        let err = parse_proof_mode(&args).unwrap_err();
+        assert!(err.contains("Missing value for --proof-mode"));
+    }
+
+    #[test]
+    fn test_parse_proof_mode_requires_value_short_alias() {
+        let args = vec!["12139E40".to_string(), "-m".to_string()];
+        let err = parse_proof_mode(&args).unwrap_err();
+        assert!(err.contains("Missing value for --proof-mode"));
+    }
+
+    #[test]
+    fn test_parse_requested_proof_mode_detects_explicit_mode() {
+        let args = vec!["12139E40".to_string(), "-m".to_string(), "sp1".to_string()];
+        let mode = parse_requested_proof_mode(&args).unwrap();
+        assert_eq!(mode, Some(ProofMode::Sp1));
+    }
+
+    #[test]
+    fn test_parse_allow_fallback_flag() {
+        let args = vec![
+            "12139E40".to_string(),
+            "-m".to_string(),
+            "sp1".to_string(),
+            "--allow-fallback".to_string(),
+        ];
+        assert!(parse_allow_fallback(&args));
+    }
+
+    #[test]
+    fn test_should_error_on_fallback_for_explicit_crypto_modes() {
+        assert!(should_error_on_fallback(
+            ProofMode::Sp1,
+            ProofMode::Mock,
+            true,
+            false,
+        ));
+        assert!(!should_error_on_fallback(
+            ProofMode::Sp1,
+            ProofMode::Mock,
+            true,
+            true,
+        ));
+        assert!(!should_error_on_fallback(
+            ProofMode::Sp1,
+            ProofMode::Mock,
+            false,
+            false,
+        ));
+        assert!(!should_error_on_fallback(
+            ProofMode::Mock,
+            ProofMode::Mock,
+            true,
+            false,
+        ));
     }
 }

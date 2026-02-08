@@ -10,7 +10,8 @@ fn bench_arithmetic(c: &mut Criterion) {
     group.bench_function("add", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
-            vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
+            vm.load_script(vec![0x12, 0x13, 0x9E, 0x40])
+                .expect("add benchmark script should load");
             while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                 vm.execute_next().unwrap();
             }
@@ -22,7 +23,8 @@ fn bench_arithmetic(c: &mut Criterion) {
     group.bench_function("mul", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
-            vm.load_script(vec![0x16, 0x17, 0xA0, 0x40]);
+            vm.load_script(vec![0x16, 0x17, 0xA0, 0x40])
+                .expect("mul benchmark script should load");
             while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                 vm.execute_next().unwrap();
             }
@@ -34,7 +36,8 @@ fn bench_arithmetic(c: &mut Criterion) {
     group.bench_function("div", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
-            vm.load_script(vec![0x1F, 0x15, 0xA1, 0x40]);
+            vm.load_script(vec![0x1F, 0x15, 0xA1, 0x40])
+                .expect("div benchmark script should load");
             while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                 vm.execute_next().unwrap();
             }
@@ -51,7 +54,8 @@ fn bench_stack_ops(c: &mut Criterion) {
     group.bench_function("dup", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
-            vm.load_script(vec![0x15, 0x4A, 0x40]);
+            vm.load_script(vec![0x15, 0x4A, 0x40])
+                .expect("dup benchmark script should load");
             while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                 vm.execute_next().unwrap();
             }
@@ -62,7 +66,8 @@ fn bench_stack_ops(c: &mut Criterion) {
     group.bench_function("swap", |b| {
         b.iter(|| {
             let mut vm = NeoVM::new(1_000_000);
-            vm.load_script(vec![0x11, 0x12, 0x50, 0x40]);
+            vm.load_script(vec![0x11, 0x12, 0x50, 0x40])
+                .expect("swap benchmark script should load");
             while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                 vm.execute_next().unwrap();
             }
@@ -90,7 +95,8 @@ fn bench_loop(c: &mut Criterion) {
 
                 b.iter(|| {
                     let mut vm = NeoVM::new(1_000_000);
-                    vm.load_script(script.clone());
+                    vm.load_script(script.clone())
+                        .expect("loop benchmark script should load");
                     while !matches!(vm.state, VMState::Halt | VMState::Fault) {
                         vm.execute_next().unwrap();
                     }

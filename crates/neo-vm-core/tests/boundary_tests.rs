@@ -228,11 +228,11 @@ fn test_within_exact() {
     // Stack order: push x, then a, then b
     // within(7, 5, 10) - 5 <= 7 < 10 should be true
     let script = vec![
-        0x17,       // PUSH7 (x = 7)
-        0x15,       // PUSH5 (a = 5)
-        0x1A,       // PUSH10 (b = 10)
-        0xBB,       // WITHIN (checks 5 <= 7 < 10)
-        0x40,       // RET
+        0x17, // PUSH7 (x = 7)
+        0x15, // PUSH5 (a = 5)
+        0x1A, // PUSH10 (b = 10)
+        0xBB, // WITHIN (checks 5 <= 7 < 10)
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -263,7 +263,11 @@ fn test_and_all_ones() {
     let script = vec![0x15, 0x13, 0x91, 0x40];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
-    assert!(matches!(vm.state, VMState::Halt), "VM did not halt, state: {:?}", vm.state);
+    assert!(
+        matches!(vm.state, VMState::Halt),
+        "VM did not halt, state: {:?}",
+        vm.state
+    );
     assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5 & 3)));
 }
 
@@ -639,9 +643,9 @@ fn test_jmp_forward() {
     // JMP +2 to skip next instruction
     let script = vec![
         0x22, 0x02, // JMP +2 (skip next PUSH1)
-        0x11,       // PUSH1 (skipped)
-        0x12,       // PUSH2
-        0x40,       // RET
+        0x11, // PUSH1 (skipped)
+        0x12, // PUSH2
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -656,10 +660,10 @@ fn test_jmpif_false() {
     let mut vm = NeoVM::new(1_000_000);
     // PUSH0 (false), JMPIF should not jump, execution continues
     let script = vec![
-        0x10,       // PUSH0 (false)
+        0x10, // PUSH0 (false)
         0x24, 0x02, // JMPIF +2 (won't jump since condition is false)
-        0x11,       // PUSH1 (executed after JMPIF doesn't jump)
-        0x40,       // RET
+        0x11, // PUSH1 (executed after JMPIF doesn't jump)
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -674,10 +678,10 @@ fn test_jmpifnot_true() {
     let mut vm = NeoVM::new(1_000_000);
     // PUSH1 (true), JMPIFNOT should not jump since condition is true
     let script = vec![
-        0x11,       // PUSH1 (true)
+        0x11, // PUSH1 (true)
         0x26, 0x02, // JMPIFNOT +2 (won't jump since condition is true)
-        0x12,       // PUSH2 (executed)
-        0x40,       // RET
+        0x12, // PUSH2 (executed)
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -691,11 +695,11 @@ fn test_jmpeq_true() {
     let mut vm = NeoVM::new(1_000_000);
     // 5 == 5, JMPEQ should jump and consume both values
     let script = vec![
-        0x15,       // PUSH5 (a)
-        0x15,       // PUSH5 (b)  
+        0x15, // PUSH5 (a)
+        0x15, // PUSH5 (b)
         0x28, 0x02, // JMPEQ +2 (5 == 5, so jump)
-        0x11,       // PUSH1 (skipped due to jump)
-        0x40,       // RET
+        0x11, // PUSH1 (skipped due to jump)
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -709,11 +713,11 @@ fn test_jmpeq_false() {
     let mut vm = NeoVM::new(1_000_000);
     // 5 != 3, JMPEQ should NOT jump
     let script = vec![
-        0x15,       // PUSH5 (a)
-        0x13,       // PUSH3 (b)
+        0x15, // PUSH5 (a)
+        0x13, // PUSH3 (b)
         0x28, 0x02, // JMPEQ +2 (5 != 3, so no jump)
-        0x11,       // PUSH1 (executed)
-        0x40,       // RET
+        0x11, // PUSH1 (executed)
+        0x40, // RET
     ];
     let _ = vm.load_script(script);
     run_vm(&mut vm);
@@ -748,17 +752,17 @@ fn test_stack_depth_limit() {
 fn test_stack_overflow_protection() {
     // Create VM with small stack limit to test overflow protection
     let mut vm = NeoVM::with_limits(1_000_000, 10, 1024); // max_stack_depth = 10
-    
+
     // Try to push 15 items (exceeds limit of 10)
     let mut script = Vec::new();
     for _ in 0..15 {
         script.push(0x11); // PUSH1
     }
     script.push(0x40); // RET
-    
+
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
-    
+
     // Should fault due to stack overflow
     assert!(matches!(vm.state, VMState::Fault));
 }
@@ -767,13 +771,13 @@ fn test_stack_overflow_protection() {
 fn test_stack_exactly_at_limit() {
     // Create VM with stack limit of 5
     let mut vm = NeoVM::with_limits(1_000_000, 5, 1024);
-    
+
     // Push exactly 5 items (at limit)
     let script = vec![0x11, 0x11, 0x11, 0x11, 0x11, 0x40];
-    
+
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
-    
+
     // Should succeed
     assert!(matches!(vm.state, VMState::Halt));
     assert_eq!(vm.eval_stack.len(), 5);
@@ -787,18 +791,18 @@ fn test_stack_exactly_at_limit() {
 fn test_invocation_depth_protection() {
     // Create VM with small invocation limit
     let mut vm = NeoVM::with_limits(1_000_000, 2048, 2); // max_invocation_depth = 2
-    
+
     // Script that calls itself (recursion)
     // PUSH0, CALL +0 (calls itself), RET
     let script = vec![
-        0x10,       // PUSH0
+        0x10, // PUSH0
         0x34, 0x00, // CALL +0 (calls from offset 2 back to offset 2)
-        0x40,       // RET
+        0x40, // RET
     ];
-    
+
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
-    
+
     // Should fault due to invocation depth exceeded
     assert!(matches!(vm.state, VMState::Fault));
 }
@@ -807,19 +811,19 @@ fn test_invocation_depth_protection() {
 fn test_multiple_load_script_exceeds_limit() {
     // Create VM with invocation limit of 3
     let mut vm = NeoVM::with_limits(1_000_000, 2048, 3);
-    
+
     // Load first script
     let script1 = vec![0x11, 0x40]; // PUSH1, RET
     assert!(vm.load_script(script1).is_ok());
-    
+
     // Load second script
     let script2 = vec![0x12, 0x40]; // PUSH2, RET
     assert!(vm.load_script(script2).is_ok());
-    
+
     // Load third script
     let script3 = vec![0x13, 0x40]; // PUSH3, RET
     assert!(vm.load_script(script3).is_ok());
-    
+
     // Fourth script should fail (exceeds limit of 3)
     let script4 = vec![0x14, 0x40]; // PUSH4, RET
     assert!(vm.load_script(script4).is_err());

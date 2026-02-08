@@ -1,17 +1,45 @@
 //! Build script for SP1 integration
 //!
-//! Uses sp1-build to compile the guest program and generate the ELF binary.
-//! Falls back to empty ELF if SP1 toolchain is not available.
+//! Uses `sp1-build` to compile the guest program and generate the ELF binary.
+//! Falls back to a dummy ELF when the SP1 program source is not available
+//! (e.g. when building from a published crate outside this workspace).
+
+use std::path::{Path, PathBuf};
+
+fn write_dummy_elf(elf_path: &Path, marker: &[u8]) {
+    if !elf_path.exists() {
+        let _ = std::fs::write(elf_path, marker);
+    }
+}
+
+fn resolve_program_dir(manifest_dir: &Path) -> Option<PathBuf> {
+    if let Ok(from_env) = std::env::var("NEO_ZKVM_PROGRAM_DIR") {
+        let path = PathBuf::from(&from_env);
+        if path.join("Cargo.toml").exists() {
+            return Some(path);
+        }
+        println!(
+            "cargo:warning=NEO_ZKVM_PROGRAM_DIR is set to '{}' but no Cargo.toml exists there",
+            from_env
+        );
+    }
+
+    let workspace_path = manifest_dir.join("../neo-zkvm-program");
+    if workspace_path.join("Cargo.toml").exists() {
+        Some(workspace_path)
+    } else {
+        None
+    }
+}
 
 fn main() {
-    // Get output directory
-    let out_dir = std::env::var("OUT_DIR").unwrap();
-    let elf_dir = std::path::PathBuf::from(&out_dir).join("elf");
-    std::fs::create_dir_all(&elf_dir).ok();
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR must be set");
+    let elf_dir = PathBuf::from(&out_dir).join("elf");
+    let _ = std::fs::create_dir_all(&elf_dir);
 
     let elf_path = elf_dir.join("riscv32im-succinct-zkvm-elf");
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    // Check if SP1 toolchain is available
     let has_sp1 = std::process::Command::new("rustup")
         .args(["toolchain", "list"])
         .output()
@@ -21,23 +49,72 @@ fn main() {
         .unwrap_or(false);
 
     if has_sp1 {
-        // Build the guest program with SP1
-        sp1_build::build_program(&format!(
-            "{}/../neo-zkvm-program",
-            env!("CARGO_MANIFEST_DIR")
-        ));
+        let is_clippy_invocation = std::env::var("RUSTC_WORKSPACE_WRAPPER")
+            .map(|val| val.contains("clippy-driver"))
+            .unwrap_or(false);
+        let skip_program_build = std::env::var("SP1_SKIP_PROGRAM_BUILD")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
 
-        println!("cargo:rerun-if-changed=../neo-zkvm-program/src");
+        if let Some(program_dir) = resolve_program_dir(&manifest_dir) {
+            let build_args = sp1_build::BuildArgs {
+                output_directory: Some(elf_dir.to_string_lossy().to_string()),
+                elf_name: Some("riscv32im-succinct-zkvm-elf".to_string()),
+                ..sp1_build::BuildArgs::default()
+            };
+
+            sp1_build::build_program_with_args(&program_dir.to_string_lossy(), build_args);
+
+            if !elf_path.exists() {
+                let workspace_elf_path = manifest_dir.join(
+                    "../../target/elf-compilation/riscv32im-succinct-zkvm-elf/release/neo-zkvm-program",
+                );
+
+                if workspace_elf_path.exists() {
+                    std::fs::copy(&workspace_elf_path, &elf_path).unwrap_or_else(|e| {
+                        panic!(
+                            "Failed to copy SP1 ELF from {} to {}: {}",
+                            workspace_elf_path.display(),
+                            elf_path.display(),
+                            e
+                        )
+                    });
+                } else if is_clippy_invocation || skip_program_build {
+                    println!(
+                        "cargo:warning=SP1 ELF not present during clippy/skip build; using temporary dummy ELF"
+                    );
+                    write_dummy_elf(&elf_path, b"DUMMY_ELF_FOR_CLIPPY");
+                } else {
+                    panic!(
+                        "SP1 build completed but ELF was not found at {}",
+                        elf_path.display()
+                    );
+                }
+            }
+
+            println!(
+                "cargo:rerun-if-changed={}",
+                program_dir.join("src").display()
+            );
+            println!(
+                "cargo:rerun-if-changed={}",
+                program_dir.join("Cargo.toml").display()
+            );
+            println!("cargo:rerun-if-env-changed=NEO_ZKVM_PROGRAM_DIR");
+        } else {
+            println!(
+                "cargo:warning=SP1 toolchain found but neo-zkvm-program source is unavailable; using dummy ELF"
+            );
+            println!(
+                "cargo:warning=Set NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program to enable SP1 ELF compilation"
+            );
+            write_dummy_elf(&elf_path, b"DUMMY_ELF_NO_PROGRAM_SOURCE");
+            println!("cargo:rustc-cfg=feature=\"mock-elf\"");
+        }
     } else {
         println!("cargo:warning=SP1 toolchain not found, using dummy ELF");
         println!("cargo:warning=Install with: curl -L https://sp1.succinct.xyz | bash && sp1up");
-
-        // Create a dummy ELF file so include_bytes! doesn't fail
-        if !elf_path.exists() {
-            std::fs::write(&elf_path, b"DUMMY_ELF_NOT_FOR_PRODUCTION").ok();
-        }
-
-        // Tell cargo we're using mock mode
+        write_dummy_elf(&elf_path, b"DUMMY_ELF_NOT_FOR_PRODUCTION");
         println!("cargo:rustc-cfg=feature=\"mock-elf\"");
     }
 }

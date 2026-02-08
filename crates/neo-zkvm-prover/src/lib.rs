@@ -8,8 +8,11 @@
 //! use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
 //! use neo_vm_guest::ProofInput;
 //!
-//! // Create prover with default config
-//! let prover = NeoProver::new(ProverConfig::default());
+//! // Use mock mode for local/debug development.
+//! let prover = NeoProver::new(ProverConfig {
+//!     proof_mode: ProofMode::Mock,
+//!     ..Default::default()
+//! });
 //!
 //! // Define input
 //! let input = ProofInput {
@@ -37,6 +40,9 @@ pub const NEO_ZKVM_ELF: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/elf/riscv32im-succinct-zkvm-elf"));
 
 const BINCODE_LIMIT: u64 = 10 * 1024 * 1024; // 10MB limit
+
+type DynError = Box<dyn std::error::Error>;
+type Sp1ProofArtifacts = (Vec<u8>, [u8; 32], PublicInputs);
 
 fn bincode_options() -> impl Options {
     bincode::DefaultOptions::new()
@@ -120,6 +126,18 @@ impl NeoProver {
         !NEO_ZKVM_ELF.starts_with(b"DUMMY")
     }
 
+    fn sp1_unavailable_reason() -> &'static str {
+        if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_NO_PROGRAM_SOURCE") {
+            "SP1 prover was built without neo-zkvm-program source"
+        } else if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_NOT_FOR_PRODUCTION") {
+            "SP1 toolchain is not installed"
+        } else if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_FOR_CLIPPY") {
+            "SP1 ELF build was skipped for clippy/analysis"
+        } else {
+            "SP1 ELF is unavailable"
+        }
+    }
+
     /// Create a new prover with the given configuration
     ///
     /// If SP1 is not available, it will fall back to mock mode.
@@ -153,20 +171,22 @@ impl NeoProver {
         let sp1_available = Self::is_elf_available();
 
         // Generate proof based on mode (fallback to mock if SP1 not available)
-        let (proof_bytes, vkey_hash, actual_mode, sp1_public_inputs) =
-            match self.config.proof_mode {
-                ProofMode::Execute => (vec![], [0u8; 32], ProofMode::Execute, None),
-                ProofMode::Mock => (
-                    self.generate_mock_proof(&public_inputs),
-                    [0u8; 32],
-                    ProofMode::Mock,
-                    None,
-                ),
+        let (proof_bytes, vkey_hash, actual_mode, sp1_public_inputs) = match self.config.proof_mode
+        {
+            ProofMode::Execute => (vec![], [0u8; 32], ProofMode::Execute, None),
+            ProofMode::Mock => (
+                self.generate_mock_proof(&public_inputs),
+                [0u8; 32],
+                ProofMode::Mock,
+                None,
+            ),
             ProofMode::Sp1 if sp1_available => {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Compressed) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Sp1, Some(inputs)),
-                    Err(_) => {
-                        eprintln!("Warning: SP1 proof generation failed, falling back to mock");
+                    Err(err) => {
+                        eprintln!(
+                            "Warning: SP1 proof generation failed ({err}), falling back to mock"
+                        );
                         (
                             self.generate_mock_proof(&public_inputs),
                             [0u8; 32],
@@ -179,8 +199,10 @@ impl NeoProver {
             ProofMode::Plonk if sp1_available => {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Plonk) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Plonk, Some(inputs)),
-                    Err(_) => {
-                        eprintln!("Warning: PLONK proof generation failed, falling back to mock");
+                    Err(err) => {
+                        eprintln!(
+                            "Warning: PLONK proof generation failed ({err}), falling back to mock"
+                        );
                         (
                             self.generate_mock_proof(&public_inputs),
                             [0u8; 32],
@@ -193,8 +215,8 @@ impl NeoProver {
             ProofMode::Groth16 if sp1_available => {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Groth16) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Groth16, Some(inputs)),
-                    Err(_) => {
-                        eprintln!("Warning: Groth16 proof generation failed, falling back to mock");
+                    Err(err) => {
+                        eprintln!("Warning: Groth16 proof generation failed ({err}), falling back to mock");
                         (
                             self.generate_mock_proof(&public_inputs),
                             [0u8; 32],
@@ -206,7 +228,10 @@ impl NeoProver {
             }
             // Fallback to mock for SP1 modes when ELF not available
             _ => {
-                eprintln!("Warning: SP1 ELF not available, falling back to mock proof");
+                eprintln!(
+                    "Warning: {}. Falling back to mock proof. For real SP1 proofs, build from source or reinstall with NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program.",
+                    Self::sp1_unavailable_reason()
+                );
                 (
                     self.generate_mock_proof(&public_inputs),
                     [0u8; 32],
@@ -214,7 +239,7 @@ impl NeoProver {
                     None,
                 )
             }
-            };
+        };
 
         if let Some(inputs) = sp1_public_inputs {
             public_inputs = inputs;
@@ -281,10 +306,14 @@ impl NeoProver {
         &self,
         input: &ProofInput,
         mode: sp1_sdk::SP1ProofMode,
-    ) -> Result<(Vec<u8>, [u8; 32], PublicInputs), Box<dyn std::error::Error>> {
+    ) -> Result<Sp1ProofArtifacts, DynError> {
+        if cfg!(debug_assertions) {
+            return Err("SP1 proving requires a release build (--release)".into());
+        }
+
         // Only run if ELF is available
         if !Self::is_elf_available() {
-            return Err("SP1 ELF not available".into());
+            return Err(Self::sp1_unavailable_reason().into());
         }
 
         let prover = ProverClient::from_env();
@@ -310,7 +339,7 @@ impl NeoProver {
         Ok((proof_bytes, vkey_hash, public_inputs))
     }
 
-    fn verify_sp1_proof(&self, proof: &NeoProof) -> Result<bool, Box<dyn std::error::Error>> {
+    fn verify_sp1_proof(&self, proof: &NeoProof) -> Result<bool, DynError> {
         if !Self::is_elf_available() {
             return Ok(false);
         }
@@ -369,9 +398,7 @@ pub enum GuestStackItem {
     ByteString(Vec<u8>),
 }
 
-fn decode_public_inputs(
-    values: &SP1PublicValues,
-) -> Result<PublicInputs, Box<dyn std::error::Error>> {
+fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, DynError> {
     Ok(bincode_options().deserialize(values.as_slice())?)
 }
 

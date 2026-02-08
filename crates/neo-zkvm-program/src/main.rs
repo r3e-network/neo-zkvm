@@ -294,20 +294,12 @@ impl NeoVM {
                 }
             }
 
-            // Crypto - use SP1 precompiles when available
-            #[cfg(target_os = "zkvm")]
+            // Crypto
             0xF0 => {
-                // SHA256 - use SP1 precompile for better performance
+                // SHA256
                 let data = self.eval_stack.pop().ok_or("Stack underflow")?;
                 let bytes = data.to_bytes();
-                let result = sp1_zkvm::precompiles::sha256::sha256(&bytes);
-                self.eval_stack.push(StackItem::ByteString(result.to_vec()));
-            }
-            #[cfg(not(target_os = "zkvm"))]
-            0xF0 => {
-                // SHA256 - fallback implementation for testing
-                let data = self.eval_stack.pop().ok_or("Stack underflow")?;
-                let result = sha256_hash(&data.to_bytes());
+                let result = sha256_hash(&bytes);
                 self.eval_stack.push(StackItem::ByteString(result.to_vec()));
             }
 
@@ -327,8 +319,7 @@ impl NeoVM {
     }
 }
 
-/// SHA256 hash function (fallback for non-zkVM targets)
-#[cfg(not(target_os = "zkvm"))]
+/// SHA256 hash function
 fn sha256_hash(data: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -344,10 +335,10 @@ pub fn zkvm_main() {
 
     // Compute input hash
     let input_bytes = bincode::serialize(&input).unwrap_or_default();
-    let input_hash = sp1_zkvm::precompiles::sha256::sha256(&input_bytes);
+    let input_hash = sha256_hash(&input_bytes);
 
     // Compute script hash
-    let script_hash = sp1_zkvm::precompiles::sha256::sha256(&input.script);
+    let script_hash = sha256_hash(&input.script);
 
     // Create VM and execute
     let mut vm = NeoVM::new(input.gas_limit);
@@ -379,7 +370,7 @@ pub fn zkvm_main() {
 
     // Compute output hash
     let result_bytes = bincode::serialize(&vm.eval_stack).unwrap_or_default();
-    let output_hash: [u8; 32] = sp1_zkvm::precompiles::sha256::sha256(&result_bytes).into();
+    let output_hash = sha256_hash(&result_bytes);
 
     // Create public values
     let public_values = PublicValues {

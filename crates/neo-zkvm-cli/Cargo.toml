@@ -2,15 +2,18 @@
 name = "neo-zkvm-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for Neo zkVM script execution, proving, and verification"
 
 [[bin]]
 name = "neo-zkvm"
 path = "src/main.rs"
 
 [dependencies]
-neo-vm-core = { path = "../neo-vm-core" }
-neo-vm-guest = { path = "../neo-vm-guest" }
-neo-zkvm-prover = { path = "../neo-zkvm-prover" }
-neo-zkvm-verifier = { path = "../neo-zkvm-verifier" }
+neo-vm-core = { workspace = true }
+neo-vm-guest = { workspace = true }
+neo-zkvm-prover = { workspace = true }
+neo-zkvm-verifier = { workspace = true }
 anyhow.workspace = true
 hex.workspace = true

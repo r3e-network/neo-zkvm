@@ -35,15 +35,28 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 ## Quick Start
 
 ```bash
-# Install
-cargo install neo-zkvm-cli
+# Install from crates.io
+CARGO_TARGET_DIR=/tmp/target cargo install neo-zkvm-cli
 
 # Run a script
 neo-zkvm run 12139E40  # 2 + 3
 
-# Generate ZK proof
+# Generate ZK proof (default: SP1)
 neo-zkvm prove 12139E40
+
+# Select proof mode explicitly (--proof-mode or -m)
+neo-zkvm prove 12139E40 -m mock
+neo-zkvm prove 12139E40 -m groth16
+
+# Explicit SP1 mode with fallback allowed
+neo-zkvm prove 12139E40 -m sp1 --allow-fallback
+
+# Valid modes: execute | mock | sp1 | plonk | groth16
 ```
+
+> For production SP1 proofs from a crates.io install, build from source, or reinstall with `NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program` so the SP1 guest ELF is compiled at install time.
+>
+> Explicit `-m sp1/plonk/groth16` now fails if it downgrades to `mock` unless you pass `--allow-fallback`.
 
 ## Installation
 
@@ -59,9 +72,9 @@ cargo build --release
 
 ```toml
 [dependencies]
-neo-vm-core = "0.1"
-neo-zkvm-prover = "0.1"
-neo-zkvm-verifier = "0.1"
+neo-vm-core = "0.2"
+neo-zkvm-prover = "0.2"
+neo-zkvm-verifier = "0.2"
 ```
 
 ## Usage

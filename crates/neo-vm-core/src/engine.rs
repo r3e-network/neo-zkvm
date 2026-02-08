@@ -1217,7 +1217,10 @@ impl NeoVM {
                     let script = ctx.script.clone();
                     (return_ip, target_ip, script)
                 };
-                self.invocation_stack.push(ExecutionContext { script, ip: target_ip });
+                self.invocation_stack.push(ExecutionContext {
+                    script,
+                    ip: target_ip,
+                });
                 // Store return address (simplified)
                 self.push(StackItem::Pointer(return_ip as u32))?;
             }

@@ -2,8 +2,11 @@
 name = "neo-vm-guest"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Guest-side VM types and serialization helpers for proof inputs"
 
 [dependencies]
-neo-vm-core = { path = "../neo-vm-core" }
+neo-vm-core = { workspace = true }
 serde.workspace = true
 bincode.workspace = true

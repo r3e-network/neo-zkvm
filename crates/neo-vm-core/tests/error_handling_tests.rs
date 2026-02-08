@@ -371,6 +371,9 @@ fn test_syscall_missing_bytes_faults() {
 fn test_newarray_negative_size_faults() {
     let mut vm = NeoVM::new(1_000_000);
     vm.load_script(vec![0x0F, 0xC3]).unwrap(); // PUSHM1, NEWARRAY
-    let err = vm.execute_next().and_then(|_| vm.execute_next()).unwrap_err();
+    let err = vm
+        .execute_next()
+        .and_then(|_| vm.execute_next())
+        .unwrap_err();
     assert!(matches!(err, VMError::InvalidOperation));
 }

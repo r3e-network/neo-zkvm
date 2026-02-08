@@ -16,7 +16,8 @@ fn benchmark_arithmetic() {
 
     for _ in 0..iterations {
         let mut vm = NeoVM::new(1_000_000);
-        vm.load_script(script.clone());
+        vm.load_script(script.clone())
+            .expect("benchmark script should load");
         while !matches!(vm.state, VMState::Halt | VMState::Fault) {
             let _ = vm.execute_next();
         }

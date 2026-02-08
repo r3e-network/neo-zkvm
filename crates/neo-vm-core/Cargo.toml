@@ -2,6 +2,9 @@
 name = "neo-vm-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core Neo VM engine, opcodes, storage, and native contracts"
 
 [dependencies]
 thiserror.workspace = true
@@ -17,6 +20,13 @@ k256.workspace = true
 hex.workspace = true
 base64 = "0.22"
 
+[dev-dependencies]
+criterion = "0.5"
+
 [[bench]]
 name = "vm_bench"
+harness = false
+
+[[bench]]
+name = "comprehensive_bench"
 harness = false

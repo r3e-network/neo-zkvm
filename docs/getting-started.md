@@ -51,8 +51,11 @@ neo-zkvm-verifier = { git = "https://github.com/neo-project/neo-zkvm" }
 ### Installing the CLI
 
 ```bash
-# Install the CLI tool
+# Install the CLI tool from this repo
 cargo install --path crates/neo-zkvm-cli
+
+# Install from crates.io (recommended target-dir workaround for SP1 deps)
+CARGO_TARGET_DIR=/tmp/target cargo install neo-zkvm-cli
 
 # Verify installation
 neo-zkvm --version
@@ -177,13 +180,34 @@ fn main() {
 ### Using the CLI
 
 ```bash
-# Generate a proof for a script
+# Generate a proof for a script (default: sp1)
 neo-zkvm prove 12139e40
+
+# Fast local development/debug mode
+neo-zkvm prove 12139e40 -m mock
+
+# SP1 proving in release mode
+cargo run -p neo-zkvm-cli --release -- prove 12139e40 -m sp1
+
+# You can also use execute/plonk/groth16
+# neo-zkvm prove 12139e40 -m execute
+# neo-zkvm prove 12139e40 -m plonk
+# neo-zkvm prove 12139e40 -m groth16
+
+# If SP1 is unavailable but you want to proceed with mock fallback
+neo-zkvm prove 12139e40 -m sp1 --allow-fallback
+
+# Valid modes for --proof-mode / -m:
+# execute, mock, sp1, plonk, groth16
 
 # Output:
 # Result: [Integer(5)]
 # Verified: true
 ```
+
+For production SP1 proofs from a crates.io install, either build from source or reinstall with `NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program` so the guest ELF is compiled during installation.
+
+Explicit `-m sp1/plonk/groth16` fails on downgrade to `mock` unless `--allow-fallback` is set.
 
 ## Working with Storage
 
@@ -362,6 +386,11 @@ curl -L https://sp1.succinct.xyz | bash
 sp1up
 ```
 
+**`cargo install neo-zkvm-cli` fails with `OUT_DIR does not have parent called "target"`:**
+```bash
+CARGO_TARGET_DIR=/tmp/target cargo install neo-zkvm-cli
+```
+
 **Out of gas error:**
 ```rust
 // Increase gas limit
@@ -376,5 +405,3 @@ let mut vm = NeoVM::new(10_000_000);
 
 - **GitHub Issues**: [neo-project/neo-zkvm](https://github.com/neo-project/neo-zkvm/issues)
 - **Neo Documentation**: [docs.neo.org](https://docs.neo.org)
-```
-```

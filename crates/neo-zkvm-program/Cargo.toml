@@ -2,6 +2,9 @@
 name = "neo-zkvm-program"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SP1 guest program for proving Neo VM execution"
 
 [dependencies]
 sp1-zkvm = "4.0"
