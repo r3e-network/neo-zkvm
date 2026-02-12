@@ -25,14 +25,18 @@ fn main() {
 
     // Mint initial supply to owner
     let initial_supply: u64 = 1_000_000_000 * 10u64.pow(8); // 1 billion NEOX
-    storage.put(
-        &ctx,
-        &[b"balance:", owner.as_slice()].concat(),
-        &initial_supply.to_le_bytes(),
-    );
-    storage.put(&ctx, b"total_supply", &initial_supply.to_le_bytes());
-    storage.put(&ctx, b"symbol", b"NEOX");
-    storage.put(&ctx, b"decimals", &[8u8]);
+    storage
+        .put(
+            &ctx,
+            &[b"balance:", owner.as_slice()].concat(),
+            &initial_supply.to_le_bytes(),
+        )
+        .unwrap();
+    storage
+        .put(&ctx, b"total_supply", &initial_supply.to_le_bytes())
+        .unwrap();
+    storage.put(&ctx, b"symbol", b"NEOX").unwrap();
+    storage.put(&ctx, b"decimals", &[8u8]).unwrap();
 
     println!("Token: NEOX (8 decimals)");
     println!("Initial supply: {} NEOX", format_tokens(initial_supply, 8));
@@ -59,16 +63,20 @@ fn main() {
         .checked_add(transfer_amount)
         .expect("Balance overflow");
 
-    storage.put(
-        &ctx,
-        &[b"balance:", owner.as_slice()].concat(),
-        &new_owner_balance.to_le_bytes(),
-    );
-    storage.put(
-        &ctx,
-        &[b"balance:", alice.as_slice()].concat(),
-        &alice_balance.to_le_bytes(),
-    );
+    storage
+        .put(
+            &ctx,
+            &[b"balance:", owner.as_slice()].concat(),
+            &new_owner_balance.to_le_bytes(),
+        )
+        .unwrap();
+    storage
+        .put(
+            &ctx,
+            &[b"balance:", alice.as_slice()].concat(),
+            &alice_balance.to_le_bytes(),
+        )
+        .unwrap();
 
     // Record transfer event
     record_transfer(&mut storage, &ctx, owner, alice, transfer_amount);
@@ -186,7 +194,7 @@ fn record_transfer(
         &amount.to_le_bytes(),
     ]
     .concat();
-    storage.put(ctx, &transfer_key, &transfer_data);
+    storage.put(ctx, &transfer_key, &transfer_data).unwrap();
 }
 
 fn format_tokens(amount: u64, decimals: u32) -> String {

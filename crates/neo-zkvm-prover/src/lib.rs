@@ -89,18 +89,34 @@ pub struct ProverConfig {
     pub proof_mode: ProofMode,
 }
 
-/// Proof mode - determines the type of proof generated
+/// Proof mode - determines the type of proof generated.
+///
+/// Each mode trades off between proving speed, proof size, and verification cost:
+///
+/// | Mode      | Proving Speed | Proof Size | Verification Cost | Use Case                        |
+/// |-----------|---------------|------------|-------------------|---------------------------------|
+/// | Execute   | Instant       | None       | N/A (no proof)    | Local debugging, dry-runs       |
+/// | Mock      | Fast          | Small      | Cheap (hash only) | Unit tests, CI pipelines        |
+/// | Sp1       | Slow          | Large      | Medium            | Off-chain verification          |
+/// | Plonk     | Slower        | Medium     | Lower             | On-chain with moderate gas cost |
+/// | Groth16   | Slowest       | Smallest   | Lowest            | Ethereum L1 verification        |
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProofMode {
-    /// Execute only, no proof generation (fastest)
+    /// Execute only, no proof generation (fastest).
+    /// Useful for local debugging and dry-runs where no cryptographic guarantee is needed.
     Execute,
-    /// Mock proof for testing (fast, not verifiable)
+    /// Mock proof for testing (fast, not cryptographically secure).
+    /// Produces a commitment-based proof suitable for unit tests and CI, but not
+    /// verifiable by a third party.
     Mock,
-    /// SP1 compressed proof (fast verification, larger proof)
+    /// SP1 compressed proof (fast verification, larger proof).
+    /// Good default for off-chain verification where proof size is not critical.
     Sp1,
-    /// SP1 PLONK proof (medium verification cost, smaller proof)
+    /// SP1 PLONK proof (medium verification cost, smaller proof).
+    /// Suitable for on-chain verification with moderate gas budgets.
     Plonk,
-    /// SP1 Groth16 proof (slowest verification, smallest proof, best for Ethereum)
+    /// SP1 Groth16 proof (slowest to generate, smallest proof, cheapest to verify).
+    /// Best choice for Ethereum L1 verification where gas cost must be minimized.
     Groth16,
 }
 
@@ -145,18 +161,49 @@ impl NeoProver {
         Self { config }
     }
 
-    /// Generate a proof for the given input
+    /// Maximum allowed script size (1 MB).
+    const MAX_SCRIPT_SIZE: usize = 1024 * 1024;
+
+    /// Generate a proof for the given input.
     ///
     /// The proof mode in the config determines what type of proof is generated.
     /// If SP1 is not available, automatically falls back to mock mode.
+    ///
+    /// Returns a faulted `NeoProof` if the input script exceeds 1 MB.
     pub fn prove(&self, input: ProofInput) -> NeoProof {
+        // Validate input script size before doing any work
+        if input.script.len() > Self::MAX_SCRIPT_SIZE {
+            return NeoProof {
+                output: ProofOutput {
+                    state: 1,
+                    result: Some(neo_vm_core::StackItem::Boolean(false)),
+                    gas_consumed: 0,
+                    error: Some(format!(
+                        "Script size {} bytes exceeds maximum allowed size of {} bytes",
+                        input.script.len(),
+                        Self::MAX_SCRIPT_SIZE,
+                    )),
+                },
+                proof_bytes: vec![],
+                public_inputs: PublicInputs {
+                    script_hash: [0u8; 32],
+                    input_hash: [0u8; 32],
+                    output_hash: [0u8; 32],
+                    gas_consumed: 0,
+                    execution_success: false,
+                },
+                vkey_hash: [0u8; 32],
+                proof_mode: self.config.proof_mode,
+            };
+        }
+
         // Compute hashes for public inputs
         let script_hash = Self::hash_data(&input.script);
         let input_hash = Self::hash_guest_input(&input);
 
         // Execute to get output (used for all modes)
         let output = execute(input.clone());
-        let output_bytes = bincode::serialize(&output).unwrap_or_default();
+        let output_bytes = bincode_options().serialize(&output).unwrap_or_default();
         let output_hash = Self::hash_data(&output_bytes);
 
         let mut public_inputs = PublicInputs {
@@ -275,7 +322,9 @@ impl NeoProver {
 
     fn hash_guest_input(input: &ProofInput) -> [u8; 32] {
         let guest_input = build_guest_input(input);
-        let bytes = bincode::serialize(&guest_input).unwrap_or_default();
+        let bytes = bincode_options()
+            .serialize(&guest_input)
+            .unwrap_or_default();
         Self::hash_data(&bytes)
     }
 
@@ -288,11 +337,11 @@ impl NeoProver {
                 .unwrap_or_default()
                 .as_secs(),
         };
-        bincode::serialize(&mock).unwrap_or_default()
+        bincode_options().serialize(&mock).unwrap_or_default()
     }
 
     fn verify_mock_proof(&self, proof: &NeoProof) -> bool {
-        match bincode::deserialize::<MockProof>(&proof.proof_bytes) {
+        match bincode_options().deserialize::<MockProof>(&proof.proof_bytes) {
             Ok(mock) => {
                 let expected = Self::compute_commitment(&proof.public_inputs);
                 mock.commitment == expected
@@ -333,8 +382,8 @@ impl NeoProver {
         prover.verify(&proof, &vk)?;
 
         let public_inputs = decode_public_inputs(&proof.public_values)?;
-        let proof_bytes = bincode::serialize(&proof)?;
-        let vkey_hash = Self::hash_data(&bincode::serialize(&vk)?);
+        let proof_bytes = bincode_options().serialize(&proof)?;
+        let vkey_hash = Self::hash_data(&bincode_options().serialize(&vk)?);
 
         Ok((proof_bytes, vkey_hash, public_inputs))
     }
@@ -410,6 +459,14 @@ fn public_inputs_equal(a: &PublicInputs, b: &PublicInputs) -> bool {
         && a.execution_success == b.execution_success
 }
 
+/// Convert a `ProofInput` (using `neo_vm_core::StackItem` with 9 variants) into a
+/// `GuestInput` (using `GuestStackItem` with 4 variants).
+///
+/// WARNING: This is a lossy conversion by design. The following `StackItem` variants
+/// are mapped to `GuestStackItem::Null` because the zkVM guest program does not
+/// support them: `Buffer`, `Array`, `Struct`, `Map`, `Pointer`.
+/// Callers must ensure inputs only use the supported subset, or accept that
+/// unsupported variants will be silently converted to Null.
 fn build_guest_input(input: &ProofInput) -> GuestInput {
     GuestInput {
         script: input.script.clone(),
@@ -486,9 +543,56 @@ mod tests {
         };
 
         let guest = build_guest_input(&input);
-        let bytes = bincode::serialize(&guest).expect("serialize");
+        let bytes = bincode_options().serialize(&guest).expect("serialize");
         let hash = NeoProver::hash_data(&bytes);
 
         assert_eq!(hash, NeoProver::hash_guest_input(&input));
+    }
+
+    #[test]
+    fn test_mock_proof_tamper_detection() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let mut proof = prover.prove(input);
+        proof.public_inputs.script_hash[0] ^= 0xFF;
+        assert!(!prover.verify(&proof));
+    }
+
+    #[test]
+    fn test_proof_output_contains_result() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+        assert_eq!(proof.output.state, 0);
+        assert!(proof.output.gas_consumed > 0);
+    }
+
+    #[test]
+    fn test_faulting_script_produces_failed_proof() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+        assert_ne!(proof.output.state, 0);
     }
 }

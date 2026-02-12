@@ -67,8 +67,11 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
             if proof.output.state != 0 {
                 return VerificationResult {
                     valid: false,
-                    error: Some("Execution faulted".to_string()),
-                    proof_type: ProofType::Unknown,
+                    error: Some(format!(
+                        "Execution fault: VM exited with state {} (expected 0/Halt)",
+                        proof.output.state
+                    )),
+                    proof_type: ProofType::Empty,
                 };
             }
             VerificationResult {
@@ -81,8 +84,11 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
             if proof.output.state != 0 {
                 return VerificationResult {
                     valid: false,
-                    error: Some("Execution faulted".to_string()),
-                    proof_type: ProofType::Unknown,
+                    error: Some(format!(
+                        "Execution fault: VM exited with state {} (expected 0/Halt)",
+                        proof.output.state
+                    )),
+                    proof_type: ProofType::Mock,
                 };
             }
 
@@ -92,12 +98,38 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
                 error: if result {
                     None
                 } else {
-                    Some("Mock proof verification failed".to_string())
+                    Some(
+                        "Mock proof verification failed: commitment does not match public inputs"
+                            .to_string(),
+                    )
                 },
                 proof_type: ProofType::Mock,
             }
         }
-        ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => verify_sp1_proof(proof),
+        ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
+            let expected_type = match proof.proof_mode {
+                ProofMode::Sp1 => ProofType::Sp1Compressed,
+                ProofMode::Plonk => ProofType::Sp1Plonk,
+                ProofMode::Groth16 => ProofType::Sp1Groth16,
+                _ => ProofType::Unknown,
+            };
+            let result = verify_sp1_proof(proof);
+            // Check for proof type mismatch
+            if result.valid
+                && result.proof_type != expected_type
+                && result.proof_type != ProofType::Unknown
+            {
+                return VerificationResult {
+                    valid: false,
+                    error: Some(format!(
+                        "Proof type mismatch: expected {:?} but got {:?}",
+                        expected_type, result.proof_type
+                    )),
+                    proof_type: result.proof_type,
+                };
+            }
+            result
+        }
     }
 }
 
@@ -155,13 +187,25 @@ fn verify_mock_proof(proof: &NeoProof) -> bool {
 }
 
 fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
+    if proof.proof_bytes.is_empty() {
+        return VerificationResult {
+            valid: false,
+            error: Some("SP1 proof bytes are empty".to_string()),
+            proof_type: ProofType::Unknown,
+        };
+    }
+
     let sp1_proof: SP1ProofWithPublicValues =
         match bincode_options().deserialize(&proof.proof_bytes) {
             Ok(p) => p,
             Err(e) => {
                 return VerificationResult {
                     valid: false,
-                    error: Some(format!("Failed to deserialize SP1 proof: {}", e)),
+                    error: Some(format!(
+                        "Failed to deserialize SP1 proof ({} bytes): {}",
+                        proof.proof_bytes.len(),
+                        e
+                    )),
                     proof_type: ProofType::Unknown,
                 };
             }
@@ -175,7 +219,10 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         Err(e) => {
             return VerificationResult {
                 valid: false,
-                error: Some(e),
+                error: Some(format!(
+                    "Failed to decode public inputs from SP1 proof: {}",
+                    e
+                )),
                 proof_type,
             }
         }
@@ -184,7 +231,11 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
     if !public_inputs_equal(&public_inputs, &proof.public_inputs) {
         return VerificationResult {
             valid: false,
-            error: Some("Public inputs do not match SP1 proof values".to_string()),
+            error: Some(
+                "Public inputs mismatch: the values committed in the SP1 proof \
+                 do not match the claimed public inputs in NeoProof"
+                    .to_string(),
+            ),
             proof_type,
         };
     }
@@ -201,16 +252,22 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         },
         Err(e) => VerificationResult {
             valid: false,
-            error: Some(format!("SP1 verification failed: {}", e)),
+            error: Some(format!(
+                "SP1 cryptographic verification failed for {:?} proof: {}",
+                proof_type, e
+            )),
             proof_type,
         },
     }
 }
 
-fn detect_sp1_proof_type(_proof: &SP1ProofWithPublicValues) -> ProofType {
-    // This is a heuristic based on proof structure
-    // In practice, you'd check the proof variant
-    ProofType::Sp1Compressed
+fn detect_sp1_proof_type(proof: &SP1ProofWithPublicValues) -> ProofType {
+    use sp1_sdk::SP1Proof;
+    match &proof.proof {
+        SP1Proof::Core(_) | SP1Proof::Compressed(_) => ProofType::Sp1Compressed,
+        SP1Proof::Plonk(_) => ProofType::Sp1Plonk,
+        SP1Proof::Groth16(_) => ProofType::Sp1Groth16,
+    }
 }
 
 fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, String> {
@@ -319,5 +376,55 @@ mod tests {
         assert_eq!(decoded.output_hash, inputs.output_hash);
         assert_eq!(decoded.gas_consumed, inputs.gas_consumed);
         assert_eq!(decoded.execution_success, inputs.execution_success);
+    }
+
+    #[test]
+    fn test_verify_tampered_mock_proof_fails() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let mut proof = prover.prove(input);
+        proof.public_inputs.output_hash[0] ^= 0xFF;
+        assert!(!verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_detailed_execute_mode() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+        let result = verify_detailed(&proof);
+        assert!(result.valid);
+        assert_eq!(result.proof_type, ProofType::Empty);
+    }
+
+    #[test]
+    fn test_verify_faulting_execution_fails() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+        // Division by zero: PUSH5, PUSH0, DIV, RET
+        let input = ProofInput {
+            script: vec![0x15, 0x10, 0xA1, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+        let result = verify_detailed(&proof);
+        assert!(!result.valid);
     }
 }

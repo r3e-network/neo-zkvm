@@ -137,4 +137,6 @@ pub use engine::{NeoVM, VMError, VMState};
 pub use native::{CryptoLib, NativeContract, NativeRegistry, StdLib};
 pub use opcode::OpCode;
 pub use stack_item::StackItem;
-pub use storage::{MemoryStorage, StorageBackend, StorageContext, TrackedStorage};
+pub use storage::{
+    MemoryStorage, MerklePathNode, StorageBackend, StorageContext, StorageProof, TrackedStorage,
+};

@@ -1,3 +1,6 @@
 /target
 Cargo.lock
 .worktrees/
+tarpaulin-report.html
+cobertura.xml
+*.profraw

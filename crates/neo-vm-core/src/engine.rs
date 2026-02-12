@@ -40,7 +40,7 @@ pub enum VMError {
     InvocationDepthExceeded(usize),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VMState {
     None,
     Halt,
@@ -106,6 +106,24 @@ pub const DEFAULT_MAX_STACK_DEPTH: usize = 2048;
 /// Default maximum invocation depth
 pub const DEFAULT_MAX_INVOCATION_DEPTH: usize = 1024;
 
+/// Exception handling state within a TRY block
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExceptionState {
+    InTry,
+    InCatch,
+    InFinally,
+}
+
+/// Exception context pushed by TRY instructions
+#[derive(Debug, Clone)]
+pub struct ExceptionContext {
+    pub catch_offset: Option<usize>,
+    pub finally_offset: Option<usize>,
+    pub state: ExceptionState,
+    /// Pending exception item to re-throw in ENDFINALLY
+    pub pending_exception: Option<StackItem>,
+}
+
 /// Execution trace step for proof generation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceStep {
@@ -139,6 +157,8 @@ pub struct NeoVM {
     pub local_slots: Vec<StackItem>,
     pub argument_slots: Vec<StackItem>,
     pub static_slots: Vec<StackItem>,
+    // Exception handling
+    pub exception_stack: Vec<ExceptionContext>,
 }
 
 impl NeoVM {
@@ -179,6 +199,7 @@ impl NeoVM {
             local_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             argument_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             static_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
+            exception_stack: Vec::new(),
         }
     }
 
@@ -204,7 +225,9 @@ impl NeoVM {
         use sha2::Digest;
         let mut hasher = Sha256::new();
         for item in &self.eval_stack {
-            hasher.update(format!("{:?}", item).as_bytes());
+            if let Ok(bytes) = bincode::serialize(item) {
+                hasher.update(&bytes);
+            }
         }
         hasher.update(self.gas_consumed.to_le_bytes());
         hasher.finalize().into()
@@ -260,10 +283,26 @@ impl NeoVM {
 
     fn relative_target(base_ip: usize, offset: i8, script_len: usize) -> Result<usize, VMError> {
         let target = base_ip as isize + offset as isize;
-        if target < 0 || target as usize > script_len {
+        if target < 0 || target as usize >= script_len {
             return Err(VMError::InvalidScript);
         }
         Ok(target as usize)
+    }
+
+    fn relative_target_long(
+        base_ip: usize,
+        offset: i32,
+        script_len: usize,
+    ) -> Result<usize, VMError> {
+        let target = base_ip as isize + offset as isize;
+        if target < 0 || target as usize >= script_len {
+            return Err(VMError::InvalidScript);
+        }
+        Ok(target as usize)
+    }
+
+    fn read_i32_le(ctx: &mut ExecutionContext) -> Result<i32, VMError> {
+        Ok(Self::read_u32_le(ctx)? as i32)
     }
 
     /// Push an item to the eval stack with depth checking
@@ -395,6 +434,95 @@ impl NeoVM {
                 let val = i16::from_le_bytes(Self::read_u16_le(ctx)?.to_le_bytes()) as i128;
                 self.push(StackItem::Integer(val))?;
             }
+            // PUSHINT32
+            0x02 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let val = Self::read_i32_le(ctx)? as i128;
+                self.push(StackItem::Integer(val))?;
+            }
+            // PUSHINT64
+            0x03 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip + 7 >= ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&ctx.script[ctx.ip..ctx.ip + 8]);
+                ctx.ip += 8;
+                let val = i64::from_le_bytes(bytes) as i128;
+                self.push(StackItem::Integer(val))?;
+            }
+            // PUSHINT128
+            0x04 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip + 15 >= ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
+                let mut bytes = [0u8; 16];
+                bytes.copy_from_slice(&ctx.script[ctx.ip..ctx.ip + 16]);
+                ctx.ip += 16;
+                let val = i128::from_le_bytes(bytes);
+                self.push(StackItem::Integer(val))?;
+            }
+            // PUSHINT256
+            0x05 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                if ctx.ip + 31 >= ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
+                let data = &ctx.script[ctx.ip..ctx.ip + 32];
+                ctx.ip += 32;
+                // Check that the upper 16 bytes are a valid sign extension of the lower 16
+                let mut lo = [0u8; 16];
+                lo.copy_from_slice(&data[..16]);
+                let lo_val = i128::from_le_bytes(lo);
+                let hi = &data[16..32];
+                let sign_ext = if lo_val < 0 { 0xFFu8 } else { 0x00u8 };
+                if !hi.iter().all(|&b| b == sign_ext) {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.push(StackItem::Integer(lo_val))?;
+            }
+            // PUSHDATA4 - Push data with 4-byte length prefix
+            0x0E => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let len = Self::read_u32_le(ctx)? as usize;
+                if ctx.ip + len > ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
+                let data = ctx.script[ctx.ip..ctx.ip + len].to_vec();
+                ctx.ip += len;
+                self.push(StackItem::ByteString(data))?;
+            }
+            // PUSHA - Push address (4-byte offset -> absolute pointer)
+            0x0A => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let target = base_ip as isize + offset as isize;
+                if target < 0 || target as usize >= ctx.script.len() {
+                    return Err(VMError::InvalidScript);
+                }
+                self.push(StackItem::Pointer(target as u32))?;
+            }
             0x45 => {
                 self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
             }
@@ -499,10 +627,12 @@ impl NeoVM {
                     .pop()
                     .and_then(|x| x.to_integer())
                     .ok_or(VMError::StackUnderflow)?;
-                if exp < 0 {
+                if exp < 0 || exp > u32::MAX as i128 {
                     return Err(VMError::InvalidOperation);
                 }
-                let result = base.pow(exp as u32);
+                let result = base
+                    .checked_pow(exp as u32)
+                    .ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // SHL
@@ -719,8 +849,7 @@ impl NeoVM {
             // ISNULL
             0xD8 => {
                 let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack
-                    .push(StackItem::Boolean(matches!(item, StackItem::Null)));
+                self.push(StackItem::Boolean(matches!(item, StackItem::Null)))?;
             }
             // NZ - Not zero
             0xB1 => {
@@ -819,15 +948,13 @@ impl NeoVM {
             0xAB => {
                 let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack
-                    .push(StackItem::Boolean(a.to_bool() && b.to_bool()));
+                self.push(StackItem::Boolean(a.to_bool() && b.to_bool()))?;
             }
             // BOOLOR
             0xAC => {
                 let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                self.eval_stack
-                    .push(StackItem::Boolean(a.to_bool() || b.to_bool()));
+                self.push(StackItem::Boolean(a.to_bool() || b.to_bool()))?;
             }
             // SWAP
             0x50 => {
@@ -978,12 +1105,12 @@ impl NeoVM {
                     .ok_or(VMError::InvalidOperation)?;
                 self.push(item)?;
             }
-            // STLOC0-STLOC6 - Store local variable 0-6
+            // STLOC0-STLOC4 - Store local variable 0-4
             0x6E..=0x72 => {
                 let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let idx = (op - 0x6E) as usize;
                 if idx >= self.local_slots.len() {
-                    self.local_slots.resize(idx + 1, StackItem::Null);
+                    return Err(VMError::InvalidOperation);
                 }
                 self.local_slots[idx] = val;
             }
@@ -1202,27 +1329,234 @@ impl NeoVM {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
             }
+            // JMP_L (4-byte offset)
+            0x23 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+            }
+            // JMPIF_L (4-byte offset)
+            0x25 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if cond.to_bool() {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPIFNOT_L (4-byte offset)
+            0x27 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if !cond.to_bool() {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPEQ_L (4-byte offset)
+            0x29 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a == b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPNE_L (4-byte offset)
+            0x2B => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a != b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPGT_L (4-byte offset)
+            0x2D => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a > b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPGE_L (4-byte offset)
+            0x2F => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a >= b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPLT_L (4-byte offset)
+            0x31 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a < b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
+            // JMPLE_L (4-byte offset)
+            0x33 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let b = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a <= b {
+                    ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                }
+            }
             // CALL (1-byte offset)
             0x34 => {
                 self.check_invocation_depth()?;
-                let (return_ip, target_ip, script) = {
+                let (target_ip, script) = {
                     let ctx = self
                         .invocation_stack
                         .last_mut()
                         .ok_or(VMError::StackUnderflow)?;
                     let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                     let offset = Self::read_i8(ctx)?;
-                    let return_ip = ctx.ip;
                     let target_ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                     let script = ctx.script.clone();
-                    (return_ip, target_ip, script)
+                    (target_ip, script)
                 };
                 self.invocation_stack.push(ExecutionContext {
                     script,
                     ip: target_ip,
                 });
-                // Store return address (simplified)
-                self.push(StackItem::Pointer(return_ip as u32))?;
+            }
+            // CALL_L (4-byte offset)
+            0x35 => {
+                self.check_invocation_depth()?;
+                let (target_ip, script) = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                    let offset = Self::read_i32_le(ctx)?;
+                    let target_ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                    let script = ctx.script.clone();
+                    (target_ip, script)
+                };
+                self.invocation_stack.push(ExecutionContext {
+                    script,
+                    ip: target_ip,
+                });
+            }
+            // CALLA - Call absolute address from stack
+            0x36 => {
+                self.check_invocation_depth()?;
+                let addr = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let target_ip = match addr {
+                    StackItem::Pointer(p) => p as usize,
+                    _ => return Err(VMError::InvalidType),
+                };
+                let script = {
+                    let ctx = self
+                        .invocation_stack
+                        .last()
+                        .ok_or(VMError::StackUnderflow)?;
+                    if target_ip >= ctx.script.len() {
+                        return Err(VMError::InvalidScript);
+                    }
+                    ctx.script.clone()
+                };
+                self.invocation_stack.push(ExecutionContext {
+                    script,
+                    ip: target_ip,
+                });
             }
             // SHA256
             0xF0 => {
@@ -1339,14 +1673,22 @@ impl NeoVM {
                 let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let container = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let item = match (container, key) {
-                    (StackItem::Array(a), StackItem::Integer(i)) => a
-                        .get(i as usize)
-                        .cloned()
-                        .ok_or(VMError::InvalidOperation)?,
-                    (StackItem::Struct(s), StackItem::Integer(i)) => s
-                        .get(i as usize)
-                        .cloned()
-                        .ok_or(VMError::InvalidOperation)?,
+                    (StackItem::Array(a), StackItem::Integer(i)) => {
+                        if i < 0 {
+                            return Err(VMError::InvalidOperation);
+                        }
+                        a.get(i as usize)
+                            .cloned()
+                            .ok_or(VMError::InvalidOperation)?
+                    }
+                    (StackItem::Struct(s), StackItem::Integer(i)) => {
+                        if i < 0 {
+                            return Err(VMError::InvalidOperation);
+                        }
+                        s.get(i as usize)
+                            .cloned()
+                            .ok_or(VMError::InvalidOperation)?
+                    }
                     (StackItem::Map(m), k) => m
                         .iter()
                         .find(|(mk, _)| *mk == k)
@@ -1362,7 +1704,11 @@ impl NeoVM {
                 let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
                 match (container, key) {
-                    (StackItem::Array(a), StackItem::Integer(i)) => {
+                    (StackItem::Array(a), StackItem::Integer(i))
+                    | (StackItem::Struct(a), StackItem::Integer(i)) => {
+                        if i < 0 {
+                            return Err(VMError::InvalidOperation);
+                        }
                         let idx = i as usize;
                         if idx >= a.len() {
                             return Err(VMError::InvalidOperation);
@@ -1394,6 +1740,9 @@ impl NeoVM {
                 let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
                 match (container, key) {
                     (StackItem::Array(a), StackItem::Integer(i)) => {
+                        if i < 0 {
+                            return Err(VMError::InvalidOperation);
+                        }
                         let idx = i as usize;
                         if idx >= a.len() {
                             return Err(VMError::InvalidOperation);
@@ -1406,6 +1755,283 @@ impl NeoVM {
                     _ => return Err(VMError::InvalidType),
                 }
             }
+            // PACK - Pop n, then pop n items, create Array
+            0xC0 => {
+                let n = self.pop_usize_nonneg()?;
+                let len = self.eval_stack.len();
+                if n > len {
+                    return Err(VMError::StackUnderflow);
+                }
+                let items = self.eval_stack.split_off(len - n);
+                self.push(StackItem::Array(items))?;
+            }
+            // UNPACK - Pop Array, push all items then push count
+            0xC1 => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let items = match item {
+                    StackItem::Array(a) | StackItem::Struct(a) => a,
+                    _ => return Err(VMError::InvalidType),
+                };
+                let count = items.len() as i128;
+                for it in items {
+                    self.push(it)?;
+                }
+                self.push(StackItem::Integer(count))?;
+            }
+            // NEWARRAY_T - Create typed array of n Null items (type byte consumed but ignored)
+            0xC4 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let _type_byte = Self::read_u8(ctx)?;
+                let n = self.pop_usize_nonneg()?;
+                let arr = vec![StackItem::Null; n];
+                self.push(StackItem::Array(arr))?;
+            }
+            // PACKMAP - Pop n, then pop n key-value pairs, create Map
+            0xBE => {
+                let n = self.pop_usize_nonneg()?;
+                if self.eval_stack.len() < n * 2 {
+                    return Err(VMError::StackUnderflow);
+                }
+                let mut pairs = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let v = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                    let k = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                    pairs.push((k, v));
+                }
+                pairs.reverse();
+                self.push(StackItem::Map(pairs))?;
+            }
+            // PACKSTRUCT - Pop n, then pop n items, create Struct
+            0xBF => {
+                let n = self.pop_usize_nonneg()?;
+                let len = self.eval_stack.len();
+                if n > len {
+                    return Err(VMError::StackUnderflow);
+                }
+                let items = self.eval_stack.split_off(len - n);
+                self.push(StackItem::Struct(items))?;
+            }
+            // HASKEY - Check if key exists in container
+            0xCB => {
+                let key = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let container = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let result = match (container, key) {
+                    (StackItem::Array(a), StackItem::Integer(i))
+                    | (StackItem::Struct(a), StackItem::Integer(i)) => {
+                        i >= 0 && (i as usize) < a.len()
+                    }
+                    (StackItem::Map(m), k) => m.iter().any(|(mk, _)| *mk == k),
+                    _ => return Err(VMError::InvalidType),
+                };
+                self.push(StackItem::Boolean(result))?;
+            }
+            // KEYS - Pop Map, push Array of keys
+            0xCC => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                match item {
+                    StackItem::Map(m) => {
+                        let keys: Vec<StackItem> = m.into_iter().map(|(k, _)| k).collect();
+                        self.push(StackItem::Array(keys))?;
+                    }
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // VALUES - Pop Map or Array, push Array of values
+            0xCD => {
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                match item {
+                    StackItem::Map(m) => {
+                        let vals: Vec<StackItem> = m.into_iter().map(|(_, v)| v).collect();
+                        self.push(StackItem::Array(vals))?;
+                    }
+                    StackItem::Array(a) => {
+                        self.push(StackItem::Array(a))?;
+                    }
+                    StackItem::Struct(s) => {
+                        self.push(StackItem::Array(s))?;
+                    }
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // REVERSEITEMS - Reverse Array/Struct in-place on stack
+            0xD1 => {
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match container {
+                    StackItem::Array(a) | StackItem::Struct(a) => a.reverse(),
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // CLEARITEMS - Clear all items from container on stack
+            0xD3 => {
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match container {
+                    StackItem::Array(a) | StackItem::Struct(a) => a.clear(),
+                    StackItem::Map(m) => m.clear(),
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // POPITEM - Pop last item from Array on stack top
+            0xD4 => {
+                let container = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                let item = match container {
+                    StackItem::Array(a) => a.pop().ok_or(VMError::InvalidOperation)?,
+                    _ => return Err(VMError::InvalidType),
+                };
+                self.push(item)?;
+            }
+            // ISTYPE - Check if item matches type byte
+            0xD9 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let type_byte = Self::read_u8(ctx)?;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let type_id = match &item {
+                    StackItem::Null => 0x00,
+                    StackItem::Boolean(_) => 0x01,
+                    StackItem::Integer(_) => 0x21,
+                    StackItem::ByteString(_) => 0x28,
+                    StackItem::Buffer(_) => 0x30,
+                    StackItem::Array(_) => 0x40,
+                    StackItem::Struct(_) => 0x41,
+                    StackItem::Map(_) => 0x48,
+                    StackItem::Pointer(_) => 0x10,
+                };
+                self.push(StackItem::Boolean(type_id == type_byte))?;
+            }
+            // CONVERT - Convert item to target type
+            0xDB => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let type_byte = Self::read_u8(ctx)?;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let converted = match type_byte {
+                    0x01 => StackItem::Boolean(item.to_bool()),
+                    0x21 => match item {
+                        StackItem::Integer(_) => item,
+                        StackItem::Boolean(b) => StackItem::Integer(b as i128),
+                        StackItem::ByteString(b) | StackItem::Buffer(b) => {
+                            if b.len() > 16 {
+                                return Err(VMError::InvalidOperation);
+                            }
+                            let mut bytes = [0u8; 16];
+                            bytes[..b.len()].copy_from_slice(&b);
+                            // Sign-extend if high bit set
+                            if !b.is_empty() && b[b.len() - 1] & 0x80 != 0 {
+                                bytes[b.len()..].fill(0xFF);
+                            }
+                            StackItem::Integer(i128::from_le_bytes(bytes))
+                        }
+                        _ => return Err(VMError::InvalidType),
+                    },
+                    0x28 => match item {
+                        StackItem::ByteString(_) => item,
+                        StackItem::Integer(i) => StackItem::ByteString(i.to_le_bytes().to_vec()),
+                        StackItem::Boolean(b) => StackItem::ByteString(vec![b as u8]),
+                        StackItem::Buffer(b) => StackItem::ByteString(b),
+                        _ => return Err(VMError::InvalidType),
+                    },
+                    0x30 => match item {
+                        StackItem::Buffer(_) => item,
+                        StackItem::ByteString(b) => StackItem::Buffer(b),
+                        _ => return Err(VMError::InvalidType),
+                    },
+                    _ => return Err(VMError::InvalidType),
+                };
+                self.push(converted)?;
+            }
+            // NEWBUFFER - Create zeroed buffer of given size
+            0x88 => {
+                let size = self.pop_usize_nonneg()?;
+                self.push(StackItem::Buffer(vec![0u8; size]))?;
+            }
+            // MEMCPY - Copy bytes between buffers
+            0x89 => {
+                let count = self.pop_usize_nonneg()?;
+                let src_index = self.pop_usize_nonneg()?;
+                let src = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let dst_index = self.pop_usize_nonneg()?;
+                let src_bytes = match &src {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                if src_index + count > src_bytes.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                let copied = src_bytes[src_index..src_index + count].to_vec();
+                let dst = self.eval_stack.last_mut().ok_or(VMError::StackUnderflow)?;
+                match dst {
+                    StackItem::Buffer(b) => {
+                        if dst_index + count > b.len() {
+                            return Err(VMError::InvalidOperation);
+                        }
+                        b[dst_index..dst_index + count].copy_from_slice(&copied);
+                    }
+                    _ => return Err(VMError::InvalidType),
+                }
+            }
+            // CAT - Concatenate two ByteStrings
+            0x8B => {
+                let b = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let a = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let mut result = match a {
+                    StackItem::ByteString(v) | StackItem::Buffer(v) => v,
+                    _ => return Err(VMError::InvalidType),
+                };
+                let b_bytes = match b {
+                    StackItem::ByteString(v) | StackItem::Buffer(v) => v,
+                    _ => return Err(VMError::InvalidType),
+                };
+                result.extend_from_slice(&b_bytes);
+                self.push(StackItem::ByteString(result))?;
+            }
+            // SUBSTR - Extract substring
+            0x8C => {
+                let count = self.pop_usize_nonneg()?;
+                let index = self.pop_usize_nonneg()?;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match item {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                if index + count > bytes.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.push(StackItem::ByteString(bytes[index..index + count].to_vec()))?;
+            }
+            // LEFT - Take left N bytes
+            0x8D => {
+                let count = self.pop_usize_nonneg()?;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match item {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                if count > bytes.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.push(StackItem::ByteString(bytes[..count].to_vec()))?;
+            }
+            // RIGHT - Take right N bytes
+            0x8E => {
+                let count = self.pop_usize_nonneg()?;
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let bytes = match item {
+                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
+                    _ => return Err(VMError::InvalidType),
+                };
+                if count > bytes.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                let start = bytes.len() - count;
+                self.push(StackItem::ByteString(bytes[start..].to_vec()))?;
+            }
             // RET
             0x40 => {
                 self.invocation_stack
@@ -1415,9 +2041,426 @@ impl NeoVM {
                     self.state = VMState::Halt;
                 }
             }
+            // === Exception Handling Opcodes ===
+
+            // ABORT - Immediately fault
+            0x38 => {
+                self.state = VMState::Fault;
+                return Err(VMError::InvalidOperation);
+            }
+            // THROW - Pop exception item, trigger exception handling
+            0x3A => {
+                let exception = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.handle_throw(exception)?;
+            }
+            // TRY - Push exception context (1-byte catch offset, 1-byte finally offset)
+            0x3B => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let catch_off = Self::read_i8(ctx)?;
+                let finally_off = Self::read_i8(ctx)?;
+                let script_len = ctx.script.len();
+                let catch_addr = if catch_off != 0 {
+                    Some(Self::relative_target(base_ip, catch_off, script_len)?)
+                } else {
+                    None
+                };
+                let finally_addr = if finally_off != 0 {
+                    Some(Self::relative_target(base_ip, finally_off, script_len)?)
+                } else {
+                    None
+                };
+                if catch_addr.is_none() && finally_addr.is_none() {
+                    return Err(VMError::InvalidScript);
+                }
+                self.exception_stack.push(ExceptionContext {
+                    catch_offset: catch_addr,
+                    finally_offset: finally_addr,
+                    state: ExceptionState::InTry,
+                    pending_exception: None,
+                });
+            }
+            // TRY_L - Push exception context (4-byte catch offset, 4-byte finally offset)
+            0x3C => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let catch_off = Self::read_i32_le(ctx)?;
+                let finally_off = Self::read_i32_le(ctx)?;
+                let script_len = ctx.script.len();
+                let catch_addr = if catch_off != 0 {
+                    Some(Self::relative_target_long(base_ip, catch_off, script_len)?)
+                } else {
+                    None
+                };
+                let finally_addr = if finally_off != 0 {
+                    Some(Self::relative_target_long(
+                        base_ip,
+                        finally_off,
+                        script_len,
+                    )?)
+                } else {
+                    None
+                };
+                if catch_addr.is_none() && finally_addr.is_none() {
+                    return Err(VMError::InvalidScript);
+                }
+                self.exception_stack.push(ExceptionContext {
+                    catch_offset: catch_addr,
+                    finally_offset: finally_addr,
+                    state: ExceptionState::InTry,
+                    pending_exception: None,
+                });
+            }
+            // ENDTRY - End try block, jump to target (1-byte offset)
+            0x3D => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i8(ctx)?;
+                let target = Self::relative_target(base_ip, offset, ctx.script.len())?;
+                self.end_try(target)?;
+            }
+            // ENDTRY_L - End try block, jump to target (4-byte offset)
+            0x3E => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
+                let offset = Self::read_i32_le(ctx)?;
+                let target = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
+                self.end_try(target)?;
+            }
+            // ENDFINALLY - End finally block
+            0x3F => {
+                let exc_ctx = self
+                    .exception_stack
+                    .pop()
+                    .ok_or(VMError::InvalidOperation)?;
+                if exc_ctx.state != ExceptionState::InFinally {
+                    return Err(VMError::InvalidOperation);
+                }
+                if let Some(pending) = exc_ctx.pending_exception {
+                    // Re-throw the pending exception
+                    self.handle_throw(pending)?;
+                }
+                // Otherwise just continue execution
+            }
+            // ABORTMSG - Pop message, then abort
+            0xE0 => {
+                let _msg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                self.state = VMState::Fault;
+                return Err(VMError::InvalidOperation);
+            }
+            // ASSERTMSG - Pop message, then assert top of stack
+            0xE1 => {
+                let _msg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let cond = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if !cond.to_bool() {
+                    self.state = VMState::Fault;
+                    return Err(VMError::InvalidOperation);
+                }
+            }
+
+            // === Static Slot Opcodes ===
+
+            // INITSSLOT - Initialize static slots with N Null items
+            0x56 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let count = Self::read_u8(ctx)? as usize;
+                if count == 0 {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.static_slots = vec![StackItem::Null; count];
+            }
+            // LDSFLD0-LDSFLD5 - Load static field 0-5
+            0x58..=0x5D => {
+                let idx = (op - 0x58) as usize;
+                let item = self
+                    .static_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.push(item)?;
+            }
+            // LDSFLD - Load static field (1-byte index)
+            0x5E => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = Self::read_u8(ctx)? as usize;
+                let item = self
+                    .static_slots
+                    .get(idx)
+                    .cloned()
+                    .ok_or(VMError::InvalidOperation)?;
+                self.push(item)?;
+            }
+            // STSFLD0-STSFLD5 - Store static field 0-5
+            0x5F..=0x64 => {
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let idx = (op - 0x5F) as usize;
+                if idx >= self.static_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.static_slots[idx] = val;
+            }
+            // STSFLD - Store static field (1-byte index)
+            0x65 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = Self::read_u8(ctx)? as usize;
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if idx >= self.static_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.static_slots[idx] = val;
+            }
+
+            // === Argument Store Opcodes ===
+
+            // STARG0-STARG6 - Store into argument slot 0-6
+            0x7B..=0x80 => {
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let idx = (op - 0x7B) as usize;
+                if idx >= self.argument_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.argument_slots[idx] = val;
+            }
+            // STARG - Store into argument slot (1-byte index)
+            0x81 => {
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                let idx = Self::read_u8(ctx)? as usize;
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if idx >= self.argument_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                self.argument_slots[idx] = val;
+            }
+
+            // === Arithmetic Opcodes ===
+
+            // SQRT - Integer square root
+            0xA4 => {
+                let a = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if a < 0 {
+                    return Err(VMError::InvalidOperation);
+                }
+                let result = (a as f64).sqrt() as i128;
+                self.push(StackItem::Integer(result))?;
+            }
+            // MODMUL - (x * y) % modulus
+            0xA5 => {
+                let modulus = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let y = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let x = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if modulus == 0 {
+                    return Err(VMError::DivisionByZero);
+                }
+                // Use checked_mul with fallback to prevent overflow
+                let result = match x.checked_mul(y) {
+                    Some(product) => product
+                        .checked_rem(modulus)
+                        .ok_or(VMError::InvalidOperation)?,
+                    None => {
+                        // Overflow: reduce operands modulo modulus first, then multiply
+                        let xm = x.checked_rem(modulus).ok_or(VMError::InvalidOperation)?;
+                        let ym = y.checked_rem(modulus).ok_or(VMError::InvalidOperation)?;
+                        let product = xm.checked_mul(ym).ok_or(VMError::InvalidOperation)?;
+                        product
+                            .checked_rem(modulus)
+                            .ok_or(VMError::InvalidOperation)?
+                    }
+                };
+                self.push(StackItem::Integer(result))?;
+            }
+            // MODPOW - Modular exponentiation: base^exp % modulus
+            0xA6 => {
+                let modulus = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let exp = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                let base = self
+                    .eval_stack
+                    .pop()
+                    .and_then(|x| x.to_integer())
+                    .ok_or(VMError::StackUnderflow)?;
+                if modulus == 0 {
+                    return Err(VMError::DivisionByZero);
+                }
+                if exp < 0 {
+                    return Err(VMError::InvalidOperation);
+                }
+                // Special case: modulus == 1 always yields 0
+                if modulus == 1 || modulus == -1 {
+                    self.push(StackItem::Integer(0))?;
+                } else {
+                    let result = Self::mod_pow(base, exp, modulus)?;
+                    self.push(StackItem::Integer(result))?;
+                }
+            }
+
             _ => return Err(VMError::InvalidOpcode(op)),
         }
         Ok(())
+    }
+
+    /// Handle a thrown exception by jumping to catch/finally or faulting
+    fn handle_throw(&mut self, exception: StackItem) -> Result<(), VMError> {
+        while let Some(mut exc_ctx) = self.exception_stack.pop() {
+            // If we have a catch block and we're in the try state, jump to catch
+            if exc_ctx.state == ExceptionState::InTry {
+                if let Some(catch_addr) = exc_ctx.catch_offset {
+                    exc_ctx.state = ExceptionState::InCatch;
+                    self.exception_stack.push(exc_ctx);
+                    // Push exception item onto eval stack for the catch block
+                    self.push(exception)?;
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    ctx.ip = catch_addr;
+                    return Ok(());
+                }
+                // No catch block, try finally
+                if let Some(finally_addr) = exc_ctx.finally_offset {
+                    exc_ctx.state = ExceptionState::InFinally;
+                    exc_ctx.pending_exception = Some(exception);
+                    self.exception_stack.push(exc_ctx);
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    ctx.ip = finally_addr;
+                    return Ok(());
+                }
+            }
+            // If we're in catch state, go to finally if available
+            if exc_ctx.state == ExceptionState::InCatch {
+                if let Some(finally_addr) = exc_ctx.finally_offset {
+                    exc_ctx.state = ExceptionState::InFinally;
+                    exc_ctx.pending_exception = Some(exception);
+                    self.exception_stack.push(exc_ctx);
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    ctx.ip = finally_addr;
+                    return Ok(());
+                }
+            }
+            // Otherwise pop this context and try the next one
+        }
+        // No exception handler found, fault
+        self.state = VMState::Fault;
+        Err(VMError::InvalidOperation)
+    }
+
+    /// End a try or catch block, transitioning to finally or popping the context
+    fn end_try(&mut self, end_target: usize) -> Result<(), VMError> {
+        let exc_ctx = self
+            .exception_stack
+            .last_mut()
+            .ok_or(VMError::InvalidOperation)?;
+        if exc_ctx.state == ExceptionState::InFinally {
+            return Err(VMError::InvalidOperation);
+        }
+        if let Some(finally_addr) = exc_ctx.finally_offset {
+            exc_ctx.state = ExceptionState::InFinally;
+            let ctx = self
+                .invocation_stack
+                .last_mut()
+                .ok_or(VMError::StackUnderflow)?;
+            ctx.ip = finally_addr;
+        } else {
+            // No finally block, just pop the exception context and jump to end
+            self.exception_stack.pop();
+            let ctx = self
+                .invocation_stack
+                .last_mut()
+                .ok_or(VMError::StackUnderflow)?;
+            ctx.ip = end_target;
+        }
+        Ok(())
+    }
+
+    /// Square-and-multiply modular exponentiation: base^exp % modulus
+    fn mod_pow(mut base: i128, mut exp: i128, modulus: i128) -> Result<i128, VMError> {
+        let mut result: i128 = 1;
+        base = base.checked_rem(modulus).ok_or(VMError::InvalidOperation)?;
+        if base < 0 {
+            base = base
+                .checked_add(modulus.abs())
+                .ok_or(VMError::InvalidOperation)?;
+        }
+        while exp > 0 {
+            if exp & 1 == 1 {
+                result = Self::mod_mul_safe(result, base, modulus)?;
+            }
+            exp >>= 1;
+            if exp > 0 {
+                base = Self::mod_mul_safe(base, base, modulus)?;
+            }
+        }
+        Ok(result)
+    }
+
+    /// Safe modular multiplication that handles potential i128 overflow
+    fn mod_mul_safe(a: i128, b: i128, modulus: i128) -> Result<i128, VMError> {
+        match a.checked_mul(b) {
+            Some(product) => product
+                .checked_rem(modulus)
+                .ok_or(VMError::InvalidOperation),
+            None => {
+                // Fallback: reduce first, then multiply
+                let am = a.checked_rem(modulus).ok_or(VMError::InvalidOperation)?;
+                let bm = b.checked_rem(modulus).ok_or(VMError::InvalidOperation)?;
+                let product = am.checked_mul(bm).ok_or(VMError::InvalidOperation)?;
+                product
+                    .checked_rem(modulus)
+                    .ok_or(VMError::InvalidOperation)
+            }
+        }
     }
 
     fn execute_syscall(&mut self, id: u32) -> Result<(), VMError> {
@@ -1509,5 +2552,93 @@ mod tests {
         }
 
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
+    }
+
+    #[test]
+    fn test_pow_negative_exponent_returns_error() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH2 (base=2), PUSHINT8 0xC8 (=-56 as i8, exp<0), POW, RET
+        let _ = vm.load_script(vec![0x12, 0x00, 0xC8, 0xA3, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Fault));
+    }
+
+    #[test]
+    fn test_booland_stack_depth() {
+        let mut vm = NeoVM::with_limits(1_000_000, 2, 1024);
+        let _ = vm.load_script(vec![0x11, 0x11, 0xAB, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+    }
+
+    #[test]
+    fn test_division_by_zero() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH5, PUSH0, DIV, RET
+        let _ = vm.load_script(vec![0x15, 0x10, 0xA1, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Fault));
+    }
+
+    #[test]
+    fn test_stack_overflow() {
+        let mut vm = NeoVM::with_limits(1_000_000, 3, 1024);
+        // Push 4 items with depth limit 3
+        let _ = vm.load_script(vec![0x11, 0x12, 0x13, 0x14, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Fault));
+    }
+
+    #[test]
+    fn test_sha256_opcode() {
+        let mut vm = NeoVM::new(1_000_000);
+        let mut script = vec![0x0C, 5];
+        script.extend_from_slice(b"hello");
+        script.push(0xF0);
+        script.push(0x40);
+        let _ = vm.load_script(script);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+        assert_eq!(vm.eval_stack.len(), 1);
+        if let Some(StackItem::ByteString(hash)) = vm.eval_stack.last() {
+            assert_eq!(hash.len(), 32);
+        } else {
+            panic!("Expected ByteString");
+        }
+    }
+
+    #[test]
+    fn test_jmp_forward() {
+        let mut vm = NeoVM::new(1_000_000);
+        // [0]=PUSH1, [1]=JMP, [2]=offset(3), [3]=PUSH2(skipped), [4]=PUSH3, [5]=RET
+        let _ = vm.load_script(vec![0x11, 0x22, 0x03, 0x12, 0x13, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+        assert_eq!(vm.eval_stack.len(), 2);
+        assert_eq!(vm.eval_stack[0], StackItem::Integer(1));
+        assert_eq!(vm.eval_stack[1], StackItem::Integer(3));
+    }
+
+    #[test]
+    fn test_newarray_and_pickitem() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH3, NEWARRAY, PUSH0, PICKITEM, RET
+        let _ = vm.load_script(vec![0x13, 0xC3, 0x10, 0xCE, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Null));
+    }
+
+    #[test]
+    fn test_syscall_log() {
+        let mut vm = NeoVM::new(1_000_000);
+        let mut script = vec![0x0C, 4];
+        script.extend_from_slice(b"test");
+        script.extend_from_slice(&[0x41, 0x01, 0x00, 0x00, 0x00]);
+        script.push(0x40);
+        let _ = vm.load_script(script);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+        assert_eq!(vm.logs, vec!["test".to_string()]);
     }
 }

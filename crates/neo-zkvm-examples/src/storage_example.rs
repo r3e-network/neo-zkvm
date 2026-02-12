@@ -36,9 +36,11 @@ fn main() {
     let mut storage = MemoryStorage::new();
 
     // Store some key-value pairs
-    storage.put(&context, b"name", b"Neo zkVM");
-    storage.put(&context, b"version", b"1.0.0");
-    storage.put(&context, b"counter", &42u64.to_le_bytes());
+    storage.put(&context, b"name", b"Neo zkVM").unwrap();
+    storage.put(&context, b"version", b"1.0.0").unwrap();
+    storage
+        .put(&context, b"counter", &42u64.to_le_bytes())
+        .unwrap();
 
     println!("Stored values:");
     println!(
@@ -65,7 +67,9 @@ fn main() {
     println!("Merkle root (initial): 0x{}", hex_encode(&root1));
 
     // Modify storage and observe root change
-    storage.put(&context, b"counter", &100u64.to_le_bytes());
+    storage
+        .put(&context, b"counter", &100u64.to_le_bytes())
+        .unwrap();
     let root2 = storage.merkle_root();
     println!("Merkle root (after update): 0x{}", hex_encode(&root2));
 
@@ -87,18 +91,26 @@ fn main() {
     };
 
     // Perform operations - all changes are logged
-    tracked.put(&contract_ctx, b"balance:alice", &1000u64.to_le_bytes());
-    tracked.put(&contract_ctx, b"balance:bob", &500u64.to_le_bytes());
+    tracked
+        .put(&contract_ctx, b"balance:alice", &1000u64.to_le_bytes())
+        .unwrap();
+    tracked
+        .put(&contract_ctx, b"balance:bob", &500u64.to_le_bytes())
+        .unwrap();
 
     // Simulate a transfer: Alice -> Bob (200 tokens)
     let alice_balance = 1000u64 - 200;
     let bob_balance = 500u64 + 200;
-    tracked.put(
-        &contract_ctx,
-        b"balance:alice",
-        &alice_balance.to_le_bytes(),
-    );
-    tracked.put(&contract_ctx, b"balance:bob", &bob_balance.to_le_bytes());
+    tracked
+        .put(
+            &contract_ctx,
+            b"balance:alice",
+            &alice_balance.to_le_bytes(),
+        )
+        .unwrap();
+    tracked
+        .put(&contract_ctx, b"balance:bob", &bob_balance.to_le_bytes())
+        .unwrap();
 
     // Review all changes
     println!("Storage changes recorded:");
@@ -144,13 +156,15 @@ fn main() {
         read_only: true, // Cannot modify storage
     };
 
-    // Attempt to modify (will be silently ignored)
+    // Attempt to modify (should return error)
     let before = tracked.get(&readonly_ctx, b"balance:alice");
-    tracked.put(&readonly_ctx, b"balance:alice", &0u64.to_le_bytes());
+    let err = tracked
+        .put(&readonly_ctx, b"balance:alice", &0u64.to_le_bytes())
+        .unwrap_err();
     let after = tracked.get(&readonly_ctx, b"balance:alice");
 
     assert_eq!(before, after, "Read-only context should prevent writes");
-    println!("✓ Read-only context correctly prevents modifications");
+    println!("Read-only write correctly returned error: {}", err);
 
     println!("\n=== Storage Example Complete ===");
 }

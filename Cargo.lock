@@ -2865,13 +2865,10 @@ dependencies = [
  "criterion",
  "hex",
  "k256",
- "num-bigint 0.4.6",
- "num-traits",
  "ripemd",
  "serde",
  "serde_json",
  "sha2",
- "sha3",
  "thiserror 2.0.18",
 ]
 
@@ -2930,7 +2927,6 @@ dependencies = [
  "sha2",
  "sp1-build",
  "sp1-sdk",
- "tracing",
 ]
 
 [[package]]

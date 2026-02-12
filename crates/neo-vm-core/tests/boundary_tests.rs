@@ -853,25 +853,23 @@ fn test_gas_exhaustion() {
 // Arithmetic Overflow Tests
 // ============================================================================
 
+/// Helper: encode i128 as 16-byte LE for PUSHINT128 opcode
+fn push_i128(val: i128) -> Vec<u8> {
+    let mut v = vec![0x04]; // PUSHINT128
+    v.extend_from_slice(&val.to_le_bytes());
+    v
+}
+
 #[test]
 fn test_add_overflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
     // i128::MAX + 1 should overflow
-    let max_val = i128::MAX;
-    let script = vec![
-        0x02, // PUSHINT32
-        (max_val & 0xFF) as u8,
-        ((max_val >> 8) & 0xFF) as u8,
-        ((max_val >> 16) & 0xFF) as u8,
-        ((max_val >> 24) & 0xFF) as u8,
-        0x02, // PUSHINT32
-        1u8,
-        0u8,
-        0u8,
-        0u8,  // 1
+    let mut script = push_i128(i128::MAX);
+    script.extend_from_slice(&[
+        0x11, // PUSH1
         0x9E, // ADD
         0x40, // RET
-    ];
+    ]);
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
@@ -881,21 +879,12 @@ fn test_add_overflow_detection() {
 fn test_sub_underflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
     // i128::MIN - 1 should overflow
-    let min_val = i128::MIN;
-    let script = vec![
-        0x02, // PUSHINT32
-        (min_val & 0xFF) as u8,
-        ((min_val >> 8) & 0xFF) as u8,
-        ((min_val >> 16) & 0xFF) as u8,
-        ((min_val >> 24) & 0xFF) as u8,
-        0x02, // PUSHINT32
-        1u8,
-        0u8,
-        0u8,
-        0u8,  // 1
+    let mut script = push_i128(i128::MIN);
+    script.extend_from_slice(&[
+        0x11, // PUSH1
         0x9F, // SUB
         0x40, // RET
-    ];
+    ]);
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
@@ -905,22 +894,13 @@ fn test_sub_underflow_detection() {
 #[allow(clippy::erasing_op)]
 fn test_mul_overflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
-    // i128::MAX * 2 should overflow
-    let max_val = i128::MAX / 2 + 1;
-    let script = vec![
-        0x02, // PUSHINT32
-        (max_val & 0xFF) as u8,
-        ((max_val >> 8) & 0xFF) as u8,
-        ((max_val >> 16) & 0xFF) as u8,
-        ((max_val >> 24) & 0xFF) as u8,
-        0x02, // PUSHINT32
-        (2i128 & 0xFF) as u8,
-        ((2i128 >> 8) & 0xFF) as u8,
-        ((2i128 >> 16) & 0xFF) as u8,
-        ((2i128 >> 24) & 0xFF) as u8,
+    // (i128::MAX / 2 + 1) * 2 should overflow
+    let mut script = push_i128(i128::MAX / 2 + 1);
+    script.extend_from_slice(&[
+        0x12, // PUSH2
         0xA0, // MUL
         0x40, // RET
-    ];
+    ]);
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
@@ -930,16 +910,11 @@ fn test_mul_overflow_detection() {
 fn test_negate_overflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
     // NEGATE i128::MIN should overflow
-    let min_val = i128::MIN;
-    let script = vec![
-        0x02, // PUSHINT32
-        (min_val & 0xFF) as u8,
-        ((min_val >> 8) & 0xFF) as u8,
-        ((min_val >> 16) & 0xFF) as u8,
-        ((min_val >> 24) & 0xFF) as u8,
+    let mut script = push_i128(i128::MIN);
+    script.extend_from_slice(&[
         0x9B, // NEGATE
         0x40, // RET
-    ];
+    ]);
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
@@ -949,16 +924,11 @@ fn test_negate_overflow_detection() {
 fn test_abs_overflow_detection() {
     let mut vm = NeoVM::new(1_000_000);
     // ABS of i128::MIN should overflow
-    let min_val = i128::MIN;
-    let script = vec![
-        0x02, // PUSHINT32
-        (min_val & 0xFF) as u8,
-        ((min_val >> 8) & 0xFF) as u8,
-        ((min_val >> 16) & 0xFF) as u8,
-        ((min_val >> 24) & 0xFF) as u8,
+    let mut script = push_i128(i128::MIN);
+    script.extend_from_slice(&[
         0x9A, // ABS
         0x40, // RET
-    ];
+    ]);
     let _ = vm.load_script(script).ok();
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));

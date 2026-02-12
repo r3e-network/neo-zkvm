@@ -32,14 +32,18 @@ pub fn execute(input: ProofInput) -> ProofOutput {
         };
     }
 
-    // Push arguments (bypassing depth check for initial args - they should fit)
+    // Push arguments with VM's configured stack depth limit
     for arg in input.arguments {
-        if vm.eval_stack.len() >= 2048 {
+        if vm.eval_stack.len() >= vm.max_stack_depth {
             return ProofOutput {
                 state: 1,
                 gas_consumed: vm.gas_consumed,
                 result: Some(StackItem::Boolean(false)),
-                error: Some("Stack overflow".to_string()),
+                error: Some(format!(
+                    "Stack overflow: depth {} exceeds limit {}",
+                    vm.eval_stack.len(),
+                    vm.max_stack_depth
+                )),
             };
         }
         vm.eval_stack.push(arg);

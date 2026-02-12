@@ -1,6 +1,7 @@
 //! Neo VM Stack Item types
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Stack item types in Neo VM (simplified for zkVM)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,7 +34,7 @@ impl StackItem {
             StackItem::ByteString(b) | StackItem::Buffer(b) => b.iter().any(|&x| x != 0),
             StackItem::Array(a) | StackItem::Struct(a) => !a.is_empty(),
             StackItem::Map(m) => !m.is_empty(),
-            _ => true,
+            StackItem::Pointer(_) => true,
         }
     }
 
@@ -43,6 +44,28 @@ impl StackItem {
             StackItem::Integer(i) => Some(*i),
             StackItem::Boolean(b) => Some(*b as i128),
             _ => None,
+        }
+    }
+}
+
+impl fmt::Display for StackItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StackItem::Null => write!(f, "Null"),
+            StackItem::Boolean(b) => write!(f, "{}", b),
+            StackItem::Integer(i) => write!(f, "{}", i),
+            StackItem::ByteString(b) => {
+                write!(f, "0x")?;
+                for byte in b {
+                    write!(f, "{:02x}", byte)?;
+                }
+                Ok(())
+            }
+            StackItem::Buffer(b) => write!(f, "Buffer({} bytes)", b.len()),
+            StackItem::Array(a) => write!(f, "Array({} items)", a.len()),
+            StackItem::Struct(s) => write!(f, "Struct({} fields)", s.len()),
+            StackItem::Map(m) => write!(f, "Map({} entries)", m.len()),
+            StackItem::Pointer(p) => write!(f, "Pointer({})", p),
         }
     }
 }

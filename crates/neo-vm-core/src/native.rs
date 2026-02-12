@@ -61,6 +61,24 @@ impl StdLib {
         }
         Ok(StackItem::ByteString(json.into_bytes()))
     }
+
+    fn json_deserialize(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
+        if let Some(StackItem::ByteString(bytes)) = args.first() {
+            if bytes.len() > MAX_INPUT_SIZE {
+                return Err(format!(
+                    "jsonDeserialize input exceeds maximum size of {} bytes",
+                    MAX_INPUT_SIZE
+                ));
+            }
+            let s = String::from_utf8(bytes.to_vec())
+                .map_err(|e| format!("jsonDeserialize: invalid UTF-8: {}", e))?;
+            let item: StackItem = serde_json::from_str(&s)
+                .map_err(|e| format!("jsonDeserialize: invalid JSON: {}", e))?;
+            Ok(item)
+        } else {
+            Err("jsonDeserialize requires ByteString argument".to_string())
+        }
+    }
 }
 
 impl StdLib {
@@ -91,8 +109,8 @@ impl StdLib {
                 ));
             }
             use base64::{engine::general_purpose::STANDARD, Engine};
-            let s = String::from_utf8_lossy(bytes);
-            let decoded = STANDARD.decode(s.as_ref()).map_err(|e| e.to_string())?;
+            let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
+            let decoded = STANDARD.decode(s.as_str()).map_err(|e| e.to_string())?;
             Ok(StackItem::ByteString(decoded))
         } else {
             Err("base64Decode requires ByteString".to_string())
@@ -141,7 +159,7 @@ impl StdLib {
                     MAX_INPUT_SIZE
                 ));
             }
-            let s = String::from_utf8_lossy(bytes);
+            let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
             let base = args
                 .get(1)
                 .and_then(|i| {
@@ -181,11 +199,16 @@ impl NativeContract for StdLib {
             "serialize" => self.serialize(args),
             "deserialize" => self.deserialize(args),
             "jsonSerialize" => self.json_serialize(args),
+            "jsonDeserialize" => self.json_deserialize(args),
             "base64Encode" => self.base64_encode(args),
             "base64Decode" => self.base64_decode(args),
             "itoa" => self.itoa(args),
             "atoi" => self.atoi(args),
-            _ => Err(format!("Unknown method: {}", method)),
+            _ => Err(format!(
+                "StdLib: unknown method '{}'. Available: serialize, deserialize, \
+                 jsonSerialize, jsonDeserialize, base64Encode, base64Decode, itoa, atoi",
+                method
+            )),
         }
     }
 }
@@ -215,7 +238,13 @@ impl NativeContract for CryptoLib {
             "sha256" => self.sha256(args),
             "ripemd160" => self.ripemd160(args),
             "verifyWithECDsa" => self.verify_ecdsa(args),
-            _ => Err(format!("Unknown method: {}", method)),
+            "checkSig" => self.check_sig(args),
+            "murmur32" => self.murmur32(args),
+            _ => Err(format!(
+                "CryptoLib: unknown method '{}'. Available: sha256, ripemd160, \
+                 verifyWithECDsa, checkSig, murmur32",
+                method
+            )),
         }
     }
 }
@@ -297,6 +326,150 @@ impl CryptoLib {
             verifying_key.verify(message, &signature).is_ok(),
         ))
     }
+
+    /// Verify a single ECDSA signature with a simplified API.
+    ///
+    /// Arguments: (message: ByteString, signature: ByteString, pubkey: ByteString)
+    /// Returns: Boolean indicating whether the signature is valid.
+    #[inline]
+    fn check_sig(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
+        if args.len() < 3 {
+            return Err("checkSig requires 3 arguments: message, signature, pubkey".to_string());
+        }
+
+        let message = match &args[0] {
+            StackItem::ByteString(msg) => msg.as_slice(),
+            _ => return Err("checkSig: first argument (message) must be ByteString".to_string()),
+        };
+
+        let signature = match &args[1] {
+            StackItem::ByteString(sig) => sig.as_slice(),
+            _ => return Err("checkSig: second argument (signature) must be ByteString".to_string()),
+        };
+
+        let pubkey = match &args[2] {
+            StackItem::ByteString(pk) => pk.as_slice(),
+            _ => return Err("checkSig: third argument (pubkey) must be ByteString".to_string()),
+        };
+
+        if message.len() > MAX_INPUT_SIZE {
+            return Err(format!(
+                "checkSig message exceeds maximum size of {} bytes",
+                MAX_INPUT_SIZE
+            ));
+        }
+
+        use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+
+        let sig = Signature::from_slice(signature)
+            .map_err(|_| "checkSig: invalid ECDSA signature format".to_string())?;
+        let vk = VerifyingKey::from_sec1_bytes(pubkey)
+            .map_err(|_| "checkSig: invalid public key format".to_string())?;
+
+        Ok(StackItem::Boolean(vk.verify(message, &sig).is_ok()))
+    }
+
+    /// Compute Murmur3 32-bit hash.
+    ///
+    /// Arguments: (data: ByteString, seed: Integer)
+    /// Returns: ByteString containing the 4-byte hash in little-endian order.
+    #[inline]
+    fn murmur32(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
+        if args.is_empty() {
+            return Err("murmur32 requires at least 1 argument: data".to_string());
+        }
+
+        let data = match &args[0] {
+            StackItem::ByteString(d) => d.as_slice(),
+            _ => return Err("murmur32: first argument (data) must be ByteString".to_string()),
+        };
+
+        if data.len() > MAX_INPUT_SIZE {
+            return Err(format!(
+                "murmur32 input exceeds maximum size of {} bytes",
+                MAX_INPUT_SIZE
+            ));
+        }
+
+        let seed = args
+            .get(1)
+            .map(|item| match item {
+                StackItem::Integer(n) => Ok(*n as u32),
+                _ => Err("murmur32: second argument (seed) must be Integer".to_string()),
+            })
+            .transpose()?
+            .unwrap_or(0);
+
+        let hash = Self::murmur3_32(data, seed);
+        Ok(StackItem::ByteString(hash.to_le_bytes().to_vec()))
+    }
+
+    /// Murmur3 32-bit hash implementation.
+    fn murmur3_32(data: &[u8], seed: u32) -> u32 {
+        const C1: u32 = 0xcc9e_2d51;
+        const C2: u32 = 0x1b87_3593;
+
+        let mut h = seed;
+        let len = data.len();
+
+        // Process 4-byte chunks
+        let n_blocks = len / 4;
+        for i in 0..n_blocks {
+            let offset = i * 4;
+            let k = u32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            let k = k.wrapping_mul(C1);
+            let k = k.rotate_left(15);
+            let k = k.wrapping_mul(C2);
+            h ^= k;
+            h = h.rotate_left(13);
+            h = h.wrapping_mul(5).wrapping_add(0xe654_6b64);
+        }
+
+        // Process remaining bytes
+        let tail = &data[n_blocks * 4..];
+        let mut k1: u32 = 0;
+        match tail.len() {
+            3 => {
+                k1 ^= (tail[2] as u32) << 16;
+                k1 ^= (tail[1] as u32) << 8;
+                k1 ^= tail[0] as u32;
+                k1 = k1.wrapping_mul(C1);
+                k1 = k1.rotate_left(15);
+                k1 = k1.wrapping_mul(C2);
+                h ^= k1;
+            }
+            2 => {
+                k1 ^= (tail[1] as u32) << 8;
+                k1 ^= tail[0] as u32;
+                k1 = k1.wrapping_mul(C1);
+                k1 = k1.rotate_left(15);
+                k1 = k1.wrapping_mul(C2);
+                h ^= k1;
+            }
+            1 => {
+                k1 ^= tail[0] as u32;
+                k1 = k1.wrapping_mul(C1);
+                k1 = k1.rotate_left(15);
+                k1 = k1.wrapping_mul(C2);
+                h ^= k1;
+            }
+            _ => {}
+        }
+
+        // Finalization mix
+        h ^= len as u32;
+        h ^= h >> 16;
+        h = h.wrapping_mul(0x85eb_ca6b);
+        h ^= h >> 13;
+        h = h.wrapping_mul(0xc2b2_ae35);
+        h ^= h >> 16;
+        h
+    }
 }
 
 /// Native contract registry
@@ -327,7 +500,97 @@ impl NativeRegistry {
         } else if *hash == self.cryptolib.hash() {
             self.cryptolib.invoke(method, args)
         } else {
-            Err("Unknown native contract".to_string())
+            Err(format!(
+                "Unknown native contract: hash 0x{}",
+                hash.iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>()
+            ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stack_item::StackItem;
+
+    #[test]
+    fn test_sha256_known_output() {
+        let crypto = CryptoLib::new();
+        // SHA-256 of empty string is well-known
+        let result = crypto
+            .invoke("sha256", vec![StackItem::ByteString(vec![])])
+            .unwrap();
+        if let StackItem::ByteString(hash) = result {
+            assert_eq!(hash.len(), 32);
+            // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+            assert_eq!(hash[0], 0xe3);
+            assert_eq!(hash[1], 0xb0);
+            assert_eq!(hash[31], 0x55);
+        } else {
+            panic!("Expected ByteString");
+        }
+    }
+
+    #[test]
+    fn test_base64_encode_decode_roundtrip() {
+        let stdlib = StdLib::new();
+        let original = b"hello world".to_vec();
+        let encoded = stdlib
+            .invoke(
+                "base64Encode",
+                vec![StackItem::ByteString(original.clone())],
+            )
+            .unwrap();
+        let decoded = stdlib.invoke("base64Decode", vec![encoded]).unwrap();
+        assert_eq!(decoded, StackItem::ByteString(original));
+    }
+
+    #[test]
+    fn test_itoa_atoi_roundtrip() {
+        let stdlib = StdLib::new();
+        let num = 12345i128;
+        let as_str = stdlib
+            .invoke("itoa", vec![StackItem::Integer(num)])
+            .unwrap();
+        let back = stdlib.invoke("atoi", vec![as_str]).unwrap();
+        assert_eq!(back, StackItem::Integer(num));
+    }
+
+    #[test]
+    fn test_verify_ecdsa_insufficient_args() {
+        let crypto = CryptoLib::new();
+        // Only 1 arg - should fail with "requires at least 2 arguments"
+        let result = crypto.invoke(
+            "verifyWithECDsa",
+            vec![StackItem::ByteString(vec![1, 2, 3])],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_ecdsa_missing_pubkey() {
+        let crypto = CryptoLib::new();
+        // 2 args but no pubkey - should fail with "public key required"
+        let result = crypto.invoke(
+            "verifyWithECDsa",
+            vec![
+                StackItem::ByteString(vec![1, 2, 3]),
+                StackItem::ByteString(vec![4, 5, 6]),
+            ],
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("public key required"));
+    }
+
+    #[test]
+    fn test_deserialize_oversized_input() {
+        let stdlib = StdLib::new();
+        // Create input exceeding MAX_INPUT_SIZE (1MB)
+        let oversized = vec![0u8; 1024 * 1024 + 1];
+        let result = stdlib.invoke("deserialize", vec![StackItem::ByteString(oversized)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum size"));
     }
 }

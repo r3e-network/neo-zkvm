@@ -16,7 +16,7 @@ fn test_storage_put_get() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
     let result = storage.get(&ctx, b"key1");
 
     assert_eq!(result, Some(b"value1".to_vec()));
@@ -42,8 +42,8 @@ fn test_storage_delete() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
-    storage.delete(&ctx, b"key1");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
+    storage.delete(&ctx, b"key1").unwrap();
 
     let result = storage.get(&ctx, b"key1");
     assert_eq!(result, None);
@@ -57,8 +57,8 @@ fn test_storage_overwrite() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
-    storage.put(&ctx, b"key1", b"value2");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
+    storage.put(&ctx, b"key1", b"value2").unwrap();
 
     let result = storage.get(&ctx, b"key1");
     assert_eq!(result, Some(b"value2".to_vec()));
@@ -80,8 +80,8 @@ fn test_storage_context_isolation() {
         read_only: false,
     };
 
-    storage.put(&ctx1, b"key", b"value1");
-    storage.put(&ctx2, b"key", b"value2");
+    storage.put(&ctx1, b"key", b"value1").unwrap();
+    storage.put(&ctx2, b"key", b"value2").unwrap();
 
     assert_eq!(storage.get(&ctx1, b"key"), Some(b"value1".to_vec()));
     assert_eq!(storage.get(&ctx2, b"key"), Some(b"value2".to_vec()));
@@ -99,8 +99,9 @@ fn test_storage_read_only() {
         read_only: true,
     };
 
-    storage.put(&ctx_rw, b"key", b"value");
-    storage.put(&ctx_ro, b"key", b"new_value"); // Should be ignored
+    storage.put(&ctx_rw, b"key", b"value").unwrap();
+    let err = storage.put(&ctx_ro, b"key", b"new_value").unwrap_err();
+    assert_eq!(err, "Storage is read-only");
 
     assert_eq!(storage.get(&ctx_rw, b"key"), Some(b"value".to_vec()));
 }
@@ -117,8 +118,9 @@ fn test_storage_read_only_delete() {
         read_only: true,
     };
 
-    storage.put(&ctx_rw, b"key", b"value");
-    storage.delete(&ctx_ro, b"key"); // Should be ignored
+    storage.put(&ctx_rw, b"key", b"value").unwrap();
+    let err = storage.delete(&ctx_ro, b"key").unwrap_err();
+    assert_eq!(err, "Storage is read-only");
 
     assert_eq!(storage.get(&ctx_rw, b"key"), Some(b"value".to_vec()));
 }
@@ -135,10 +137,10 @@ fn test_storage_find_prefix() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"user:1", b"alice");
-    storage.put(&ctx, b"user:2", b"bob");
-    storage.put(&ctx, b"user:3", b"charlie");
-    storage.put(&ctx, b"admin:1", b"root");
+    storage.put(&ctx, b"user:1", b"alice").unwrap();
+    storage.put(&ctx, b"user:2", b"bob").unwrap();
+    storage.put(&ctx, b"user:3", b"charlie").unwrap();
+    storage.put(&ctx, b"admin:1", b"root").unwrap();
 
     let users = storage.find(&ctx, b"user:");
     assert_eq!(users.len(), 3);
@@ -152,8 +154,8 @@ fn test_storage_find_empty_prefix() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
-    storage.put(&ctx, b"key2", b"value2");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
+    storage.put(&ctx, b"key2", b"value2").unwrap();
 
     let all = storage.find(&ctx, b"");
     assert_eq!(all.len(), 2);
@@ -167,7 +169,7 @@ fn test_storage_find_no_match() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
 
     let results = storage.find(&ctx, b"nonexistent:");
     assert_eq!(results.len(), 0);
@@ -192,7 +194,7 @@ fn test_merkle_root_single_item() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value");
+    storage.put(&ctx, b"key", b"value").unwrap();
     let root = storage.merkle_root();
 
     assert_ne!(root, [0u8; 32]);
@@ -206,10 +208,10 @@ fn test_merkle_root_changes_on_update() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value1");
+    storage.put(&ctx, b"key", b"value1").unwrap();
     let root1 = storage.merkle_root();
 
-    storage.put(&ctx, b"key", b"value2");
+    storage.put(&ctx, b"key", b"value2").unwrap();
     let root2 = storage.merkle_root();
 
     assert_ne!(root1, root2);
@@ -224,11 +226,11 @@ fn test_merkle_root_deterministic() {
         read_only: false,
     };
 
-    storage1.put(&ctx, b"key1", b"value1");
-    storage1.put(&ctx, b"key2", b"value2");
+    storage1.put(&ctx, b"key1", b"value1").unwrap();
+    storage1.put(&ctx, b"key2", b"value2").unwrap();
 
-    storage2.put(&ctx, b"key1", b"value1");
-    storage2.put(&ctx, b"key2", b"value2");
+    storage2.put(&ctx, b"key1", b"value1").unwrap();
+    storage2.put(&ctx, b"key2", b"value2").unwrap();
 
     assert_eq!(storage1.merkle_root(), storage2.merkle_root());
 }
@@ -245,8 +247,8 @@ fn test_tracked_storage_records_changes() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key1", b"value1");
-    storage.put(&ctx, b"key2", b"value2");
+    storage.put(&ctx, b"key1", b"value1").unwrap();
+    storage.put(&ctx, b"key2", b"value2").unwrap();
 
     let changes = storage.changes();
     assert_eq!(changes.len(), 2);
@@ -260,8 +262,8 @@ fn test_tracked_storage_records_old_value() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value1");
-    storage.put(&ctx, b"key", b"value2");
+    storage.put(&ctx, b"key", b"value1").unwrap();
+    storage.put(&ctx, b"key", b"value2").unwrap();
 
     let changes = storage.changes();
     assert_eq!(changes.len(), 2);
@@ -277,8 +279,8 @@ fn test_tracked_storage_records_delete() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value");
-    storage.delete(&ctx, b"key");
+    storage.put(&ctx, b"key", b"value").unwrap();
+    storage.delete(&ctx, b"key").unwrap();
 
     let changes = storage.changes();
     assert_eq!(changes.len(), 2);
@@ -293,7 +295,7 @@ fn test_tracked_storage_merkle_root() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value");
+    storage.put(&ctx, b"key", b"value").unwrap();
     let root = storage.merkle_root();
 
     assert_ne!(root, [0u8; 32]);
@@ -311,7 +313,7 @@ fn test_storage_empty_context() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value");
+    storage.put(&ctx, b"key", b"value").unwrap();
     let result = storage.get(&ctx, b"key");
 
     assert_eq!(result, Some(b"value".to_vec()));
@@ -325,7 +327,7 @@ fn test_storage_empty_key() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"", b"value");
+    storage.put(&ctx, b"", b"value").unwrap();
     let result = storage.get(&ctx, b"");
 
     assert_eq!(result, Some(b"value".to_vec()));
@@ -339,7 +341,7 @@ fn test_storage_empty_value() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"");
+    storage.put(&ctx, b"key", b"").unwrap();
     let result = storage.get(&ctx, b"key");
 
     assert_eq!(result, Some(b"".to_vec()));
@@ -357,7 +359,7 @@ fn test_storage_hundred_items() {
     for i in 0..100 {
         let key = format!("key{}", i);
         let value = format!("value{}", i);
-        storage.put(&ctx, key.as_bytes(), value.as_bytes());
+        storage.put(&ctx, key.as_bytes(), value.as_bytes()).unwrap();
     }
 
     // Verify all values
@@ -377,9 +379,9 @@ fn test_storage_key_overwrite() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value1");
-    storage.put(&ctx, b"key", b"value2");
-    storage.put(&ctx, b"key", b"value3");
+    storage.put(&ctx, b"key", b"value1").unwrap();
+    storage.put(&ctx, b"key", b"value2").unwrap();
+    storage.put(&ctx, b"key", b"value3").unwrap();
 
     let result = storage.get(&ctx, b"key");
     assert_eq!(result, Some(b"value3".to_vec()));
@@ -401,7 +403,7 @@ fn test_merkle_root_single_entry() {
         read_only: false,
     };
 
-    storage.put(&ctx, b"key", b"value");
+    storage.put(&ctx, b"key", b"value").unwrap();
     let root = storage.merkle_root();
 
     assert_ne!(root, [0u8; 32]);
@@ -422,7 +424,7 @@ fn test_merkle_root_1000_items() {
     for i in 0..1000 {
         let key = format!("key{:04}", i);
         let value = format!("value{:04}", i);
-        storage.put(&ctx, key.as_bytes(), value.as_bytes());
+        storage.put(&ctx, key.as_bytes(), value.as_bytes()).unwrap();
     }
 
     let root = storage.merkle_root();

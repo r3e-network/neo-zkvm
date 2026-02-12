@@ -15,6 +15,7 @@ version = "0.2.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/neo-project/neo-zkvm"
+rust-version = "1.75"
 
 [workspace.dependencies]
 # Neo VM Core
@@ -29,10 +30,8 @@ sp1-zkvm = "4.0"
 
 # Cryptography
 sha2 = "0.10"
-sha3 = "0.10"
 ripemd = "0.1"
 k256 = { version = "0.13", features = ["ecdsa"] }
-p256 = { version = "0.13", features = ["ecdsa"] }
 
 # Serialization
 serde = { version = "=1.0.217", features = ["derive", "alloc"] }
@@ -44,9 +43,6 @@ base64 = "0.22"
 thiserror = "2.0"
 anyhow = "1.0"
 hex = "0.4"
-num-bigint = "0.4"
-num-traits = "0.2"
-tracing = "0.1"
 
 [profile.release]
 lto = true

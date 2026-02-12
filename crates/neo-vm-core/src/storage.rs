@@ -17,8 +17,8 @@ pub struct StorageContext {
 /// Storage backend trait
 pub trait StorageBackend {
     fn get(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>>;
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]);
-    fn delete(&mut self, context: &StorageContext, key: &[u8]);
+    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String>;
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String>;
     fn find(&self, context: &StorageContext, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)>;
 }
 
@@ -101,20 +101,22 @@ impl StorageBackend for MemoryStorage {
         self.data.get(&full_key).cloned()
     }
 
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) {
+    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String> {
         if context.read_only {
-            return;
+            return Err("Storage is read-only".to_string());
         }
         let full_key = Self::make_key(context, key);
         self.data.insert(full_key, value.to_vec());
+        Ok(())
     }
 
-    fn delete(&mut self, context: &StorageContext, key: &[u8]) {
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String> {
         if context.read_only {
-            return;
+            return Err("Storage is read-only".to_string());
         }
         let full_key = Self::make_key(context, key);
         self.data.remove(&full_key);
+        Ok(())
     }
 
     fn find(&self, context: &StorageContext, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -130,12 +132,21 @@ impl StorageBackend for MemoryStorage {
     }
 }
 
+/// A node in a Merkle proof path, carrying both the sibling hash and its position.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MerklePathNode {
+    /// Hash of the sibling node at this level
+    pub hash: [u8; 32],
+    /// `true` if the sibling is on the right (i.e. current node is the left child)
+    pub is_right: bool,
+}
+
 /// Storage proof for ZK verification
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StorageProof {
     pub key: Vec<u8>,
     pub value: Option<Vec<u8>>,
-    pub merkle_path: Vec<[u8; 32]>,
+    pub merkle_path: Vec<MerklePathNode>,
     pub root: [u8; 32],
 }
 
@@ -162,17 +173,18 @@ impl StorageProof {
         computed_root == expected_root
     }
 
-    /// Compute root hash from leaf and path
-    fn compute_root_from_path(leaf: &[u8; 32], path: &[[u8; 32]]) -> [u8; 32] {
+    /// Compute root hash from leaf and path using explicit direction flags
+    fn compute_root_from_path(leaf: &[u8; 32], path: &[MerklePathNode]) -> [u8; 32] {
         let mut current = *leaf;
-        for sibling in path {
+        for node in path {
             let mut hasher = Sha256::new();
-            // Determine left/right based on hash ordering
-            if current < *sibling {
+            if node.is_right {
+                // Sibling is on the right: current | sibling
                 hasher.update(current);
-                hasher.update(*sibling);
+                hasher.update(node.hash);
             } else {
-                hasher.update(*sibling);
+                // Sibling is on the left: sibling | current
+                hasher.update(node.hash);
                 hasher.update(current);
             }
             current = hasher.finalize().into();
@@ -216,32 +228,34 @@ impl StorageBackend for TrackedStorage {
         self.inner.get(context, key)
     }
 
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) {
+    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String> {
         if context.read_only {
-            return;
+            return Err("Storage is read-only".to_string());
         }
         let old_value = self.inner.get(context, key);
-        self.inner.put(context, key, value);
+        self.inner.put(context, key, value)?;
         self.changes.push(StorageChange {
             script_hash: context.script_hash,
             key: key.to_vec(),
             old_value,
             new_value: Some(value.to_vec()),
         });
+        Ok(())
     }
 
-    fn delete(&mut self, context: &StorageContext, key: &[u8]) {
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String> {
         if context.read_only {
-            return;
+            return Err("Storage is read-only".to_string());
         }
         let old_value = self.inner.get(context, key);
-        self.inner.delete(context, key);
+        self.inner.delete(context, key)?;
         self.changes.push(StorageChange {
             script_hash: context.script_hash,
             key: key.to_vec(),
             old_value,
             new_value: None,
         });
+        Ok(())
     }
 
     fn find(&self, context: &StorageContext, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
