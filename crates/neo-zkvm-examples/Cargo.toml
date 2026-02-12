@@ -20,6 +20,18 @@ path = "src/proof_generation.rs"
 name = "native_contracts"
 path = "src/native_contracts.rs"
 
+[[bin]]
+name = "batch_verification"
+path = "src/batch_verification.rs"
+
+[[bin]]
+name = "private_inputs"
+path = "src/private_inputs.rs"
+
+[[bin]]
+name = "tamper_resistance"
+path = "src/tamper_resistance.rs"
+
 [dependencies]
 neo-vm-core = { workspace = true }
 neo-vm-guest = { workspace = true }

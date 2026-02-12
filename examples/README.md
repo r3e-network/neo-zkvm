@@ -1,62 +1,42 @@
 # Neo zkVM Examples
 
-This directory contains working examples demonstrating various features of Neo zkVM.
+This directory mirrors runnable examples from `crates/neo-zkvm-examples/src`.
 
-## Available Examples
-
-### 1. Basic (`basic.rs`)
-Simple VM usage - demonstrates 2 + 3 = 5.
+## Run a Single Example
 
 ```bash
-cargo run --example basic
+cargo run -p neo-zkvm-examples --bin <name>
 ```
 
-### 2. Native Contracts (`native_contracts.rs`)
-Shows how to use StdLib and CryptoLib native contracts.
+## Core Examples
+
+- `basic` - Minimal VM execution (`2 + 3 = 5`).
+- `proof_generation` - End-to-end proof generation + verification flow.
+- `native_contracts` - StdLib/CryptoLib contract operations.
+- `storage_example` - Storage operations + Merkle-root state commitments.
+
+## Common zkVM Usage Patterns
+
+- `batch_verification` - Prove and verify many jobs together (batch pipeline).
+- `private_inputs` - Commit private inputs via input-hash commitments.
+- `tamper_resistance` - Verify untrusted proofs and reject tampered payloads.
+
+## Validation
+
+Run all example tests:
 
 ```bash
-cargo run --example native_contracts
+cargo test -p neo-zkvm-examples
 ```
 
-### 3. Storage (`storage_example.rs`)
-Demonstrates key-value storage with Merkle proofs.
+Run all example binaries:
 
 ```bash
-cargo run --example storage_example
+cargo run -p neo-zkvm-examples --bin basic
+cargo run -p neo-zkvm-examples --bin native_contracts
+cargo run -p neo-zkvm-examples --bin storage_example
+cargo run -p neo-zkvm-examples --bin proof_generation
+cargo run -p neo-zkvm-examples --bin batch_verification
+cargo run -p neo-zkvm-examples --bin private_inputs
+cargo run -p neo-zkvm-examples --bin tamper_resistance
 ```
-
-### 4. Proof Generation (`proof_generation.rs`)
-Shows how to generate and verify ZK proofs.
-
-```bash
-cargo run --example proof_generation
-```
-
-## Running All Examples
-
-```bash
-./scripts/run-examples.sh
-```
-
-Or manually:
-
-```bash
-cargo run --example basic
-cargo run --example native_contracts
-cargo run --example storage_example
-cargo run --example proof_generation
-```
-
-## Creating Your Own Example
-
-1. Create a new file in `examples/` directory
-2. Add it to `Cargo.toml` in the `[[example]]` section
-3. Run with `cargo run --example <name>`
-
-## Example Structure
-
-Each example should:
-- Have a descriptive comment at the top
-- Use `?` for error handling where possible
-- Print clear output
-- Demonstrate a specific feature
