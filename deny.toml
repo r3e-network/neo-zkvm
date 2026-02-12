@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2021-0139", reason = "Transitive via SP1 tracing stack (ansi_term through tracing-forest in sp1-core-machine 5.2.4); no maintained drop-in replacement available upstream." },
+    { id = "RUSTSEC-2024-0388", reason = "Transitive via SP1 recursion/FFI dependency graph (derivative); upstream has not yet migrated to a maintained alternative in the current 5.2.4 stack." },
+    { id = "RUSTSEC-2024-0436", reason = "Transitive via alloy/SP1 macro dependency tree (paste); no drop-in maintained replacement is wired into upstream crates yet." },
+    { id = "RUSTSEC-2025-0119", reason = "Transitive via indicatif in SP1 tooling (number_prefix); upstream crate is unmaintained and no patched release exists." },
+    { id = "RUSTSEC-2025-0141", reason = "Workspace and transitive stack still use bincode 1.x for deterministic cross-host serialization; migration is tracked separately due compatibility impact." },
+    { id = "RUSTSEC-2026-0002", reason = "Transitive via lru 0.12.x in sp1-prover 5.2.4; patched advisory resolution is not yet available in current upstream constraints." },
+]

@@ -20,4 +20,4 @@ default = []
 mock-elf = []  # Use empty ELF for testing without SP1 toolchain
 
 [build-dependencies]
-sp1-build = "4.0"
+sp1-build = "5.2"

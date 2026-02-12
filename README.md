@@ -58,6 +58,11 @@ neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 >
 > Explicit `-m sp1/plonk/groth16` now fails if it downgrades to `mock` unless you pass `--allow-fallback`.
 
+```bash
+# Run full production-readiness gates locally
+./scripts/verify-production.sh
+```
+
 ## Installation
 
 ### From Source
@@ -154,11 +159,14 @@ loop/1000           time: [8.2 µs 8.5 µs 8.8 µs]
 
 ## Documentation
 
+- [Getting Started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
 - [Opcodes Reference](docs/opcodes.md)
 - [CLI Reference](docs/cli.md)
 - [Formal Verification](docs/formal-verification.md)
 - [Completeness Proofs](docs/completeness-proof.md)
+- [Production Readiness Report](PRODUCTION_READINESS_REPORT.md)
+- [SP1 v6 Migration Notes](docs/sp1-v6-migration-notes.md)
 - [Examples](examples/)
 
 ## License

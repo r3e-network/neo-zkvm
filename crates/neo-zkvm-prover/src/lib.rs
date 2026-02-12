@@ -41,6 +41,10 @@ pub const NEO_ZKVM_ELF: &[u8] =
 
 const BINCODE_LIMIT: u64 = 10 * 1024 * 1024; // 10MB limit
 
+// NeoProof serialization format version.
+// Increment this when NeoProof structure or semantics change incompatibly.
+pub const PROOF_FORMAT_VERSION: u16 = 1;
+
 type DynError = Box<dyn std::error::Error>;
 type Sp1ProofArtifacts = (Vec<u8>, [u8; 32], PublicInputs);
 
@@ -63,6 +67,8 @@ pub struct NeoProof {
     pub vkey_hash: [u8; 32],
     /// Proof mode used
     pub proof_mode: ProofMode,
+    /// NeoProof serialization format version.
+    pub proof_format_version: u16,
 }
 
 /// Public inputs for verification
@@ -194,12 +200,13 @@ impl NeoProver {
                 },
                 vkey_hash: [0u8; 32],
                 proof_mode: self.config.proof_mode,
+                proof_format_version: PROOF_FORMAT_VERSION,
             };
         }
 
         // Compute hashes for public inputs
         let script_hash = Self::hash_data(&input.script);
-        let input_hash = Self::hash_guest_input(&input);
+        let input_hash = Self::hash_proof_input(&input);
 
         // Execute to get output (used for all modes)
         let output = execute(input.clone());
@@ -289,6 +296,20 @@ impl NeoProver {
         };
 
         if let Some(inputs) = sp1_public_inputs {
+            if !public_inputs_equal(&inputs, &public_inputs) {
+                eprintln!(
+                    "Warning: SP1 public inputs differ from host execution summary; falling back to mock proof"
+                );
+                return NeoProof {
+                    output,
+                    proof_bytes: self.generate_mock_proof(&public_inputs),
+                    public_inputs,
+                    vkey_hash: [0u8; 32],
+                    proof_mode: ProofMode::Mock,
+                    proof_format_version: PROOF_FORMAT_VERSION,
+                };
+            }
+
             public_inputs = inputs;
         }
 
@@ -298,6 +319,7 @@ impl NeoProver {
             public_inputs,
             vkey_hash,
             proof_mode: actual_mode,
+            proof_format_version: PROOF_FORMAT_VERSION,
         }
     }
 
@@ -305,11 +327,19 @@ impl NeoProver {
     ///
     /// Returns true if the proof is valid, false otherwise.
     pub fn verify(&self, proof: &NeoProof) -> bool {
+        if proof.proof_format_version != PROOF_FORMAT_VERSION {
+            return false;
+        }
+
+        if !Self::output_matches_public_inputs(proof) {
+            return false;
+        }
+
         match proof.proof_mode {
-            ProofMode::Execute => true,
-            ProofMode::Mock => self.verify_mock_proof(proof),
+            ProofMode::Execute => proof.output.state == 0,
+            ProofMode::Mock => proof.output.state == 0 && self.verify_mock_proof(proof),
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
-                self.verify_sp1_proof(proof).unwrap_or(false)
+                proof.output.state == 0 && self.verify_sp1_proof(proof).unwrap_or(false)
             }
         }
     }
@@ -320,12 +350,20 @@ impl NeoProver {
         hasher.finalize().into()
     }
 
-    fn hash_guest_input(input: &ProofInput) -> [u8; 32] {
-        let guest_input = build_guest_input(input);
-        let bytes = bincode_options()
-            .serialize(&guest_input)
-            .unwrap_or_default();
+    fn hash_proof_input(input: &ProofInput) -> [u8; 32] {
+        let bytes = bincode_options().serialize(input).unwrap_or_default();
         Self::hash_data(&bytes)
+    }
+
+    fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
+        let output_bytes = bincode_options().serialize(output).unwrap_or_default();
+        Self::hash_data(&output_bytes)
+    }
+
+    fn output_matches_public_inputs(proof: &NeoProof) -> bool {
+        proof.public_inputs.output_hash == Self::hash_proof_output(&proof.output)
+            && proof.public_inputs.gas_consumed == proof.output.gas_consumed
+            && proof.public_inputs.execution_success == (proof.output.state == 0)
     }
 
     fn generate_mock_proof(&self, inputs: &PublicInputs) -> Vec<u8> {
@@ -412,10 +450,7 @@ impl NeoProver {
     fn prepare_stdin(&self, input: &ProofInput) -> SP1Stdin {
         let mut stdin = SP1Stdin::new();
 
-        // Convert to guest-compatible format
-        let guest_input = build_guest_input(input);
-
-        stdin.write(&guest_input);
+        stdin.write(input);
         stdin
     }
 
@@ -430,23 +465,6 @@ impl NeoProver {
     }
 }
 
-/// Input for the guest program
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct GuestInput {
-    pub script: Vec<u8>,
-    pub arguments: Vec<GuestStackItem>,
-    pub gas_limit: u64,
-}
-
-/// Simplified stack item for guest
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum GuestStackItem {
-    Null,
-    Boolean(bool),
-    Integer(i128),
-    ByteString(Vec<u8>),
-}
-
 fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, DynError> {
     Ok(bincode_options().deserialize(values.as_slice())?)
 }
@@ -457,32 +475,6 @@ fn public_inputs_equal(a: &PublicInputs, b: &PublicInputs) -> bool {
         && a.output_hash == b.output_hash
         && a.gas_consumed == b.gas_consumed
         && a.execution_success == b.execution_success
-}
-
-/// Convert a `ProofInput` (using `neo_vm_core::StackItem` with 9 variants) into a
-/// `GuestInput` (using `GuestStackItem` with 4 variants).
-///
-/// WARNING: This is a lossy conversion by design. The following `StackItem` variants
-/// are mapped to `GuestStackItem::Null` because the zkVM guest program does not
-/// support them: `Buffer`, `Array`, `Struct`, `Map`, `Pointer`.
-/// Callers must ensure inputs only use the supported subset, or accept that
-/// unsupported variants will be silently converted to Null.
-fn build_guest_input(input: &ProofInput) -> GuestInput {
-    GuestInput {
-        script: input.script.clone(),
-        arguments: input
-            .arguments
-            .iter()
-            .map(|item| match item {
-                neo_vm_core::StackItem::Null => GuestStackItem::Null,
-                neo_vm_core::StackItem::Boolean(b) => GuestStackItem::Boolean(*b),
-                neo_vm_core::StackItem::Integer(i) => GuestStackItem::Integer(*i),
-                neo_vm_core::StackItem::ByteString(b) => GuestStackItem::ByteString(b.clone()),
-                _ => GuestStackItem::Null,
-            })
-            .collect(),
-        gas_limit: input.gas_limit,
-    }
 }
 
 /// Mock proof structure for testing
@@ -535,18 +527,36 @@ mod tests {
     }
 
     #[test]
-    fn test_guest_input_hash_matches_serialized_guest_input() {
+    fn test_input_hash_matches_serialized_proof_input() {
         let input = ProofInput {
             script: vec![0x12, 0x13, 0x9E, 0x40],
             arguments: vec![StackItem::Integer(7)],
             gas_limit: 123,
         };
 
-        let guest = build_guest_input(&input);
-        let bytes = bincode_options().serialize(&guest).expect("serialize");
+        let bytes = bincode_options().serialize(&input).expect("serialize");
         let hash = NeoProver::hash_data(&bytes);
 
-        assert_eq!(hash, NeoProver::hash_guest_input(&input));
+        assert_eq!(hash, NeoProver::hash_proof_input(&input));
+    }
+
+    #[test]
+    fn test_input_hash_distinguishes_complex_argument_variants() {
+        let null_input = ProofInput {
+            script: vec![0x40],
+            arguments: vec![StackItem::Null],
+            gas_limit: 1_000_000,
+        };
+        let array_input = ProofInput {
+            script: vec![0x40],
+            arguments: vec![StackItem::Array(vec![StackItem::Integer(42)])],
+            gas_limit: 1_000_000,
+        };
+
+        assert_ne!(
+            NeoProver::hash_proof_input(&null_input),
+            NeoProver::hash_proof_input(&array_input)
+        );
     }
 
     #[test]
@@ -582,6 +592,22 @@ mod tests {
     }
 
     #[test]
+    fn test_output_tampering_is_detected() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let mut proof = prover.prove(input);
+        proof.output.result = Some(StackItem::Integer(999));
+        assert!(!prover.verify(&proof));
+    }
+
+    #[test]
     fn test_faulting_script_produces_failed_proof() {
         let prover = NeoProver::new(ProverConfig {
             proof_mode: ProofMode::Mock,
@@ -594,5 +620,60 @@ mod tests {
         };
         let proof = prover.prove(input);
         assert_ne!(proof.output.state, 0);
+    }
+
+    #[test]
+    fn test_verify_execute_faulted_proof_rejected() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        assert_ne!(proof.output.state, 0);
+        assert!(!prover.verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_mock_faulted_proof_rejected() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        assert_ne!(proof.output.state, 0);
+        assert!(!prover.verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_rejects_unknown_proof_format_version() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let mut proof = prover.prove(input);
+        proof.proof_format_version = proof.proof_format_version.saturating_add(1);
+
+        assert!(!prover.verify(&proof));
     }
 }

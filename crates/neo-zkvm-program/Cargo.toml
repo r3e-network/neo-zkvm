@@ -7,10 +7,11 @@ repository.workspace = true
 description = "SP1 guest program for proving Neo VM execution"
 
 [dependencies]
-sp1-zkvm = "4.0"
+sp1-zkvm = "5.2"
+neo-vm-guest = { workspace = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 bincode = "1.3"
 sha2 = { version = "0.10", default-features = false }
 
 [build-dependencies]
-sp1-build = "4.0"
+sp1-build = "5.2"

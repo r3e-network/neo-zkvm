@@ -21,7 +21,9 @@
 //! ```
 
 use bincode::Options;
-use neo_zkvm_prover::{MockProof, NeoProof, ProofMode, PublicInputs, NEO_ZKVM_ELF};
+use neo_zkvm_prover::{
+    MockProof, NeoProof, ProofMode, PublicInputs, NEO_ZKVM_ELF, PROOF_FORMAT_VERSION,
+};
 use sha2::{Digest, Sha256};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues};
 
@@ -62,6 +64,28 @@ pub fn verify(proof: &NeoProof) -> bool {
 
 /// Verify with detailed result
 pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
+    if proof.proof_format_version != PROOF_FORMAT_VERSION {
+        return VerificationResult {
+            valid: false,
+            error: Some(format!(
+                "Unsupported proof format version: expected {} but got {}",
+                PROOF_FORMAT_VERSION, proof.proof_format_version
+            )),
+            proof_type: expected_proof_type(proof.proof_mode),
+        };
+    }
+
+    if !output_matches_public_inputs(proof) {
+        return VerificationResult {
+            valid: false,
+            error: Some(
+                "Output mismatch: NeoProof output fields do not match committed public inputs"
+                    .to_string(),
+            ),
+            proof_type: expected_proof_type(proof.proof_mode),
+        };
+    }
+
     match proof.proof_mode {
         ProofMode::Execute => {
             if proof.output.state != 0 {
@@ -137,6 +161,14 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
 ///
 /// This is useful when you have the vkey but not the original prover.
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
+    if proof.proof_format_version != PROOF_FORMAT_VERSION {
+        return false;
+    }
+
+    if !output_matches_public_inputs(proof) {
+        return false;
+    }
+
     if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
         return verify(proof);
     }
@@ -294,6 +326,29 @@ fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+fn hash_proof_output(output: &neo_vm_guest::ProofOutput) -> [u8; 32] {
+    let bytes = bincode_options().serialize(output).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
+
+fn output_matches_public_inputs(proof: &NeoProof) -> bool {
+    proof.public_inputs.output_hash == hash_proof_output(&proof.output)
+        && proof.public_inputs.gas_consumed == proof.output.gas_consumed
+        && proof.public_inputs.execution_success == (proof.output.state == 0)
+}
+
+fn expected_proof_type(mode: ProofMode) -> ProofType {
+    match mode {
+        ProofMode::Execute => ProofType::Empty,
+        ProofMode::Mock => ProofType::Mock,
+        ProofMode::Sp1 => ProofType::Sp1Compressed,
+        ProofMode::Plonk => ProofType::Sp1Plonk,
+        ProofMode::Groth16 => ProofType::Sp1Groth16,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +481,64 @@ mod tests {
         let proof = prover.prove(input);
         let result = verify_detailed(&proof);
         assert!(!result.valid);
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_mock_output_result() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let mut proof = prover.prove(input);
+        proof.output.result = Some(StackItem::Integer(999));
+
+        assert!(!verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_mock_output_gas() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let mut proof = prover.prove(input);
+        proof.output.gas_consumed = proof.output.gas_consumed.saturating_add(1);
+
+        assert!(!verify(&proof));
+    }
+
+    #[test]
+    fn test_verify_rejects_unknown_proof_format_version() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let mut proof = prover.prove(input);
+        proof.proof_format_version = proof.proof_format_version.saturating_add(1);
+
+        let result = verify_detailed(&proof);
+        assert!(!result.valid);
+        assert!(result
+            .error
+            .unwrap_or_default()
+            .contains("Unsupported proof format version"));
     }
 }

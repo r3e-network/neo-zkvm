@@ -373,6 +373,8 @@ Now that you have the basics, explore these resources:
 - **[Architecture](architecture.md)** - Deep dive into system design
 - **[Opcodes Reference](opcodes.md)** - Complete opcode documentation
 - **[API Reference](api-reference.md)** - Full API documentation
+- **[Production Readiness Report](../PRODUCTION_READINESS_REPORT.md)** - Current release readiness status
+- **[SP1 v6 Migration Notes](sp1-v6-migration-notes.md)** - Future upgrade prerequisites and risks
 - **[Examples](../examples/)** - More code examples
 
 ## Troubleshooting
@@ -381,10 +383,12 @@ Now that you have the basics, explore these resources:
 
 **Build fails with SP1 errors:**
 ```bash
-# Install SP1 toolchain
+# Install/update SP1 toolchain
 curl -L https://sp1.succinct.xyz | bash
 sp1up
 ```
+
+If you are evaluating SP1 v6 pre-releases, review **[SP1 v6 Migration Notes](sp1-v6-migration-notes.md)** first for additional prerequisites (for example `protoc` and target/toolchain alignment).
 
 **`cargo install neo-zkvm-cli` fails with `OUT_DIR does not have parent called "target"`:**
 ```bash

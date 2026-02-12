@@ -339,8 +339,11 @@ fn parse_script(input: &str) -> Result<Vec<u8>, String> {
 
 fn parse_gas_limit(args: &[String]) -> Result<u64, String> {
     for (i, arg) in args.iter().enumerate() {
-        if (arg == "--gas" || arg == "-g") && i + 1 < args.len() {
-            return args[i + 1]
+        if arg == "--gas" || arg == "-g" {
+            let value = args
+                .get(i + 1)
+                .ok_or_else(|| "Missing value for --gas".to_string())?;
+            return value
                 .parse()
                 .map_err(|_| "Invalid gas limit value".to_string());
         }
@@ -384,11 +387,10 @@ fn parse_allow_fallback(args: &[String]) -> bool {
 fn should_error_on_fallback(
     requested_mode: ProofMode,
     actual_mode: ProofMode,
-    explicitly_requested_mode: bool,
+    _explicitly_requested_mode: bool,
     allow_fallback: bool,
 ) -> bool {
-    explicitly_requested_mode
-        && !allow_fallback
+    !allow_fallback
         && matches!(
             requested_mode,
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
@@ -951,13 +953,19 @@ mod tests {
     }
 
     #[test]
-    fn test_should_error_on_fallback_for_explicit_crypto_modes() {
+    fn test_should_error_on_fallback_for_crypto_modes() {
         assert!(should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
             true,
             false,
         ));
+        assert!(should_error_on_fallback(
+            ProofMode::Sp1,
+            ProofMode::Mock,
+            false,
+            false,
+        ));
         assert!(!should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
@@ -965,16 +973,17 @@ mod tests {
             true,
         ));
         assert!(!should_error_on_fallback(
-            ProofMode::Sp1,
-            ProofMode::Mock,
-            false,
-            false,
-        ));
-        assert!(!should_error_on_fallback(
             ProofMode::Mock,
             ProofMode::Mock,
             true,
             false,
         ));
+    }
+
+    #[test]
+    fn test_parse_gas_limit_requires_value() {
+        let args = vec!["12139E40".to_string(), "--gas".to_string()];
+        let err = parse_gas_limit(&args).unwrap_err();
+        assert!(err.contains("Missing value for --gas"));
     }
 }
