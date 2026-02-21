@@ -207,6 +207,7 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
 
     let prover = NeoProver::new(ProverConfig {
         proof_mode,
+        allow_mock_fallback: allow_fallback,
         ..ProverConfig::default()
     });
     let proof = if allow_fallback {

@@ -51,6 +51,10 @@ pub struct ProverConfig {
     pub max_cycles: u64,
     /// Proof mode (determines proof type and verification cost)
     pub proof_mode: ProofMode,
+    /// Allow cryptographic proof modes to fall back to mock proofs on failure.
+    ///
+    /// Defaults to `false` so production callers fail closed unless they opt in.
+    pub allow_mock_fallback: bool,
     /// Optional fixed timestamp for deterministic mock proofs.
     pub deterministic_mock_timestamp: Option<u64>,
 }
@@ -60,6 +64,7 @@ impl Default for ProverConfig {
         Self {
             max_cycles: 10_000_000,
             proof_mode: ProofMode::Sp1,
+            allow_mock_fallback: false,
             deterministic_mock_timestamp: None,
         }
     }
@@ -156,6 +161,15 @@ impl NeoProver {
         }
     }
 
+    fn fallback_artifacts(&self, public_inputs: &PublicInputs, warning: &str) -> Sp1ProofArtifacts {
+        eprintln!("Warning: {warning}");
+        (
+            self.generate_mock_proof(public_inputs),
+            [0u8; 32],
+            public_inputs.clone(),
+        )
+    }
+
     /// Hash a serialized `ProofInput` for public input commitment.
     pub fn try_hash_proof_input(input: &ProofInput) -> Result<[u8; 32], bincode::Error> {
         let bytes = bincode_options().serialize(input)?;
@@ -236,15 +250,21 @@ impl NeoProver {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Compressed) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Sp1, Some(inputs)),
                     Err(err) => {
-                        eprintln!(
-                            "Warning: SP1 proof generation failed ({err}), falling back to mock"
+                        let warning = format!(
+                            "SP1 proof generation failed ({err}), {}",
+                            if self.config.allow_mock_fallback {
+                                "falling back to mock"
+                            } else {
+                                "and mock fallback is disabled"
+                            }
                         );
-                        (
-                            self.generate_mock_proof(&public_inputs),
-                            [0u8; 32],
-                            ProofMode::Mock,
-                            None,
-                        )
+                        if self.config.allow_mock_fallback {
+                            let (bytes, hash, inputs) =
+                                self.fallback_artifacts(&public_inputs, &warning);
+                            (bytes, hash, ProofMode::Mock, Some(inputs))
+                        } else {
+                            return self.failed_proof(script_hash, input_hash, warning);
+                        }
                     }
                 }
             }
@@ -252,15 +272,21 @@ impl NeoProver {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Plonk) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Plonk, Some(inputs)),
                     Err(err) => {
-                        eprintln!(
-                            "Warning: PLONK proof generation failed ({err}), falling back to mock"
+                        let warning = format!(
+                            "PLONK proof generation failed ({err}), {}",
+                            if self.config.allow_mock_fallback {
+                                "falling back to mock"
+                            } else {
+                                "and mock fallback is disabled"
+                            }
                         );
-                        (
-                            self.generate_mock_proof(&public_inputs),
-                            [0u8; 32],
-                            ProofMode::Mock,
-                            None,
-                        )
+                        if self.config.allow_mock_fallback {
+                            let (bytes, hash, inputs) =
+                                self.fallback_artifacts(&public_inputs, &warning);
+                            (bytes, hash, ProofMode::Mock, Some(inputs))
+                        } else {
+                            return self.failed_proof(script_hash, input_hash, warning);
+                        }
                     }
                 }
             }
@@ -268,43 +294,65 @@ impl NeoProver {
                 match self.generate_sp1_proof(&input, SP1ProofMode::Groth16) {
                     Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Groth16, Some(inputs)),
                     Err(err) => {
-                        eprintln!("Warning: Groth16 proof generation failed ({err}), falling back to mock");
-                        (
-                            self.generate_mock_proof(&public_inputs),
-                            [0u8; 32],
-                            ProofMode::Mock,
-                            None,
-                        )
+                        let warning = format!(
+                            "Groth16 proof generation failed ({err}), {}",
+                            if self.config.allow_mock_fallback {
+                                "falling back to mock"
+                            } else {
+                                "and mock fallback is disabled"
+                            }
+                        );
+                        if self.config.allow_mock_fallback {
+                            let (bytes, hash, inputs) =
+                                self.fallback_artifacts(&public_inputs, &warning);
+                            (bytes, hash, ProofMode::Mock, Some(inputs))
+                        } else {
+                            return self.failed_proof(script_hash, input_hash, warning);
+                        }
                     }
                 }
             }
-            _ => {
-                eprintln!(
-                    "Warning: {}. Falling back to mock proof.",
-                    Self::sp1_unavailable_reason()
+            ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
+                let warning = format!(
+                    "{}; {}",
+                    Self::sp1_unavailable_reason(),
+                    if self.config.allow_mock_fallback {
+                        "falling back to mock proof"
+                    } else {
+                        "mock fallback is disabled"
+                    }
                 );
-                (
-                    self.generate_mock_proof(&public_inputs),
-                    [0u8; 32],
-                    ProofMode::Mock,
-                    None,
-                )
+                if self.config.allow_mock_fallback {
+                    let (bytes, hash, inputs) = self.fallback_artifacts(&public_inputs, &warning);
+                    (bytes, hash, ProofMode::Mock, Some(inputs))
+                } else {
+                    return self.failed_proof(script_hash, input_hash, warning);
+                }
             }
         };
 
         if let Some(inputs) = sp1_public_inputs {
             if !public_inputs_equal(&inputs, &public_inputs) {
-                eprintln!(
-                    "Warning: SP1 public inputs differ from host execution; falling back to mock"
+                let warning = format!(
+                    "SP1 public inputs differ from host execution; {}",
+                    if self.config.allow_mock_fallback {
+                        "falling back to mock"
+                    } else {
+                        "mock fallback is disabled"
+                    }
                 );
-                return NeoProof {
-                    output,
-                    proof_bytes: self.generate_mock_proof(&public_inputs),
-                    public_inputs,
-                    vkey_hash: [0u8; 32],
-                    proof_mode: ProofMode::Mock,
-                    proof_format_version: PROOF_FORMAT_VERSION,
-                };
+                if self.config.allow_mock_fallback {
+                    let (bytes, hash, _) = self.fallback_artifacts(&public_inputs, &warning);
+                    return NeoProof {
+                        output,
+                        proof_bytes: bytes,
+                        public_inputs,
+                        vkey_hash: hash,
+                        proof_mode: ProofMode::Mock,
+                        proof_format_version: PROOF_FORMAT_VERSION,
+                    };
+                }
+                return self.failed_proof(script_hash, input_hash, warning);
             }
             public_inputs = inputs;
         }
@@ -326,12 +374,18 @@ impl NeoProver {
         if matches!(
             requested_mode,
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
-        ) && proof.proof_mode != requested_mode
-        {
-            return Err(format!(
-                "Requested proof mode {:?} but prover produced {:?}. Re-run with fallback enabled if this is expected.",
-                requested_mode, proof.proof_mode
-            ));
+        ) {
+            if proof.proof_mode != requested_mode {
+                return Err(format!(
+                    "Requested proof mode {:?} but prover produced {:?}. Re-run with fallback enabled if this is expected.",
+                    requested_mode, proof.proof_mode
+                ));
+            }
+            if proof.output.state != 0 {
+                return Err(proof.output.error.clone().unwrap_or_else(|| {
+                    format!("Proof generation in {:?} mode failed", requested_mode)
+                }));
+            }
         }
         Ok(proof)
     }
@@ -522,10 +576,51 @@ mod tests {
         };
 
         let result = prover.prove_strict(input);
-        if cfg!(debug_assertions) {
+        if cfg!(debug_assertions) || !NeoProver::is_elf_available() {
             assert!(result.is_err());
         } else {
             assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_prove_sp1_mode_fails_closed_in_debug_without_fallback_opt_in() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Sp1,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        if cfg!(debug_assertions) {
+            assert_ne!(proof.output.state, 0);
+            assert_eq!(proof.proof_mode, ProofMode::Sp1);
+        }
+    }
+
+    #[test]
+    fn test_prove_sp1_mode_supports_explicit_fallback_opt_in() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Sp1,
+            allow_mock_fallback: true,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover.prove(input);
+        if cfg!(debug_assertions) || !NeoProver::is_elf_available() {
+            assert_eq!(proof.proof_mode, ProofMode::Mock);
+            assert_eq!(proof.output.state, 0);
         }
     }
 

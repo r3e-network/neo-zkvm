@@ -5,11 +5,14 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use neo_zkvm_prover::{NeoProver, ProverConfig};
-//! use neo_zkvm_verifier::{verify, verify_detailed, VerificationResult};
+//! use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
+//! use neo_zkvm_verifier::verify;
 //! use neo_vm_guest::ProofInput;
 //!
-//! let prover = NeoProver::new(ProverConfig::default());
+//! let prover = NeoProver::new(ProverConfig {
+//!     proof_mode: ProofMode::Mock,
+//!     ..Default::default()
+//! });
 //! let input = ProofInput {
 //!     script: vec![0x12, 0x13, 0x9E, 0x40],
 //!     arguments: vec![],
@@ -50,6 +53,11 @@ pub enum ProofType {
 /// Verify a Neo zkVM proof (simple interface)
 pub fn verify(proof: &NeoProof) -> bool {
     verify_detailed(proof).valid
+}
+
+/// Verify a proof and require an expected proof mode.
+pub fn verify_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> bool {
+    verify_detailed_for_mode(proof, expected_mode).valid
 }
 
 /// Verify with detailed result
@@ -145,6 +153,22 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
     }
 }
 
+/// Verify with detailed result and require an expected proof mode.
+pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> VerificationResult {
+    if proof.proof_mode != expected_mode {
+        return VerificationResult {
+            valid: false,
+            error: Some(format!(
+                "Proof mode mismatch: expected {:?} but got {:?}",
+                expected_mode, proof.proof_mode
+            )),
+            proof_type: expected_proof_type(proof.proof_mode),
+        };
+    }
+
+    verify_detailed(proof)
+}
+
 /// Verify a proof with explicit vkey
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
@@ -174,6 +198,18 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
         }
         Err(_) => false,
     }
+}
+
+/// Verify a proof with explicit vkey and require an expected proof mode.
+pub fn verify_with_vkey_for_mode(
+    proof: &NeoProof,
+    expected_mode: ProofMode,
+    vkey: &sp1_sdk::SP1VerifyingKey,
+) -> bool {
+    if proof.proof_mode != expected_mode {
+        return false;
+    }
+    verify_with_vkey(proof, vkey)
 }
 
 /// Setup the ELF and return verification key
@@ -532,5 +568,42 @@ mod tests {
             .error
             .unwrap_or_default()
             .contains("Unsupported proof format version"));
+    }
+
+    #[test]
+    fn test_verify_for_mode_rejects_mode_mismatch() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+
+        let result = verify_detailed_for_mode(&proof, ProofMode::Sp1);
+        assert!(!result.valid);
+        assert!(result
+            .error
+            .unwrap_or_default()
+            .contains("Proof mode mismatch"));
+    }
+
+    #[test]
+    fn test_verify_for_mode_accepts_matching_mode() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let proof = prover.prove(input);
+
+        assert!(verify_for_mode(&proof, ProofMode::Mock));
     }
 }

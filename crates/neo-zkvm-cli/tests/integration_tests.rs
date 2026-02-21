@@ -2,7 +2,7 @@
 
 use neo_vm_core::{NativeContract, StackItem, StdLib};
 use neo_vm_guest::{execute, ProofInput};
-use neo_zkvm_prover::{NeoProver, ProverConfig};
+use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 
 #[test]
@@ -20,7 +20,10 @@ fn test_full_prove_verify_cycle() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
@@ -88,7 +91,10 @@ fn test_prove_verify_with_arguments() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
@@ -109,7 +115,10 @@ fn test_prove_verify_hash_operation() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
@@ -131,7 +140,10 @@ fn test_prove_verify_array_operations() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
@@ -158,7 +170,10 @@ fn test_prove_verify_control_flow() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
@@ -198,7 +213,10 @@ fn test_gas_tracking_in_proof() {
         gas_limit: 1_000_000,
     };
 
-    let prover = NeoProver::new(ProverConfig::default());
+    let prover = NeoProver::new(ProverConfig {
+        proof_mode: ProofMode::Mock,
+        ..Default::default()
+    });
     let proof = prover.prove(input);
 
     assert!(proof.output.gas_consumed > 0);
