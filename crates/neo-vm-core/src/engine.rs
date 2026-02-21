@@ -5,6 +5,7 @@
 //! Core execution engine for Neo zkVM.
 
 use crate::{
+    native::{NativeRegistry, CRYPTOLIB_HASH, STDLIB_HASH},
     stack_item::StackItem,
     storage::{MemoryStorage, StorageBackend, StorageContext, StorageError},
 };
@@ -34,6 +35,8 @@ pub enum VMError {
     InvalidOperation,
     #[error("Storage is read-only")]
     StorageReadOnly,
+    #[error("Native contract error: {0}")]
+    NativeContractError(String),
     #[error("Invalid script")]
     InvalidScript,
     #[error("Invalid public key format for CHECKSIG")]
@@ -74,6 +77,10 @@ pub mod syscall {
     pub const SYSTEM_STORAGE_GET: u32 = 0x10;
     pub const SYSTEM_STORAGE_PUT: u32 = 0x11;
     pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
+    pub const SYSTEM_CRYPTO_SHA256: u32 = 0x20;
+    pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x21;
+    pub const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x30;
+    pub const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0x31;
 }
 
 /// Gas cost lookup table for O(1) opcode cost retrieval
@@ -163,6 +170,7 @@ pub struct NeoVM {
     pub tracing_enabled: bool,
     pub storage: MemoryStorage,
     pub storage_context: StorageContext,
+    pub native_registry: NativeRegistry,
     // Static slot support for Neo VM compatibility.
     // Local/argument slots are scoped per invocation frame.
     pub static_slots: Vec<StackItem>,
@@ -207,6 +215,7 @@ impl NeoVM {
             tracing_enabled: false,
             storage: MemoryStorage::new(),
             storage_context: StorageContext::default(),
+            native_registry: NativeRegistry::new(),
             static_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             exception_stack: Vec::new(),
         }
@@ -357,6 +366,29 @@ impl NeoVM {
         match err {
             StorageError::ReadOnly => VMError::StorageReadOnly,
         }
+    }
+
+    fn pop_args(eval_stack: &mut Vec<StackItem>, count: usize) -> Result<Vec<StackItem>, VMError> {
+        if eval_stack.len() < count {
+            return Err(VMError::StackUnderflow);
+        }
+        let split = eval_stack.len() - count;
+        Ok(eval_stack.split_off(split))
+    }
+
+    fn execute_native_syscall(
+        &mut self,
+        contract_hash: &[u8; 20],
+        method: &str,
+        arg_count: usize,
+    ) -> Result<(), VMError> {
+        let args = Self::pop_args(&mut self.eval_stack, arg_count)?;
+        let result = self
+            .native_registry
+            .invoke(contract_hash, method, args)
+            .map_err(|e| VMError::NativeContractError(e.to_string()))?;
+        self.push(result)?;
+        Ok(())
     }
 
     /// Push an item to the eval stack with depth checking
@@ -2296,6 +2328,18 @@ impl NeoVM {
                     .delete(&self.storage_context, &key)
                     .map_err(Self::map_storage_error)?;
                 Ok(())
+            }
+            syscall::SYSTEM_CRYPTO_SHA256 => {
+                self.execute_native_syscall(&CRYPTOLIB_HASH, "sha256", 1)
+            }
+            syscall::SYSTEM_CRYPTO_RIPEMD160 => {
+                self.execute_native_syscall(&CRYPTOLIB_HASH, "ripemd160", 1)
+            }
+            syscall::SYSTEM_STDLIB_BASE64_ENCODE => {
+                self.execute_native_syscall(&STDLIB_HASH, "base64Encode", 1)
+            }
+            syscall::SYSTEM_STDLIB_BASE64_DECODE => {
+                self.execute_native_syscall(&STDLIB_HASH, "base64Decode", 1)
             }
             _ => Err(VMError::UnknownSyscall(id)),
         }
