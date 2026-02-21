@@ -17,17 +17,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Build
 cargo build
 
-# Run tests
-cargo test --all
+# Run core production checks (fmt + clippy + tests + dependency policy)
+bash scripts/test.sh
 
-# Run clippy
-cargo clippy --all
+# Run full production readiness checks
+bash scripts/verify-production.sh
 ```
 
 ## Code Style
 
 - Run `cargo fmt` before committing
 - Ensure `cargo clippy` passes with no warnings
+- Ensure `cargo deny check licenses` passes before opening a PR
 - Add tests for new features
 - Update documentation as needed
 

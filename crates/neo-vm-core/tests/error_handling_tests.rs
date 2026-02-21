@@ -2,7 +2,7 @@
 //!
 //! Tests error conditions and fault states.
 
-use neo_vm_core::{NeoVM, VMError, VMState};
+use neo_vm_core::{NeoVM, StackItem, VMError, VMState};
 
 // Helper to run VM until completion
 fn run_vm(vm: &mut NeoVM) {
@@ -298,6 +298,37 @@ fn test_add_with_null() {
     let _ = vm.load_script(vec![0x0B, 0x15, 0x9E, 0x40]); // PUSHNULL, PUSH5, ADD
     run_vm(&mut vm);
     assert!(matches!(vm.state, VMState::Fault));
+}
+
+#[test]
+fn test_add_with_top_invalid_type_preserves_stack() {
+    let mut vm = NeoVM::new(1_000_000);
+    let _ = vm.load_script(vec![0x15, 0x0B, 0x9E]); // PUSH5, PUSHNULL, ADD
+
+    vm.execute_next().expect("PUSH5");
+    vm.execute_next().expect("PUSHNULL");
+    assert_eq!(vm.eval_stack.len(), 2);
+
+    let err = vm.execute_next().expect_err("ADD should fail on null");
+    assert!(matches!(err, VMError::InvalidType));
+    assert_eq!(vm.eval_stack.len(), 2);
+    assert!(matches!(vm.eval_stack.last(), Some(StackItem::Null)));
+}
+
+#[test]
+fn test_newarray_with_invalid_size_preserves_stack() {
+    let mut vm = NeoVM::new(1_000_000);
+    let _ = vm.load_script(vec![0x0B, 0xC3]); // PUSHNULL, NEWARRAY
+
+    vm.execute_next().expect("PUSHNULL");
+    assert_eq!(vm.eval_stack.len(), 1);
+
+    let err = vm
+        .execute_next()
+        .expect_err("NEWARRAY should fail on null size");
+    assert!(matches!(err, VMError::InvalidType));
+    assert_eq!(vm.eval_stack.len(), 1);
+    assert!(matches!(vm.eval_stack.last(), Some(StackItem::Null)));
 }
 
 #[test]

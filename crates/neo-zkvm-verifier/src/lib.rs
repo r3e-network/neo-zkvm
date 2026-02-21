@@ -21,28 +21,18 @@
 //! ```
 
 use bincode::Options;
-use neo_zkvm_prover::{
-    MockProof, NeoProof, ProofMode, PublicInputs, NEO_ZKVM_ELF, PROOF_FORMAT_VERSION,
+use neo_vm_guest::{
+    bincode_options, compute_commitment, hash_data, output_matches_public_inputs,
+    public_inputs_equal, MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION,
 };
-use sha2::{Digest, Sha256};
+use neo_zkvm_prover::{NeoProver, NEO_ZKVM_ELF};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues};
-
-const BINCODE_LIMIT: u64 = 10 * 1024 * 1024; // 10MB limit
-
-fn bincode_options() -> impl Options {
-    bincode::DefaultOptions::new()
-        .with_limit(BINCODE_LIMIT)
-        .with_fixint_encoding()
-}
 
 /// Verification result
 #[derive(Debug, Clone)]
 pub struct VerificationResult {
-    /// Whether the proof is valid
     pub valid: bool,
-    /// Error message if verification failed
     pub error: Option<String>,
-    /// Detected proof type
     pub proof_type: ProofType,
 }
 
@@ -115,7 +105,6 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
                     proof_type: ProofType::Mock,
                 };
             }
-
             let result = verify_mock_proof(proof);
             VerificationResult {
                 valid: result,
@@ -138,7 +127,6 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
                 _ => ProofType::Unknown,
             };
             let result = verify_sp1_proof(proof);
-            // Check for proof type mismatch
             if result.valid
                 && result.proof_type != expected_type
                 && result.proof_type != ProofType::Unknown
@@ -158,28 +146,30 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
 }
 
 /// Verify a proof with explicit vkey
-///
-/// This is useful when you have the vkey but not the original prover.
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
         return false;
     }
-
     if !output_matches_public_inputs(proof) {
         return false;
     }
-
     if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
         return verify(proof);
+    }
+    if !NeoProver::is_elf_available() {
+        return false;
+    }
+    if verify_claimed_vkey_hash(&proof.vkey_hash, vkey).is_err() {
+        return false;
     }
 
     match bincode_options().deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
         Ok(sp1_proof) => {
-            let public_inputs = match decode_public_inputs(&sp1_proof.public_values) {
+            let pi = match decode_public_inputs(&sp1_proof.public_values) {
                 Ok(inputs) => inputs,
                 Err(_) => return false,
             };
-            if !public_inputs_equal(&public_inputs, &proof.public_inputs) {
+            if !public_inputs_equal(&pi, &proof.public_inputs) {
                 return false;
             }
             let prover = ProverClient::from_env();
@@ -190,12 +180,30 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
 }
 
 /// Setup the ELF and return verification key
-///
-/// This can be used to verify proofs without having the original prover.
 pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
     let prover = ProverClient::from_env();
     let (_, vk) = prover.setup(NEO_ZKVM_ELF);
     vk
+}
+
+fn compute_vkey_hash(vkey: &sp1_sdk::SP1VerifyingKey) -> Result<[u8; 32], String> {
+    let bytes = bincode_options()
+        .serialize(vkey)
+        .map_err(|e| format!("Failed to serialize verifying key: {e}"))?;
+    Ok(hash_data(&bytes))
+}
+
+fn verify_claimed_vkey_hash(
+    claimed: &[u8; 32],
+    vkey: &sp1_sdk::SP1VerifyingKey,
+) -> Result<(), String> {
+    let expected = compute_vkey_hash(vkey)?;
+    if &expected != claimed {
+        return Err(
+            "Verifying key hash mismatch: proof was generated with a different key".to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn verify_mock_proof(proof: &NeoProof) -> bool {
@@ -204,21 +212,32 @@ fn verify_mock_proof(proof: &NeoProof) -> bool {
         Err(_) => return false,
     };
 
-    // Verify commitment matches public inputs
     let expected = compute_commitment(&proof.public_inputs);
     if mock.commitment != expected {
         return false;
     }
 
-    // Verify all public inputs match
-    mock.public_inputs.script_hash == proof.public_inputs.script_hash
-        && mock.public_inputs.input_hash == proof.public_inputs.input_hash
-        && mock.public_inputs.output_hash == proof.public_inputs.output_hash
-        && mock.public_inputs.gas_consumed == proof.public_inputs.gas_consumed
-        && mock.public_inputs.execution_success == proof.public_inputs.execution_success
+    public_inputs_equal(&mock.public_inputs, &proof.public_inputs)
 }
 
 fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
+    if !NeoProver::is_elf_available() {
+        return VerificationResult {
+            valid: false,
+            error: Some("SP1 verifier ELF is unavailable; cannot verify SP1 proof".to_string()),
+            proof_type: expected_proof_type(proof.proof_mode),
+        };
+    }
+    let prover = ProverClient::from_env();
+    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
+    if let Err(err) = verify_claimed_vkey_hash(&proof.vkey_hash, &vk) {
+        return VerificationResult {
+            valid: false,
+            error: Some(err),
+            proof_type: expected_proof_type(proof.proof_mode),
+        };
+    }
+
     if proof.proof_bytes.is_empty() {
         return VerificationResult {
             valid: false,
@@ -243,10 +262,9 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
             }
         };
 
-    // Determine proof type from the proof structure
     let proof_type = detect_sp1_proof_type(&sp1_proof);
 
-    let public_inputs = match decode_public_inputs(&sp1_proof.public_values) {
+    let pi = match decode_public_inputs(&sp1_proof.public_values) {
         Ok(inputs) => inputs,
         Err(e) => {
             return VerificationResult {
@@ -260,7 +278,7 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         }
     };
 
-    if !public_inputs_equal(&public_inputs, &proof.public_inputs) {
+    if !public_inputs_equal(&pi, &proof.public_inputs) {
         return VerificationResult {
             valid: false,
             error: Some(
@@ -271,10 +289,6 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
             proof_type,
         };
     }
-
-    // Create client and verify
-    let prover = ProverClient::from_env();
-    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
 
     match prover.verify(&sp1_proof, &vk) {
         Ok(_) => VerificationResult {
@@ -308,37 +322,6 @@ fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, String
         .map_err(|e| format!("Failed to decode public values: {e}"))
 }
 
-fn public_inputs_equal(a: &PublicInputs, b: &PublicInputs) -> bool {
-    a.script_hash == b.script_hash
-        && a.input_hash == b.input_hash
-        && a.output_hash == b.output_hash
-        && a.gas_consumed == b.gas_consumed
-        && a.execution_success == b.execution_success
-}
-
-fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(inputs.script_hash);
-    hasher.update(inputs.input_hash);
-    hasher.update(inputs.output_hash);
-    hasher.update(inputs.gas_consumed.to_le_bytes());
-    hasher.update([inputs.execution_success as u8]);
-    hasher.finalize().into()
-}
-
-fn hash_proof_output(output: &neo_vm_guest::ProofOutput) -> [u8; 32] {
-    let bytes = bincode_options().serialize(output).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hasher.finalize().into()
-}
-
-fn output_matches_public_inputs(proof: &NeoProof) -> bool {
-    proof.public_inputs.output_hash == hash_proof_output(&proof.output)
-        && proof.public_inputs.gas_consumed == proof.output.gas_consumed
-        && proof.public_inputs.execution_success == (proof.output.state == 0)
-}
-
 fn expected_proof_type(mode: ProofMode) -> ProofType {
     match mode {
         ProofMode::Execute => ProofType::Empty,
@@ -354,7 +337,7 @@ mod tests {
     use super::*;
     use neo_vm_core::StackItem;
     use neo_vm_guest::ProofInput;
-    use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
+    use neo_zkvm_prover::{NeoProver, ProverConfig};
     use sp1_sdk::SP1PublicValues;
 
     #[test]
@@ -363,13 +346,11 @@ mod tests {
             proof_mode: ProofMode::Mock,
             ..Default::default()
         });
-
         let input = ProofInput {
             script: vec![0x12, 0x13, 0x9E, 0x40],
             arguments: vec![],
             gas_limit: 1_000_000,
         };
-
         let proof = prover.prove(input);
         assert!(verify(&proof));
     }
@@ -380,13 +361,11 @@ mod tests {
             proof_mode: ProofMode::Execute,
             ..Default::default()
         });
-
         let input = ProofInput {
             script: vec![0x12, 0x13, 0x9E, 0x40],
             arguments: vec![],
             gas_limit: 1_000_000,
         };
-
         let proof = prover.prove(input);
         assert!(verify(&proof));
     }
@@ -397,16 +376,13 @@ mod tests {
             proof_mode: ProofMode::Mock,
             ..Default::default()
         });
-
         let input = ProofInput {
             script: vec![0x12, 0x13, 0x9E, 0x40],
             arguments: vec![StackItem::Integer(42)],
             gas_limit: 1_000_000,
         };
-
         let proof = prover.prove(input);
         let result = verify_detailed(&proof);
-
         assert!(result.valid);
         assert!(result.error.is_none());
         assert_eq!(result.proof_type, ProofType::Mock);
@@ -421,10 +397,8 @@ mod tests {
             gas_consumed: 42,
             execution_success: true,
         };
-
         let mut public_values = SP1PublicValues::new();
         public_values.write(&inputs);
-
         let decoded = decode_public_inputs(&public_values).expect("decode should succeed");
         assert_eq!(decoded.script_hash, inputs.script_hash);
         assert_eq!(decoded.input_hash, inputs.input_hash);
@@ -450,6 +424,34 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_rejects_mismatched_vkey_hash() {
+        if cfg!(debug_assertions) || !NeoProver::is_elf_available() {
+            return;
+        }
+
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+        let mut proof = prover.prove(input);
+        proof.proof_mode = ProofMode::Sp1;
+        proof.proof_bytes = vec![1, 2, 3];
+        proof.vkey_hash = [0xFF; 32];
+
+        let result = verify_detailed(&proof);
+        assert!(!result.valid);
+        assert!(result
+            .error
+            .unwrap_or_default()
+            .contains("Verifying key hash mismatch"));
+    }
+
+    #[test]
     fn test_verify_detailed_execute_mode() {
         let prover = NeoProver::new(ProverConfig {
             proof_mode: ProofMode::Execute,
@@ -472,7 +474,6 @@ mod tests {
             proof_mode: ProofMode::Execute,
             ..Default::default()
         });
-        // Division by zero: PUSH5, PUSH0, DIV, RET
         let input = ProofInput {
             script: vec![0x15, 0x10, 0xA1, 0x40],
             arguments: vec![],
@@ -494,10 +495,8 @@ mod tests {
             arguments: vec![],
             gas_limit: 1_000_000,
         };
-
         let mut proof = prover.prove(input);
         proof.output.result = Some(StackItem::Integer(999));
-
         assert!(!verify(&proof));
     }
 
@@ -512,10 +511,8 @@ mod tests {
             arguments: vec![],
             gas_limit: 1_000_000,
         };
-
         let mut proof = prover.prove(input);
         proof.output.gas_consumed = proof.output.gas_consumed.saturating_add(1);
-
         assert!(!verify(&proof));
     }
 
@@ -530,10 +527,8 @@ mod tests {
             arguments: vec![],
             gas_limit: 1_000_000,
         };
-
         let mut proof = prover.prove(input);
         proof.proof_format_version = proof.proof_format_version.saturating_add(1);
-
         let result = verify_detailed(&proof);
         assert!(!result.valid);
         assert!(result

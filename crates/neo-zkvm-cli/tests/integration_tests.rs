@@ -1,6 +1,6 @@
 //! Integration tests for Neo zkVM
 
-use neo_vm_core::StackItem;
+use neo_vm_core::{NativeContract, StackItem, StdLib};
 use neo_vm_guest::{execute, ProofInput};
 use neo_zkvm_prover::{NeoProver, ProverConfig};
 use neo_zkvm_verifier::verify;
@@ -485,7 +485,27 @@ fn test_within_range_check() {
 
 #[test]
 fn test_native_stdlib_serialize() {
-    // This would require syscall support, skip for now
+    let stdlib = StdLib::new();
+    let original = StackItem::Array(vec![
+        StackItem::Integer(42),
+        StackItem::Boolean(true),
+        StackItem::ByteString(b"neo".to_vec()),
+    ]);
+
+    let serialized = stdlib
+        .invoke("serialize", vec![original.clone()])
+        .expect("serialize should succeed");
+
+    let bytes = match serialized {
+        StackItem::ByteString(bytes) => bytes,
+        other => panic!("serialize should return ByteString, got {other:?}"),
+    };
+
+    let deserialized = stdlib
+        .invoke("deserialize", vec![StackItem::ByteString(bytes)])
+        .expect("deserialize should succeed");
+
+    assert_eq!(deserialized, original);
 }
 
 #[test]

@@ -12,7 +12,6 @@ neo-zkvm-prover = { workspace = true }
 sp1-sdk = { workspace = true }
 serde.workspace = true
 bincode.workspace = true
-sha2.workspace = true
 
 [dev-dependencies]
 neo-vm-core = { workspace = true }

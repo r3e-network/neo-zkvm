@@ -43,6 +43,7 @@ fn main() {
     let config = ProverConfig {
         max_cycles: 1_000_000,
         proof_mode: ProofMode::Mock,
+        deterministic_mock_timestamp: None,
     };
     let prover = NeoProver::new(config);
 
@@ -101,6 +102,7 @@ fn main() {
     let exec_config = ProverConfig {
         max_cycles: 1_000_000,
         proof_mode: ProofMode::Execute,
+        deterministic_mock_timestamp: None,
     };
     let exec_prover = NeoProver::new(exec_config);
 

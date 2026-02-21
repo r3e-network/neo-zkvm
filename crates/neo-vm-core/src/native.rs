@@ -4,14 +4,31 @@
 
 use crate::stack_item::StackItem;
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 /// Maximum input size for native contract functions (1MB)
 const MAX_INPUT_SIZE: usize = 1024 * 1024;
 
+/// Errors from native contract invocations
+#[derive(Error, Debug, PartialEq)]
+pub enum NativeContractError {
+    #[error("Unknown method '{method}' on contract {contract}")]
+    UnknownMethod {
+        contract: &'static str,
+        method: String,
+    },
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("Input exceeds maximum size of {max} bytes")]
+    InputTooLarge { max: usize },
+    #[error("{0}")]
+    Other(String),
+}
+
 /// Native contract interface
 pub trait NativeContract {
     fn hash(&self) -> [u8; 20];
-    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, String>;
+    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, NativeContractError>;
 }
 
 /// StdLib native contract - utility functions
@@ -194,21 +211,21 @@ impl NativeContract for StdLib {
     }
 
     #[inline]
-    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, String> {
+    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, NativeContractError> {
+        let map_err = |r: Result<StackItem, String>| r.map_err(NativeContractError::Other);
         match method {
-            "serialize" => self.serialize(args),
-            "deserialize" => self.deserialize(args),
-            "jsonSerialize" => self.json_serialize(args),
-            "jsonDeserialize" => self.json_deserialize(args),
-            "base64Encode" => self.base64_encode(args),
-            "base64Decode" => self.base64_decode(args),
-            "itoa" => self.itoa(args),
-            "atoi" => self.atoi(args),
-            _ => Err(format!(
-                "StdLib: unknown method '{}'. Available: serialize, deserialize, \
-                 jsonSerialize, jsonDeserialize, base64Encode, base64Decode, itoa, atoi",
-                method
-            )),
+            "serialize" => map_err(self.serialize(args)),
+            "deserialize" => map_err(self.deserialize(args)),
+            "jsonSerialize" => map_err(self.json_serialize(args)),
+            "jsonDeserialize" => map_err(self.json_deserialize(args)),
+            "base64Encode" => map_err(self.base64_encode(args)),
+            "base64Decode" => map_err(self.base64_decode(args)),
+            "itoa" => map_err(self.itoa(args)),
+            "atoi" => map_err(self.atoi(args)),
+            _ => Err(NativeContractError::UnknownMethod {
+                contract: "StdLib",
+                method: method.to_string(),
+            }),
         }
     }
 }
@@ -233,18 +250,18 @@ impl NativeContract for CryptoLib {
     }
 
     #[inline]
-    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, String> {
+    fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, NativeContractError> {
+        let map_err = |r: Result<StackItem, String>| r.map_err(NativeContractError::Other);
         match method {
-            "sha256" => self.sha256(args),
-            "ripemd160" => self.ripemd160(args),
-            "verifyWithECDsa" => self.verify_ecdsa(args),
-            "checkSig" => self.check_sig(args),
-            "murmur32" => self.murmur32(args),
-            _ => Err(format!(
-                "CryptoLib: unknown method '{}'. Available: sha256, ripemd160, \
-                 verifyWithECDsa, checkSig, murmur32",
-                method
-            )),
+            "sha256" => map_err(self.sha256(args)),
+            "ripemd160" => map_err(self.ripemd160(args)),
+            "verifyWithECDsa" => map_err(self.verify_ecdsa(args)),
+            "checkSig" => map_err(self.check_sig(args)),
+            "murmur32" => map_err(self.murmur32(args)),
+            _ => Err(NativeContractError::UnknownMethod {
+                contract: "CryptoLib",
+                method: method.to_string(),
+            }),
         }
     }
 }
@@ -494,18 +511,18 @@ impl NativeRegistry {
         hash: &[u8; 20],
         method: &str,
         args: Vec<StackItem>,
-    ) -> Result<StackItem, String> {
+    ) -> Result<StackItem, NativeContractError> {
         if *hash == self.stdlib.hash() {
             self.stdlib.invoke(method, args)
         } else if *hash == self.cryptolib.hash() {
             self.cryptolib.invoke(method, args)
         } else {
-            Err(format!(
+            Err(NativeContractError::Other(format!(
                 "Unknown native contract: hash 0x{}",
                 hash.iter()
                     .map(|b| format!("{:02x}", b))
                     .collect::<String>()
-            ))
+            )))
         }
     }
 }
@@ -581,7 +598,10 @@ mod tests {
             ],
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("public key required"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("public key required"));
     }
 
     #[test]
@@ -591,6 +611,9 @@ mod tests {
         let oversized = vec![0u8; 1024 * 1024 + 1];
         let result = stdlib.invoke("deserialize", vec![StackItem::ByteString(oversized)]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds maximum size"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum size"));
     }
 }

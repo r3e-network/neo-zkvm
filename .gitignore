@@ -4,3 +4,7 @@ Cargo.lock
 tarpaulin-report.html
 cobertura.xml
 *.profraw
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/Cargo.lock

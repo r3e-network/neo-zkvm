@@ -78,6 +78,12 @@ impl Assembler {
     }
 
     pub fn assemble(&mut self, source: &str) -> Result<Vec<u8>, String> {
+        self.labels.clear();
+        self.macros.clear();
+        self.pending_labels.clear();
+        self.warnings.clear();
+        self.macro_depth = 0;
+
         // First pass: collect macros and labels
         let expanded = self.preprocess(source)?;
 
@@ -166,6 +172,14 @@ impl Assembler {
             result.extend(expanded);
         }
 
+        if in_macro {
+            return Err(AssemblerError::InvalidMacroDefinition(
+                format!("Unterminated macro definition '{}'", current_macro_name),
+                source.lines().count().max(1),
+            )
+            .to_string());
+        }
+
         Ok(result)
     }
 
@@ -234,7 +248,7 @@ impl Assembler {
         match op.as_str() {
             // PUSH <n> - auto-select optimal push instruction
             "PUSH" if parts.len() > 1 => {
-                if let Ok(n) = parts[1].parse::<i128>() {
+                if let Ok(n) = parts[1].parse::<i64>() {
                     return Ok(vec![self.optimal_push(n)]);
                 }
             }
@@ -397,13 +411,14 @@ impl Assembler {
         )
     }
 
-    fn optimal_push(&self, n: i128) -> String {
+    fn optimal_push(&self, n: i64) -> String {
         match n {
             -1 => "PUSHM1".to_string(),
             0..=16 => format!("PUSH{}", n),
             -128..=127 => format!("PUSHINT8 {}", n),
             -32768..=32767 => format!("PUSHINT16 {}", n),
-            _ => format!("PUSHINT32 {}", n),
+            _ if i32::try_from(n).is_ok() => format!("PUSHINT32 {}", n),
+            _ => format!("PUSHINT64 {}", n),
         }
     }
 
@@ -425,17 +440,17 @@ impl Assembler {
             // Constants
             "PUSHINT8" => {
                 bytecode.push(0x00);
-                let val = self.parse_int(operands, line_num)? as i8;
+                let val = self.parse_i8(operands, line_num)?;
                 bytecode.push(val as u8);
             }
             "PUSHINT16" => {
                 bytecode.push(0x01);
-                let val = self.parse_int(operands, line_num)? as i16;
+                let val = self.parse_i16(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT32" => {
                 bytecode.push(0x02);
-                let val = self.parse_int(operands, line_num)? as i32;
+                let val = self.parse_i32(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT64" => {
@@ -802,6 +817,30 @@ impl Assembler {
         })
     }
 
+    fn parse_i8(&self, operands: &[&str], line_num: usize) -> Result<i8, String> {
+        let val = self.parse_int(operands, line_num)?;
+        i8::try_from(val).map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Value {} out of i8 range", val), line_num)
+                .to_string()
+        })
+    }
+
+    fn parse_i16(&self, operands: &[&str], line_num: usize) -> Result<i16, String> {
+        let val = self.parse_int(operands, line_num)?;
+        i16::try_from(val).map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Value {} out of i16 range", val), line_num)
+                .to_string()
+        })
+    }
+
+    fn parse_i32(&self, operands: &[&str], line_num: usize) -> Result<i32, String> {
+        let val = self.parse_int(operands, line_num)?;
+        i32::try_from(val).map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Value {} out of i32 range", val), line_num)
+                .to_string()
+        })
+    }
+
     fn parse_u8(&self, operands: &[&str], line_num: usize) -> Result<u8, String> {
         let val = self.parse_int(operands, line_num)?;
         if !(0..=255).contains(&val) {
@@ -894,5 +933,63 @@ impl Assembler {
             AssemblerError::InvalidOperand(format!("Invalid syscall ID: {}", s), line_num)
                 .to_string()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Assembler;
+
+    #[test]
+    fn test_pushint8_out_of_range_returns_error() {
+        let mut assembler = Assembler::new();
+        let err = assembler.assemble("PUSHINT8 128").unwrap_err();
+        assert!(err.contains("out of i8 range"));
+    }
+
+    #[test]
+    fn test_push_sugar_uses_pushint64_for_large_values() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler.assemble("PUSH 2147483648").unwrap();
+        assert_eq!(bytes[0], 0x03); // PUSHINT64
+    }
+
+    #[test]
+    fn test_assemble_resets_state_between_calls() {
+        let mut assembler = Assembler::new();
+        assembler
+            .assemble(
+                "
+                start:
+                    PUSH1
+                    RET
+            ",
+            )
+            .unwrap();
+
+        let err = assembler
+            .assemble(
+                "
+                JMP start
+                RET
+            ",
+            )
+            .unwrap_err();
+        assert!(err.contains("Undefined label"));
+    }
+
+    #[test]
+    fn test_unterminated_macro_definition_returns_error() {
+        let mut assembler = Assembler::new();
+        let err = assembler
+            .assemble(
+                "
+                .macro INC_TWO x
+                    PUSH 1
+                    ADD
+            ",
+            )
+            .unwrap_err();
+        assert!(err.contains("Unterminated macro definition"));
     }
 }

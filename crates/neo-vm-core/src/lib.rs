@@ -134,9 +134,10 @@ pub mod stack_item;
 pub mod storage;
 
 pub use engine::{NeoVM, VMError, VMState};
-pub use native::{CryptoLib, NativeContract, NativeRegistry, StdLib};
+pub use native::{CryptoLib, NativeContract, NativeContractError, NativeRegistry, StdLib};
 pub use opcode::OpCode;
 pub use stack_item::StackItem;
 pub use storage::{
-    MemoryStorage, MerklePathNode, StorageBackend, StorageContext, StorageProof, TrackedStorage,
+    MemoryStorage, MerklePathNode, StorageBackend, StorageContext, StorageError, StorageProof,
+    TrackedStorage,
 };

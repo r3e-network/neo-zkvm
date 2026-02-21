@@ -217,8 +217,13 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
     println!("  Requested: {:?}", proof_mode);
     println!("  Mode:     {:?}", proof.proof_mode);
     println!("  Result:   {:?}", proof.output.result);
-    println!("  Verified: {}", verify(&proof));
+    let verified = verify(&proof);
+    println!("  Verified: {}", verified);
     println!("═══════════════════════════════════════");
+
+    if !verified {
+        return Err("Proof verification failed; aborting.".to_string());
+    }
 
     Ok(())
 }

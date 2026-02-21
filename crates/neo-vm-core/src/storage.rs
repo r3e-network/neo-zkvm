@@ -4,6 +4,14 @@
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use thiserror::Error;
+
+/// Storage operation errors
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum StorageError {
+    #[error("Storage is read-only")]
+    ReadOnly,
+}
 
 /// Storage context for a contract
 #[derive(Debug, Clone, Default)]
@@ -17,8 +25,13 @@ pub struct StorageContext {
 /// Storage backend trait
 pub trait StorageBackend {
     fn get(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>>;
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String>;
-    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String>;
+    fn put(
+        &mut self,
+        context: &StorageContext,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), StorageError>;
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), StorageError>;
     fn find(&self, context: &StorageContext, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)>;
 }
 
@@ -101,18 +114,23 @@ impl StorageBackend for MemoryStorage {
         self.data.get(&full_key).cloned()
     }
 
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String> {
+    fn put(
+        &mut self,
+        context: &StorageContext,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), StorageError> {
         if context.read_only {
-            return Err("Storage is read-only".to_string());
+            return Err(StorageError::ReadOnly);
         }
         let full_key = Self::make_key(context, key);
         self.data.insert(full_key, value.to_vec());
         Ok(())
     }
 
-    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String> {
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), StorageError> {
         if context.read_only {
-            return Err("Storage is read-only".to_string());
+            return Err(StorageError::ReadOnly);
         }
         let full_key = Self::make_key(context, key);
         self.data.remove(&full_key);
@@ -228,9 +246,14 @@ impl StorageBackend for TrackedStorage {
         self.inner.get(context, key)
     }
 
-    fn put(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<(), String> {
+    fn put(
+        &mut self,
+        context: &StorageContext,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), StorageError> {
         if context.read_only {
-            return Err("Storage is read-only".to_string());
+            return Err(StorageError::ReadOnly);
         }
         let old_value = self.inner.get(context, key);
         self.inner.put(context, key, value)?;
@@ -243,9 +266,9 @@ impl StorageBackend for TrackedStorage {
         Ok(())
     }
 
-    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), String> {
+    fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), StorageError> {
         if context.read_only {
-            return Err("Storage is read-only".to_string());
+            return Err(StorageError::ReadOnly);
         }
         let old_value = self.inner.get(context, key);
         self.inner.delete(context, key)?;

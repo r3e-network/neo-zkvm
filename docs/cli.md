@@ -307,9 +307,8 @@ The CLI accepts scripts in multiple formats:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEO_ZKVM_GAS_LIMIT` | Default gas limit | 1000000 |
+The CLI currently does not read environment variables for runtime flags.
+Use explicit command-line options such as `--gas` / `-g`.
 
 ## See Also
 

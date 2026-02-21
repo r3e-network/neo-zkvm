@@ -101,7 +101,7 @@ fn test_storage_read_only() {
 
     storage.put(&ctx_rw, b"key", b"value").unwrap();
     let err = storage.put(&ctx_ro, b"key", b"new_value").unwrap_err();
-    assert_eq!(err, "Storage is read-only");
+    assert_eq!(err, neo_vm_core::StorageError::ReadOnly);
 
     assert_eq!(storage.get(&ctx_rw, b"key"), Some(b"value".to_vec()));
 }
@@ -120,7 +120,7 @@ fn test_storage_read_only_delete() {
 
     storage.put(&ctx_rw, b"key", b"value").unwrap();
     let err = storage.delete(&ctx_ro, b"key").unwrap_err();
-    assert_eq!(err, "Storage is read-only");
+    assert_eq!(err, neo_vm_core::StorageError::ReadOnly);
 
     assert_eq!(storage.get(&ctx_rw, b"key"), Some(b"value".to_vec()));
 }

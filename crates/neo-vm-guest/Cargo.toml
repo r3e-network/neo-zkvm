@@ -4,9 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Guest-side VM types and serialization helpers for proof inputs"
+description = "Shared VM types, serialization helpers, and proof utilities for Neo zkVM"
 
 [dependencies]
 neo-vm-core = { workspace = true }
 serde.workspace = true
 bincode.workspace = true
+sha2.workspace = true

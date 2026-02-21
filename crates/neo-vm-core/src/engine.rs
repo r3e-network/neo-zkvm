@@ -8,6 +8,7 @@ use crate::stack_item::StackItem;
 use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -50,7 +51,7 @@ pub enum VMState {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
-    pub script: Vec<u8>,
+    pub script: Arc<Vec<u8>>,
     pub ip: usize,
 }
 
@@ -269,18 +270,6 @@ impl NeoVM {
         Ok(val)
     }
 
-    fn pop_usize_nonneg(&mut self) -> Result<usize, VMError> {
-        let value = self
-            .eval_stack
-            .pop()
-            .and_then(|x| x.to_integer())
-            .ok_or(VMError::StackUnderflow)?;
-        if value < 0 {
-            return Err(VMError::InvalidOperation);
-        }
-        Ok(value as usize)
-    }
-
     fn relative_target(base_ip: usize, offset: i8, script_len: usize) -> Result<usize, VMError> {
         let target = base_ip as isize + offset as isize;
         if target < 0 || target as usize >= script_len {
@@ -303,6 +292,29 @@ impl NeoVM {
 
     fn read_i32_le(ctx: &mut ExecutionContext) -> Result<i32, VMError> {
         Ok(Self::read_u32_le(ctx)? as i32)
+    }
+
+    /// Pop one integer from a stack without dropping on type mismatch.
+    fn pop_integer_from_stack(eval_stack: &mut Vec<StackItem>) -> Result<i128, VMError> {
+        match eval_stack.last() {
+            Some(item) => match item.to_integer() {
+                Some(value) => {
+                    eval_stack.pop();
+                    Ok(value)
+                }
+                None => Err(VMError::InvalidType),
+            },
+            None => Err(VMError::StackUnderflow),
+        }
+    }
+
+    fn pop_usize_nonneg(&mut self) -> Result<usize, VMError> {
+        let value = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+        if value < 0 {
+            Err(VMError::InvalidOperation)
+        } else {
+            Ok(value as usize)
+        }
     }
 
     /// Push an item to the eval stack with depth checking
@@ -330,8 +342,10 @@ impl NeoVM {
             return Err(VMError::InvalidScript);
         }
         self.check_invocation_depth()?;
-        self.invocation_stack
-            .push(ExecutionContext { script, ip: 0 });
+        self.invocation_stack.push(ExecutionContext {
+            script: Arc::new(script),
+            ip: 0,
+        });
         Ok(())
     }
 
@@ -536,61 +550,29 @@ impl NeoVM {
             }
             // ADD
             0x9E => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_add(b).ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // SUB
             0x9F => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_sub(b).ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // MUL
             0xA0 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_mul(b).ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // DIV
             0xA1 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if b == 0 {
                     return Err(VMError::DivisionByZero);
                 }
@@ -599,16 +581,8 @@ impl NeoVM {
             }
             // MOD
             0xA2 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if b == 0 {
                     return Err(VMError::DivisionByZero);
                 }
@@ -617,16 +591,8 @@ impl NeoVM {
             }
             // POW
             0xA3 => {
-                let exp = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let base = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let exp = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let base = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if exp < 0 || exp > u32::MAX as i128 {
                     return Err(VMError::InvalidOperation);
                 }
@@ -637,16 +603,8 @@ impl NeoVM {
             }
             // SHL
             0xA8 => {
-                let shift = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let value = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let shift = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let value = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if !(0..=256).contains(&shift) {
                     return Err(VMError::InvalidOperation);
                 }
@@ -657,16 +615,8 @@ impl NeoVM {
             }
             // SHR
             0xA9 => {
-                let shift = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let value = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let shift = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let value = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if !(0..=256).contains(&shift) {
                     return Err(VMError::InvalidOperation);
                 }
@@ -677,58 +627,26 @@ impl NeoVM {
             }
             // MIN
             0xB9 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(a.min(b)))?;
             }
             // MAX
             0xBA => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(a.max(b)))?;
             }
             // WITHIN (a <= x < b)
             0xBB => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let x = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let x = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a <= x && x < b))?;
             }
             // SIGN
             0x99 => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let sign = if a > 0 {
                     1
                 } else if a < 0 {
@@ -740,98 +658,50 @@ impl NeoVM {
             }
             // ABS
             0x9A => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_abs().ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // NEGATE
             0x9B => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_neg().ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // INC
             0x9C => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_add(1).ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // DEC
             0x9D => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 let result = a.checked_sub(1).ok_or(VMError::InvalidOperation)?;
                 self.push(StackItem::Integer(result))?;
             }
             // LT
             0xB5 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a < b))?;
             }
             // LE
             0xB6 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a <= b))?;
             }
             // GT
             0xB7 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a > b))?;
             }
             // GE
             0xB8 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a >= b))?;
             }
             // EQUAL
@@ -853,90 +723,42 @@ impl NeoVM {
             }
             // NZ - Not zero
             0xB1 => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a != 0))?;
             }
             // NUMEQUAL
             0xB3 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a == b))?;
             }
             // NUMNOTEQUAL
             0xB4 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Boolean(a != b))?;
             }
             // INVERT (bitwise NOT)
             0x90 => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(!a))?;
             }
             // AND (bitwise)
             0x91 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(a & b))?;
             }
             // OR (bitwise)
             0x92 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(a | b))?;
             }
             // XOR (bitwise)
             0x93 => {
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 self.push(StackItem::Integer(a ^ b))?;
             }
             // NOT (logical)
@@ -1205,16 +1027,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a == b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1227,16 +1041,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a != b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1249,16 +1055,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a > b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1271,16 +1069,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a >= b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1293,16 +1083,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a < b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1315,16 +1097,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i8(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a <= b {
                     ctx.ip = Self::relative_target(base_ip, offset, ctx.script.len())?;
                 }
@@ -1373,16 +1147,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a == b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -1395,16 +1161,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a != b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -1417,16 +1175,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a > b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -1439,16 +1189,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a >= b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -1461,16 +1203,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a < b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -1483,16 +1217,8 @@ impl NeoVM {
                     .ok_or(VMError::StackUnderflow)?;
                 let base_ip = ctx.ip.checked_sub(1).ok_or(VMError::InvalidScript)?;
                 let offset = Self::read_i32_le(ctx)?;
-                let b = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let b = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a <= b {
                     ctx.ip = Self::relative_target_long(base_ip, offset, ctx.script.len())?;
                 }
@@ -2260,11 +1986,7 @@ impl NeoVM {
 
             // SQRT - Integer square root
             0xA4 => {
-                let a = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let a = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if a < 0 {
                     return Err(VMError::InvalidOperation);
                 }
@@ -2273,21 +1995,9 @@ impl NeoVM {
             }
             // MODMUL - (x * y) % modulus
             0xA5 => {
-                let modulus = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let y = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let x = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let modulus = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let y = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let x = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if modulus == 0 {
                     return Err(VMError::DivisionByZero);
                 }
@@ -2310,21 +2020,9 @@ impl NeoVM {
             }
             // MODPOW - Modular exponentiation: base^exp % modulus
             0xA6 => {
-                let modulus = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let exp = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
-                let base = self
-                    .eval_stack
-                    .pop()
-                    .and_then(|x| x.to_integer())
-                    .ok_or(VMError::StackUnderflow)?;
+                let modulus = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let exp = Self::pop_integer_from_stack(&mut self.eval_stack)?;
+                let base = Self::pop_integer_from_stack(&mut self.eval_stack)?;
                 if modulus == 0 {
                     return Err(VMError::DivisionByZero);
                 }

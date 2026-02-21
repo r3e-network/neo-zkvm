@@ -20,7 +20,7 @@ fuzz_target!(|data: &[u8]| {
     let mut script = data.to_vec();
     script.push(0x40); // RET
     
-    vm.load_script(script);
+    let _ = vm.load_script(script);
 
     // Execute until halt or fault
     let mut steps = 0;

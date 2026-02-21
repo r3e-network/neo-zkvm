@@ -32,6 +32,41 @@ fn resolve_program_dir(manifest_dir: &Path) -> Option<PathBuf> {
     }
 }
 
+fn env_flag(name: &str) -> Option<bool> {
+    std::env::var(name).ok().map(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn has_sp1_toolchain() -> bool {
+    if env_flag("SP1_FORCE_DUMMY") == Some(true) {
+        return false;
+    }
+    if env_flag("SP1_TOOLCHAIN_AVAILABLE") == Some(true) {
+        return true;
+    }
+
+    if std::process::Command::new("sp1up")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    std::process::Command::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|output| output.contains("succinct"))
+        .unwrap_or(false)
+}
+
 fn main() {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR must be set");
     let elf_dir = PathBuf::from(&out_dir).join("elf");
@@ -40,13 +75,9 @@ fn main() {
     let elf_path = elf_dir.join("riscv32im-succinct-zkvm-elf");
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    let has_sp1 = std::process::Command::new("rustup")
-        .args(["toolchain", "list"])
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|output| output.contains("succinct"))
-        .unwrap_or(false);
+    let has_sp1 = has_sp1_toolchain();
+    println!("cargo:rerun-if-env-changed=SP1_FORCE_DUMMY");
+    println!("cargo:rerun-if-env-changed=SP1_TOOLCHAIN_AVAILABLE");
 
     if has_sp1 {
         let is_clippy_invocation = std::env::var("RUSTC_WORKSPACE_WRAPPER")

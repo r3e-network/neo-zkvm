@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Stack item types in Neo VM (simplified for zkVM)
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StackItem {
     Null,
     Boolean(bool),
@@ -16,13 +16,6 @@ pub enum StackItem {
     Map(Vec<(StackItem, StackItem)>),
     Pointer(u32),
 }
-
-// SAFETY: NeoVM is designed for single-threaded use. StackItem contains Vec which is not
-// thread-safe by default, but we explicitly mark it as Send/Sync because the VM
-// is never shared across threads in the intended usage pattern (SP1 guest execution
-// or single-threaded CLI usage). Users must not share NeoVM instances between threads.
-unsafe impl Send for StackItem {}
-unsafe impl Sync for StackItem {}
 
 impl StackItem {
     #[inline]

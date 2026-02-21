@@ -281,7 +281,7 @@ fn test_stdlib_itoa_invalid_base() {
     let result = stdlib.invoke("itoa", vec![StackItem::Integer(42), StackItem::Integer(8)]);
     assert!(result.is_err());
     if let Err(e) = result {
-        assert!(e.contains("Unsupported base"));
+        assert!(e.to_string().contains("Unsupported base"));
     }
 }
 
@@ -294,7 +294,7 @@ fn test_stdlib_atoi_invalid_base() {
     );
     assert!(result.is_err());
     if let Err(e) = result {
-        assert!(e.contains("Unsupported base"));
+        assert!(e.to_string().contains("Unsupported base"));
     }
 }
 

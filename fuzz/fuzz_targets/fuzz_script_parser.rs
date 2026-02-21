@@ -33,7 +33,7 @@ fuzz_target!(|input: FuzzInput| {
     }
     script.push(0x40);
     
-    vm.load_script(script);
+    let _ = vm.load_script(script);
 
     let mut steps = 0;
     while !matches!(vm.state, VMState::Halt | VMState::Fault) {

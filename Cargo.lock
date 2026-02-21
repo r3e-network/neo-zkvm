@@ -2016,9 +2016,9 @@ dependencies = [
 
 [[package]]
 name = "keccak"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
 dependencies = [
  "cpufeatures",
 ]
@@ -2205,6 +2205,7 @@ dependencies = [
  "bincode",
  "neo-vm-core",
  "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -2246,12 +2247,10 @@ dependencies = [
 name = "neo-zkvm-prover"
 version = "0.2.1"
 dependencies = [
- "anyhow",
  "bincode",
  "neo-vm-core",
  "neo-vm-guest",
  "serde",
- "sha2",
  "sp1-build",
  "sp1-sdk",
 ]
@@ -2265,7 +2264,6 @@ dependencies = [
  "neo-vm-guest",
  "neo-zkvm-prover",
  "serde",
- "sha2",
  "sp1-sdk",
 ]
 
