@@ -156,9 +156,6 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
     if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
         return verify(proof);
     }
-    if !NeoProver::is_elf_available() {
-        return false;
-    }
     if verify_claimed_vkey_hash(&proof.vkey_hash, vkey).is_err() {
         return false;
     }

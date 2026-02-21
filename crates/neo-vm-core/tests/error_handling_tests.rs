@@ -332,6 +332,18 @@ fn test_newarray_with_invalid_size_preserves_stack() {
 }
 
 #[test]
+fn test_reversen_rejects_oversized_index_integer() {
+    let mut vm = NeoVM::new(1_000_000);
+    let _ = vm.load_script(vec![0x55]); // REVERSEN
+    vm.eval_stack.push(StackItem::Integer(i128::MAX));
+
+    let err = vm
+        .execute_next()
+        .expect_err("REVERSEN should reject integers larger than usize");
+    assert!(matches!(err, VMError::InvalidOperation));
+}
+
+#[test]
 fn test_size_on_integer() {
     let mut vm = NeoVM::new(1_000_000);
     let _ = vm.load_script(vec![0x15, 0xCA, 0x40]); // PUSH5, SIZE (integer has no size)

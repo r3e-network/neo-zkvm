@@ -53,6 +53,8 @@ pub enum VMState {
 pub struct ExecutionContext {
     pub script: Arc<Vec<u8>>,
     pub ip: usize,
+    pub local_slots: Vec<StackItem>,
+    pub argument_slots: Vec<StackItem>,
 }
 
 // SAFETY: ExecutionContext is designed for single-threaded use within NeoVM.
@@ -154,9 +156,8 @@ pub struct NeoVM {
     pub logs: Vec<String>,
     pub trace: ExecutionTrace,
     pub tracing_enabled: bool,
-    // Slot support for Neo VM compatibility
-    pub local_slots: Vec<StackItem>,
-    pub argument_slots: Vec<StackItem>,
+    // Static slot support for Neo VM compatibility.
+    // Local/argument slots are scoped per invocation frame.
     pub static_slots: Vec<StackItem>,
     // Exception handling
     pub exception_stack: Vec<ExceptionContext>,
@@ -197,8 +198,6 @@ impl NeoVM {
             logs: Vec::new(),
             trace: ExecutionTrace::default(),
             tracing_enabled: false,
-            local_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
-            argument_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             static_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             exception_stack: Vec::new(),
         }
@@ -310,7 +309,7 @@ impl NeoVM {
 
     fn pop_usize_nonneg(&mut self) -> Result<usize, VMError> {
         let value = Self::pop_integer_from_stack(&mut self.eval_stack)?;
-        if value < 0 {
+        if value < 0 || value > usize::MAX as i128 {
             Err(VMError::InvalidOperation)
         } else {
             Ok(value as usize)
@@ -345,6 +344,8 @@ impl NeoVM {
         self.invocation_stack.push(ExecutionContext {
             script: Arc::new(script),
             ip: 0,
+            local_slots: Vec::new(),
+            argument_slots: Vec::new(),
         });
         Ok(())
     }
@@ -888,25 +889,34 @@ impl NeoVM {
             }
             // INITSLOT - Initialize local and argument slots
             0x57 => {
+                let (local_count, arg_count) = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    (Self::read_u8(ctx)? as usize, Self::read_u8(ctx)? as usize)
+                };
+                // Pop arguments from stack into argument slots
+                let mut argument_slots = Vec::with_capacity(arg_count);
+                for _ in 0..arg_count {
+                    let arg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                    argument_slots.push(arg);
+                }
+                argument_slots.reverse();
                 let ctx = self
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let local_count = Self::read_u8(ctx)? as usize;
-                let arg_count = Self::read_u8(ctx)? as usize;
-                self.local_slots = vec![StackItem::Null; local_count];
-                // Pop arguments from stack into argument slots
-                self.argument_slots = Vec::with_capacity(arg_count);
-                for _ in 0..arg_count {
-                    let arg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                    self.argument_slots.push(arg);
-                }
-                self.argument_slots.reverse();
+                ctx.local_slots = vec![StackItem::Null; local_count];
+                ctx.argument_slots = argument_slots;
             }
             // LDLOC0-LDLOC6 - Load local variable 0-6
             0x66..=0x6C => {
                 let idx = (op - 0x66) as usize;
                 let item = self
+                    .invocation_stack
+                    .last()
+                    .ok_or(VMError::StackUnderflow)?
                     .local_slots
                     .get(idx)
                     .cloned()
@@ -915,12 +925,17 @@ impl NeoVM {
             }
             // LDLOC_S - Load local variable (short form)
             0x6D => {
-                let ctx = self
-                    .invocation_stack
-                    .last_mut()
-                    .ok_or(VMError::StackUnderflow)?;
-                let idx = Self::read_u8(ctx)? as usize;
+                let idx = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    Self::read_u8(ctx)? as usize
+                };
                 let item = self
+                    .invocation_stack
+                    .last()
+                    .ok_or(VMError::StackUnderflow)?
                     .local_slots
                     .get(idx)
                     .cloned()
@@ -931,28 +946,41 @@ impl NeoVM {
             0x6E..=0x72 => {
                 let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let idx = (op - 0x6E) as usize;
-                if idx >= self.local_slots.len() {
-                    return Err(VMError::InvalidOperation);
-                }
-                self.local_slots[idx] = val;
-            }
-            // STLOC_S - Store local variable (short form)
-            0x73 => {
                 let ctx = self
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let idx = Self::read_u8(ctx)? as usize;
-                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                if idx >= self.local_slots.len() {
+                if idx >= ctx.local_slots.len() {
                     return Err(VMError::InvalidOperation);
                 }
-                self.local_slots[idx] = item;
+                ctx.local_slots[idx] = val;
+            }
+            // STLOC_S - Store local variable (short form)
+            0x73 => {
+                let idx = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    Self::read_u8(ctx)? as usize
+                };
+                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                if idx >= ctx.local_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                ctx.local_slots[idx] = item;
             }
             // LDARG0-LDARG6 - Load argument 0-6
             0x74..=0x79 => {
                 let idx = (op - 0x74) as usize;
                 let item = self
+                    .invocation_stack
+                    .last()
+                    .ok_or(VMError::StackUnderflow)?
                     .argument_slots
                     .get(idx)
                     .cloned()
@@ -961,12 +989,17 @@ impl NeoVM {
             }
             // LDARG - Load argument
             0x7A => {
-                let ctx = self
-                    .invocation_stack
-                    .last_mut()
-                    .ok_or(VMError::StackUnderflow)?;
-                let idx = Self::read_u8(ctx)? as usize;
+                let idx = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    Self::read_u8(ctx)? as usize
+                };
                 let item = self
+                    .invocation_stack
+                    .last()
+                    .ok_or(VMError::StackUnderflow)?
                     .argument_slots
                     .get(idx)
                     .cloned()
@@ -1240,6 +1273,8 @@ impl NeoVM {
                 self.invocation_stack.push(ExecutionContext {
                     script,
                     ip: target_ip,
+                    local_slots: Vec::new(),
+                    argument_slots: Vec::new(),
                 });
             }
             // CALL_L (4-byte offset)
@@ -1259,6 +1294,8 @@ impl NeoVM {
                 self.invocation_stack.push(ExecutionContext {
                     script,
                     ip: target_ip,
+                    local_slots: Vec::new(),
+                    argument_slots: Vec::new(),
                 });
             }
             // CALLA - Call absolute address from stack
@@ -1282,6 +1319,8 @@ impl NeoVM {
                 self.invocation_stack.push(ExecutionContext {
                     script,
                     ip: target_ip,
+                    local_slots: Vec::new(),
+                    argument_slots: Vec::new(),
                 });
             }
             // SHA256
@@ -1963,23 +2002,33 @@ impl NeoVM {
             0x7B..=0x80 => {
                 let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
                 let idx = (op - 0x7B) as usize;
-                if idx >= self.argument_slots.len() {
-                    return Err(VMError::InvalidOperation);
-                }
-                self.argument_slots[idx] = val;
-            }
-            // STARG - Store into argument slot (1-byte index)
-            0x81 => {
                 let ctx = self
                     .invocation_stack
                     .last_mut()
                     .ok_or(VMError::StackUnderflow)?;
-                let idx = Self::read_u8(ctx)? as usize;
-                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                if idx >= self.argument_slots.len() {
+                if idx >= ctx.argument_slots.len() {
                     return Err(VMError::InvalidOperation);
                 }
-                self.argument_slots[idx] = val;
+                ctx.argument_slots[idx] = val;
+            }
+            // STARG - Store into argument slot (1-byte index)
+            0x81 => {
+                let idx = {
+                    let ctx = self
+                        .invocation_stack
+                        .last_mut()
+                        .ok_or(VMError::StackUnderflow)?;
+                    Self::read_u8(ctx)? as usize
+                };
+                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                let ctx = self
+                    .invocation_stack
+                    .last_mut()
+                    .ok_or(VMError::StackUnderflow)?;
+                if idx >= ctx.argument_slots.len() {
+                    return Err(VMError::InvalidOperation);
+                }
+                ctx.argument_slots[idx] = val;
             }
 
             // === Arithmetic Opcodes ===

@@ -185,6 +185,18 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
     let explicitly_requested_mode = parse_requested_proof_mode(args)?.is_some();
     let allow_fallback = parse_allow_fallback(args);
 
+    if !allow_fallback
+        && matches!(
+            proof_mode,
+            ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
+        )
+        && cfg!(debug_assertions)
+    {
+        return Err(
+            "Requested cryptographic proof mode requires a release build. Re-run with `cargo run --release --bin neo-zkvm -- prove ...` or pass --allow-fallback.".to_string(),
+        );
+    }
+
     println!("Generating ZK proof...\n");
 
     let input = ProofInput {
@@ -197,7 +209,11 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
         proof_mode,
         ..ProverConfig::default()
     });
-    let proof = prover.prove(input);
+    let proof = if allow_fallback {
+        prover.prove(input)
+    } else {
+        prover.prove_strict(input)?
+    };
 
     if should_error_on_fallback(
         proof_mode,
@@ -990,5 +1006,15 @@ mod tests {
         let args = vec!["12139E40".to_string(), "--gas".to_string()];
         let err = parse_gas_limit(&args).unwrap_err();
         assert!(err.contains("Missing value for --gas"));
+    }
+
+    #[test]
+    fn test_cmd_prove_requires_release_for_crypto_mode_without_fallback() {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        let args = vec!["12139E40".to_string()];
+        let err = cmd_prove(&args).unwrap_err();
+        assert!(err.contains("requires a release build"));
     }
 }

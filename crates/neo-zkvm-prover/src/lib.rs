@@ -286,6 +286,23 @@ impl NeoProver {
         }
     }
 
+    /// Generate a proof and fail if requested cryptographic mode falls back.
+    pub fn prove_strict(&self, input: ProofInput) -> Result<NeoProof, String> {
+        let requested_mode = self.config.proof_mode;
+        let proof = self.prove(input);
+        if matches!(
+            requested_mode,
+            ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
+        ) && proof.proof_mode != requested_mode
+        {
+            return Err(format!(
+                "Requested proof mode {:?} but prover produced {:?}. Re-run with fallback enabled if this is expected.",
+                requested_mode, proof.proof_mode
+            ));
+        }
+        Ok(proof)
+    }
+
     /// Verify a proof
     pub fn verify(&self, proof: &NeoProof) -> bool {
         if proof.proof_format_version != PROOF_FORMAT_VERSION {
@@ -437,6 +454,46 @@ mod tests {
         let proof = prover.prove(input);
         assert!(proof.proof_mode == ProofMode::Execute);
         assert!(prover.verify(&proof));
+    }
+
+    #[test]
+    fn test_prove_strict_allows_execute_mode() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Execute,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let proof = prover
+            .prove_strict(input)
+            .expect("execute mode should be strict-safe");
+        assert_eq!(proof.proof_mode, ProofMode::Execute);
+    }
+
+    #[test]
+    fn test_prove_strict_rejects_crypto_fallback() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Sp1,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: vec![0x12, 0x13, 0x9E, 0x40],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let result = prover.prove_strict(input);
+        if cfg!(debug_assertions) {
+            assert!(result.is_err());
+        } else {
+            assert!(result.is_ok());
+        }
     }
 
     #[test]

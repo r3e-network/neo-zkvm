@@ -202,8 +202,10 @@ pub fn execute(input: ProofInput) -> ProofOutput {
     }
 
     // Execute until halt or fault
+    let mut runtime_error: Option<String> = None;
     while !matches!(vm.state, VMState::Halt | VMState::Fault) {
-        if vm.execute_next().is_err() {
+        if let Err(err) = vm.execute_next() {
+            runtime_error = Some(err.to_string());
             vm.state = VMState::Fault;
             break;
         }
@@ -219,7 +221,11 @@ pub fn execute(input: ProofInput) -> ProofOutput {
         state,
         result: vm.eval_stack.pop(),
         gas_consumed: vm.gas_consumed,
-        error: None,
+        error: if state == 1 {
+            runtime_error.or_else(|| Some("Execution fault".to_string()))
+        } else {
+            None
+        },
     }
 }
 
@@ -311,6 +317,23 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("Stack overflow"));
+    }
+
+    #[test]
+    fn test_execute_reports_runtime_fault_error() {
+        let input = ProofInput {
+            script: vec![0xFF], // Invalid opcode
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let output = execute(input);
+        assert_eq!(output.state, 1);
+        assert!(output
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Invalid opcode"));
     }
 
     #[test]

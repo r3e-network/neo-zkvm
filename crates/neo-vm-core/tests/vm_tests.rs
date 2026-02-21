@@ -426,4 +426,34 @@ mod slot_tests {
 
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
     }
+
+    #[test]
+    fn test_call_preserves_caller_slots() {
+        let mut vm = NeoVM::new(1_000_000);
+        // Main:
+        //   PUSH5, INITSLOT(1,1), LDARG0, STLOC0, PUSH9, CALL +4, LDLOC0, RET
+        // Function:
+        //   INITSLOT(1,1), PUSH2, STLOC0, RET
+        let _ = vm.load_script(vec![
+            0x15, // PUSH5
+            0x57, 0x01, 0x01, // INITSLOT
+            0x74, // LDARG0
+            0x6E, // STLOC0
+            0x19, // PUSH9 (callee argument)
+            0x34, 0x04, // CALL +4
+            0x66, // LDLOC0
+            0x40, // RET
+            0x57, 0x01, 0x01, // INITSLOT (callee frame)
+            0x12, // PUSH2
+            0x6E, // STLOC0
+            0x40, // RET
+        ]);
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        // Caller frame local slot must remain 5 after callee mutates its own local slot.
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
 }
