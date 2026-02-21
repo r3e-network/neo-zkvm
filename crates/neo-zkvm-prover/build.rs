@@ -6,10 +6,17 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "src/elf_markers.rs"]
+mod elf_markers;
+
 fn write_dummy_elf(elf_path: &Path, marker: &[u8]) {
     if !elf_path.exists() {
         let _ = std::fs::write(elf_path, marker);
     }
+}
+
+fn enable_mock_elf() {
+    println!("cargo:rustc-cfg=feature=\"mock-elf\"");
 }
 
 fn resolve_program_dir(manifest_dir: &Path) -> Option<PathBuf> {
@@ -88,13 +95,16 @@ fn main() {
             .unwrap_or(false);
 
         if let Some(program_dir) = resolve_program_dir(&manifest_dir) {
-            let build_args = sp1_build::BuildArgs {
-                output_directory: Some(elf_dir.to_string_lossy().to_string()),
-                elf_name: Some("riscv32im-succinct-zkvm-elf".to_string()),
-                ..sp1_build::BuildArgs::default()
-            };
-
-            sp1_build::build_program_with_args(&program_dir.to_string_lossy(), build_args);
+            if skip_program_build {
+                println!("cargo:warning=SP1_SKIP_PROGRAM_BUILD=true; skipping guest build step");
+            } else {
+                let build_args = sp1_build::BuildArgs {
+                    output_directory: Some(elf_dir.to_string_lossy().to_string()),
+                    elf_name: Some("riscv32im-succinct-zkvm-elf".to_string()),
+                    ..sp1_build::BuildArgs::default()
+                };
+                sp1_build::build_program_with_args(&program_dir.to_string_lossy(), build_args);
+            }
 
             if !elf_path.exists() {
                 let workspace_elf_path = manifest_dir.join(
@@ -102,24 +112,29 @@ fn main() {
                 );
 
                 if workspace_elf_path.exists() {
-                    std::fs::copy(&workspace_elf_path, &elf_path).unwrap_or_else(|e| {
-                        panic!(
-                            "Failed to copy SP1 ELF from {} to {}: {}",
+                    if let Err(e) = std::fs::copy(&workspace_elf_path, &elf_path) {
+                        println!(
+                            "cargo:warning=Failed to copy SP1 ELF from {} to {}: {}; using dummy ELF",
                             workspace_elf_path.display(),
                             elf_path.display(),
                             e
-                        )
-                    });
+                        );
+                        write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_BUILD_FAILED);
+                        enable_mock_elf();
+                    }
                 } else if is_clippy_invocation || skip_program_build {
                     println!(
                         "cargo:warning=SP1 ELF not present during clippy/skip build; using temporary dummy ELF"
                     );
-                    write_dummy_elf(&elf_path, b"DUMMY_ELF_FOR_CLIPPY");
+                    write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_FOR_CLIPPY);
+                    enable_mock_elf();
                 } else {
-                    panic!(
-                        "SP1 build completed but ELF was not found at {}",
+                    println!(
+                        "cargo:warning=SP1 build completed but ELF was not found at {}; using dummy ELF",
                         elf_path.display()
                     );
+                    write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_BUILD_FAILED);
+                    enable_mock_elf();
                 }
             }
 
@@ -139,13 +154,13 @@ fn main() {
             println!(
                 "cargo:warning=Set NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program to enable SP1 ELF compilation"
             );
-            write_dummy_elf(&elf_path, b"DUMMY_ELF_NO_PROGRAM_SOURCE");
-            println!("cargo:rustc-cfg=feature=\"mock-elf\"");
+            write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_NO_PROGRAM_SOURCE);
+            enable_mock_elf();
         }
     } else {
         println!("cargo:warning=SP1 toolchain not found, using dummy ELF");
         println!("cargo:warning=Install with: curl -L https://sp1.succinct.xyz | bash && sp1up");
-        write_dummy_elf(&elf_path, b"DUMMY_ELF_NOT_FOR_PRODUCTION");
-        println!("cargo:rustc-cfg=feature=\"mock-elf\"");
+        write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_NOT_FOR_PRODUCTION);
+        enable_mock_elf();
     }
 }

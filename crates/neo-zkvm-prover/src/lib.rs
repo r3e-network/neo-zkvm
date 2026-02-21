@@ -26,6 +26,8 @@
 //! ```
 
 use bincode::Options;
+mod elf_markers;
+
 use neo_vm_guest::{
     bincode_options, compute_commitment, execute, hash_data, output_matches_public_inputs,
     public_inputs_equal, try_hash_proof_output, ProofInput, ProofOutput,
@@ -75,12 +77,18 @@ impl NeoProver {
     }
 
     fn sp1_unavailable_reason() -> &'static str {
-        if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_NO_PROGRAM_SOURCE") {
+        Self::sp1_unavailable_reason_for_elf(NEO_ZKVM_ELF)
+    }
+
+    fn sp1_unavailable_reason_for_elf(elf: &[u8]) -> &'static str {
+        if elf.starts_with(elf_markers::DUMMY_ELF_NO_PROGRAM_SOURCE) {
             "SP1 prover was built without neo-zkvm-program source"
-        } else if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_NOT_FOR_PRODUCTION") {
+        } else if elf.starts_with(elf_markers::DUMMY_ELF_NOT_FOR_PRODUCTION) {
             "SP1 toolchain is not installed"
-        } else if NEO_ZKVM_ELF.starts_with(b"DUMMY_ELF_FOR_CLIPPY") {
+        } else if elf.starts_with(elf_markers::DUMMY_ELF_FOR_CLIPPY) {
             "SP1 ELF build was skipped for clippy/analysis"
+        } else if elf.starts_with(elf_markers::DUMMY_ELF_BUILD_FAILED) {
+            "SP1 guest ELF build failed"
         } else {
             "SP1 ELF is unavailable"
         }
@@ -780,5 +788,21 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("truncated"));
+    }
+
+    #[test]
+    fn test_sp1_unavailable_reason_reports_build_failed_marker() {
+        assert_eq!(
+            NeoProver::sp1_unavailable_reason_for_elf(b"DUMMY_ELF_BUILD_FAILED"),
+            "SP1 guest ELF build failed"
+        );
+    }
+
+    #[test]
+    fn test_sp1_unavailable_reason_reports_toolchain_marker() {
+        assert_eq!(
+            NeoProver::sp1_unavailable_reason_for_elf(b"DUMMY_ELF_NOT_FOR_PRODUCTION"),
+            "SP1 toolchain is not installed"
+        );
     }
 }
