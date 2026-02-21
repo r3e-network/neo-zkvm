@@ -163,11 +163,8 @@ impl NeoProver {
     }
 
     /// Hash a serialized `ProofInput` for public input commitment.
-    ///
-    /// This panics if serialization fails; prefer `try_hash_proof_input` in fallible paths.
-    pub fn hash_proof_input(input: &ProofInput) -> [u8; 32] {
+    pub fn hash_proof_input(input: &ProofInput) -> Result<[u8; 32], bincode::Error> {
         Self::try_hash_proof_input(input)
-            .expect("failed to serialize ProofInput for hashing; use try_hash_proof_input")
     }
 
     /// Generate a proof for the given input.
@@ -543,7 +540,10 @@ mod tests {
         let bytes = bincode_options().serialize(&input).expect("serialize");
         let hash = hash_data(&bytes);
 
-        assert_eq!(hash, NeoProver::hash_proof_input(&input));
+        assert_eq!(
+            hash,
+            NeoProver::hash_proof_input(&input).expect("hash_proof_input should succeed")
+        );
     }
 
     #[test]
@@ -560,8 +560,8 @@ mod tests {
         };
 
         assert_ne!(
-            NeoProver::hash_proof_input(&null_input),
-            NeoProver::hash_proof_input(&array_input)
+            NeoProver::hash_proof_input(&null_input).expect("null input should hash"),
+            NeoProver::hash_proof_input(&array_input).expect("array input should hash")
         );
     }
 
@@ -804,5 +804,18 @@ mod tests {
             NeoProver::sp1_unavailable_reason_for_elf(b"DUMMY_ELF_NOT_FOR_PRODUCTION"),
             "SP1 toolchain is not installed"
         );
+    }
+
+    #[test]
+    fn test_hash_proof_input_does_not_panic_on_oversized_arguments() {
+        let input = ProofInput {
+            script: vec![0x40],
+            arguments: vec![StackItem::ByteString(vec![0u8; 10 * 1024 * 1024 + 1])],
+            gas_limit: 1_000_000,
+        };
+
+        let result = std::panic::catch_unwind(|| NeoProver::hash_proof_input(&input));
+        assert!(result.is_ok(), "hash_proof_input should be panic-free");
+        assert!(result.expect("result should be returned").is_err());
     }
 }
