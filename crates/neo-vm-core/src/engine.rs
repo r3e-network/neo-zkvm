@@ -79,6 +79,8 @@ pub mod syscall {
     pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
     pub const SYSTEM_CRYPTO_SHA256: u32 = 0x20;
     pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x21;
+    pub const SYSTEM_CRYPTO_CHECKSIG: u32 = 0x22;
+    pub const SYSTEM_CRYPTO_MURMUR32: u32 = 0x23;
     pub const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x30;
     pub const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0x31;
 }
@@ -2334,6 +2336,12 @@ impl NeoVM {
             }
             syscall::SYSTEM_CRYPTO_RIPEMD160 => {
                 self.execute_native_syscall(&CRYPTOLIB_HASH, "ripemd160", 1)
+            }
+            syscall::SYSTEM_CRYPTO_CHECKSIG => {
+                self.execute_native_syscall(&CRYPTOLIB_HASH, "checkSig", 3)
+            }
+            syscall::SYSTEM_CRYPTO_MURMUR32 => {
+                self.execute_native_syscall(&CRYPTOLIB_HASH, "murmur32", 2)
             }
             syscall::SYSTEM_STDLIB_BASE64_ENCODE => {
                 self.execute_native_syscall(&STDLIB_HASH, "base64Encode", 1)

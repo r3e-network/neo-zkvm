@@ -4,6 +4,8 @@ use neo_vm_core::{NeoVM, StackItem, VMState};
 
 const SYSTEM_CRYPTO_SHA256: u32 = 0x20;
 const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x21;
+const SYSTEM_CRYPTO_CHECKSIG: u32 = 0x22;
+const SYSTEM_CRYPTO_MURMUR32: u32 = 0x23;
 const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x30;
 const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0x31;
 
@@ -103,4 +105,42 @@ fn test_native_syscall_invalid_arg_type_faults() {
         .execute_next()
         .expect_err("sha256 should reject integer input");
     assert!(err.to_string().contains("ByteString"));
+}
+
+#[test]
+fn test_native_syscall_murmur32_returns_four_bytes() {
+    let mut vm = NeoVM::new(1_000_000);
+    let mut script = Vec::new();
+    script.extend(push_data(b"abc"));
+    script.push(0x10); // PUSH0 seed
+    script.extend(syscall(SYSTEM_CRYPTO_MURMUR32));
+    script.push(0x40); // RET
+
+    vm.load_script(script).expect("script should load");
+    run_vm(&mut vm);
+
+    assert!(matches!(vm.state, VMState::Halt));
+    match vm.eval_stack.pop() {
+        Some(StackItem::ByteString(bytes)) => assert_eq!(bytes.len(), 4),
+        other => panic!("expected 4-byte murmur32 hash, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_native_syscall_checksig_rejects_invalid_message_type() {
+    let mut vm = NeoVM::new(1_000_000);
+    let mut script = Vec::new();
+    script.push(0x11); // PUSH1 (invalid message type)
+    script.extend(push_data(&[1, 2, 3])); // signature bytes
+    script.extend(push_data(&[4, 5, 6])); // pubkey bytes
+    script.extend(syscall(SYSTEM_CRYPTO_CHECKSIG));
+
+    vm.load_script(script).expect("script should load");
+    vm.execute_next().expect("push invalid message");
+    vm.execute_next().expect("push signature");
+    vm.execute_next().expect("push pubkey");
+    let err = vm
+        .execute_next()
+        .expect_err("checkSig should reject non-bytes message");
+    assert!(err.to_string().contains("checkSig"));
 }
