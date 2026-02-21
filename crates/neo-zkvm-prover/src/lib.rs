@@ -27,9 +27,8 @@
 
 use bincode::Options;
 use neo_vm_guest::{
-    bincode_options, compute_commitment, execute, hash_data, hash_proof_output,
-    output_matches_public_inputs, public_inputs_equal, try_hash_proof_output, ProofInput,
-    ProofOutput,
+    bincode_options, compute_commitment, execute, hash_data, output_matches_public_inputs,
+    public_inputs_equal, try_hash_proof_output, ProofInput, ProofOutput,
 };
 use sp1_sdk::{ProverClient, SP1ProofMode, SP1PublicValues, SP1Stdin};
 
@@ -94,18 +93,47 @@ impl NeoProver {
 
     /// Maximum allowed script size (1 MB).
     const MAX_SCRIPT_SIZE: usize = 1024 * 1024;
+    /// Keep failed-proof error payloads small and deterministic.
+    const MAX_FAILED_PROOF_ERROR_BYTES: usize = 8 * 1024;
+
+    fn sanitize_failed_proof_error(mut error: String) -> String {
+        if error.len() <= Self::MAX_FAILED_PROOF_ERROR_BYTES {
+            return error;
+        }
+
+        let mut boundary = Self::MAX_FAILED_PROOF_ERROR_BYTES;
+        while boundary > 0 && !error.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        let omitted_bytes = error.len().saturating_sub(boundary);
+        error.truncate(boundary);
+        error.push_str(&format!("... [truncated {omitted_bytes} bytes]"));
+        error
+    }
+
+    fn safe_output_hash(output: &ProofOutput) -> [u8; 32] {
+        match try_hash_proof_output(output) {
+            Ok(hash) => hash,
+            Err(err) => {
+                let mut fallback = b"neo-zkvm:failed-proof-output:v1:".to_vec();
+                fallback.extend_from_slice(err.to_string().as_bytes());
+                hash_data(&fallback)
+            }
+        }
+    }
 
     fn failed_proof(&self, script_hash: [u8; 32], input_hash: [u8; 32], error: String) -> NeoProof {
+        let sanitized_error = Self::sanitize_failed_proof_error(error);
         let output = ProofOutput {
             state: 1,
             result: Some(neo_vm_core::StackItem::Boolean(false)),
             gas_consumed: 0,
-            error: Some(error),
+            error: Some(sanitized_error),
         };
         let public_inputs = PublicInputs {
             script_hash,
             input_hash,
-            output_hash: hash_proof_output(&output),
+            output_hash: Self::safe_output_hash(&output),
             gas_consumed: output.gas_consumed,
             execution_success: false,
         };
@@ -725,5 +753,32 @@ mod tests {
         let proof_a = prover.prove(input.clone());
         let proof_b = prover.prove(input);
         assert_eq!(proof_a.proof_bytes, proof_b.proof_bytes);
+    }
+
+    #[test]
+    fn test_failed_proof_does_not_panic_on_oversized_error_message() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+        let oversized_error = "x".repeat(10 * 1024 * 1024 + 1024);
+
+        let result =
+            std::panic::catch_unwind(|| prover.failed_proof([1u8; 32], [2u8; 32], oversized_error));
+
+        assert!(
+            result.is_ok(),
+            "failed_proof should never panic on oversized error messages"
+        );
+        let proof = result.expect("proof should be returned");
+        assert_eq!(proof.output.state, 1);
+        assert_eq!(proof.public_inputs.gas_consumed, 0);
+        assert!(!proof.public_inputs.execution_success);
+        assert!(proof
+            .output
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("truncated"));
     }
 }

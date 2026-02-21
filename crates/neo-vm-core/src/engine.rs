@@ -4,7 +4,10 @@
 //!
 //! Core execution engine for Neo zkVM.
 
-use crate::stack_item::StackItem;
+use crate::{
+    stack_item::StackItem,
+    storage::{MemoryStorage, StorageBackend, StorageContext, StorageError},
+};
 use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 use ripemd::Ripemd160;
 use sha2::{Digest, Sha256};
@@ -29,6 +32,8 @@ pub enum VMError {
     UnknownSyscall(u32),
     #[error("Invalid operation")]
     InvalidOperation,
+    #[error("Storage is read-only")]
+    StorageReadOnly,
     #[error("Invalid script")]
     InvalidScript,
     #[error("Invalid public key format for CHECKSIG")]
@@ -156,6 +161,8 @@ pub struct NeoVM {
     pub logs: Vec<String>,
     pub trace: ExecutionTrace,
     pub tracing_enabled: bool,
+    pub storage: MemoryStorage,
+    pub storage_context: StorageContext,
     // Static slot support for Neo VM compatibility.
     // Local/argument slots are scoped per invocation frame.
     pub static_slots: Vec<StackItem>,
@@ -198,9 +205,24 @@ impl NeoVM {
             logs: Vec::new(),
             trace: ExecutionTrace::default(),
             tracing_enabled: false,
+            storage: MemoryStorage::new(),
+            storage_context: StorageContext::default(),
             static_slots: Vec::with_capacity(Self::DEFAULT_STACK_CAPACITY),
             exception_stack: Vec::new(),
         }
+    }
+
+    /// Configure current contract storage context used by storage syscalls.
+    #[inline]
+    pub fn set_storage_context(&mut self, script_hash: [u8; 20], read_only: bool) {
+        self.storage_context.script_hash = script_hash;
+        self.storage_context.read_only = read_only;
+    }
+
+    /// Update only the read-only flag for storage syscalls.
+    #[inline]
+    pub fn set_storage_read_only(&mut self, read_only: bool) {
+        self.storage_context.read_only = read_only;
     }
 
     /// Run the VM until halt or fault
@@ -313,6 +335,27 @@ impl NeoVM {
             Err(VMError::InvalidOperation)
         } else {
             Ok(value as usize)
+        }
+    }
+
+    /// Pop one byte-sequence stack item without dropping on type mismatch.
+    fn pop_bytes_from_stack(eval_stack: &mut Vec<StackItem>) -> Result<Vec<u8>, VMError> {
+        match eval_stack.last() {
+            Some(StackItem::ByteString(_)) | Some(StackItem::Buffer(_)) => {
+                match eval_stack.pop().expect("stack last() checked above") {
+                    StackItem::ByteString(bytes) | StackItem::Buffer(bytes) => Ok(bytes),
+                    _ => unreachable!("type checked above"),
+                }
+            }
+            Some(_) => Err(VMError::InvalidType),
+            None => Err(VMError::StackUnderflow),
+        }
+    }
+
+    #[inline]
+    fn map_storage_error(err: StorageError) -> VMError {
+        match err {
+            StorageError::ReadOnly => VMError::StorageReadOnly,
         }
     }
 
@@ -2229,6 +2272,29 @@ impl NeoVM {
             syscall::SYSTEM_RUNTIME_GETTIME => {
                 // Return a mock timestamp for zkVM
                 self.push(StackItem::Integer(0))?;
+                Ok(())
+            }
+            syscall::SYSTEM_STORAGE_GET => {
+                let key = Self::pop_bytes_from_stack(&mut self.eval_stack)?;
+                match self.storage.get(&self.storage_context, &key) {
+                    Some(value) => self.push(StackItem::ByteString(value))?,
+                    None => self.push(StackItem::Null)?,
+                }
+                Ok(())
+            }
+            syscall::SYSTEM_STORAGE_PUT => {
+                let value = Self::pop_bytes_from_stack(&mut self.eval_stack)?;
+                let key = Self::pop_bytes_from_stack(&mut self.eval_stack)?;
+                self.storage
+                    .put(&self.storage_context, &key, &value)
+                    .map_err(Self::map_storage_error)?;
+                Ok(())
+            }
+            syscall::SYSTEM_STORAGE_DELETE => {
+                let key = Self::pop_bytes_from_stack(&mut self.eval_stack)?;
+                self.storage
+                    .delete(&self.storage_context, &key)
+                    .map_err(Self::map_storage_error)?;
                 Ok(())
             }
             _ => Err(VMError::UnknownSyscall(id)),
