@@ -142,30 +142,60 @@ impl<'a> Disassembler<'a> {
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPEQ {:+} -> 0x{:04X}", offset, target), 2)
             }
+            0x29 => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPEQ_L {:+} -> 0x{:04X}", offset, target), 5)
+            }
             0x2A => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPNE {:+} -> 0x{:04X}", offset, target), 2)
+            }
+            0x2B => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPNE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
             0x2C => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGT {:+} -> 0x{:04X}", offset, target), 2)
             }
+            0x2D => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPGT_L {:+} -> 0x{:04X}", offset, target), 5)
+            }
             0x2E => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGE {:+} -> 0x{:04X}", offset, target), 2)
+            }
+            0x2F => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPGE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
             0x30 => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLT {:+} -> 0x{:04X}", offset, target), 2)
             }
+            0x31 => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPLT_L {:+} -> 0x{:04X}", offset, target), 5)
+            }
             0x32 => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLE {:+} -> 0x{:04X}", offset, target), 2)
+            }
+            0x33 => {
+                let offset = self.read_i32(ip + 1);
+                let target = (ip as isize + offset as isize) as usize;
+                (format!("JMPLE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
             0x34 => {
                 let offset = self.read_i8(ip + 1);
@@ -190,9 +220,18 @@ impl<'a> Disassembler<'a> {
                 let finally = self.read_i8(ip + 2);
                 (format!("TRY catch:{:+} finally:{:+}", catch, finally), 3)
             }
+            0x3C => {
+                let catch = self.read_i32(ip + 1);
+                let finally = self.read_i32(ip + 5);
+                (format!("TRY_L catch:{:+} finally:{:+}", catch, finally), 9)
+            }
             0x3D => {
                 let offset = self.read_i8(ip + 1);
                 (format!("ENDTRY {:+}", offset), 2)
+            }
+            0x3E => {
+                let offset = self.read_i32(ip + 1);
+                (format!("ENDTRY_L {:+}", offset), 5)
             }
             0x3F => ("ENDFINALLY".to_string(), 1),
             0x40 => ("RET".to_string(), 1),
@@ -453,5 +492,37 @@ impl<'a> Disassembler<'a> {
             0x60 => "InteropInterface",
             _ => "Unknown",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Disassembler;
+
+    #[test]
+    fn test_decode_long_flow_control_opcodes() {
+        let script = vec![
+            0x29, 0x04, 0x00, 0x00, 0x00, // JMPEQ_L +4
+            0x2B, 0xF8, 0xFF, 0xFF, 0xFF, // JMPNE_L -8
+            0x3C, 0x02, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, // TRY_L +2, -2
+            0x3E, 0x08, 0x00, 0x00, 0x00, // ENDTRY_L +8
+        ];
+        let disasm = Disassembler::new(&script);
+
+        let (name0, size0) = disasm.decode_instruction(0);
+        assert_eq!(size0, 5);
+        assert!(name0.starts_with("JMPEQ_L"));
+
+        let (name1, size1) = disasm.decode_instruction(5);
+        assert_eq!(size1, 5);
+        assert!(name1.starts_with("JMPNE_L"));
+
+        let (name2, size2) = disasm.decode_instruction(10);
+        assert_eq!(size2, 9);
+        assert!(name2.starts_with("TRY_L"));
+
+        let (name3, size3) = disasm.decode_instruction(19);
+        assert_eq!(size3, 5);
+        assert!(name3.starts_with("ENDTRY_L"));
     }
 }

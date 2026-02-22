@@ -438,14 +438,14 @@ mod slot_tests {
             0x15, // PUSH5
             0x57, 0x01, 0x01, // INITSLOT
             0x74, // LDARG0
-            0x6E, // STLOC0
+            0x6D, // STLOC0
             0x19, // PUSH9 (callee argument)
             0x34, 0x04, // CALL +4
             0x66, // LDLOC0
             0x40, // RET
             0x57, 0x01, 0x01, // INITSLOT (callee frame)
             0x12, // PUSH2
-            0x6E, // STLOC0
+            0x6D, // STLOC0
             0x40, // RET
         ]);
 
@@ -454,6 +454,44 @@ mod slot_tests {
         }
 
         // Caller frame local slot must remain 5 after callee mutates its own local slot.
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+    }
+
+    #[test]
+    fn test_ldloc_stloc_indexed_forms() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH7, INITSLOT(7,0), STLOC 6, LDLOC 6, RET
+        let _ = vm.load_script(vec![
+            0x17, // PUSH7
+            0x57, 0x07, 0x00, // INITSLOT
+            0x73, 0x06, // STLOC 6
+            0x6C, 0x06, // LDLOC 6
+            0x40, // RET
+        ]);
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(7)));
+    }
+
+    #[test]
+    fn test_ldloc_stloc_fixed_forms() {
+        let mut vm = NeoVM::new(1_000_000);
+        // PUSH5, INITSLOT(6,0), STLOC5, LDLOC5, RET
+        let _ = vm.load_script(vec![
+            0x15, // PUSH5
+            0x57, 0x06, 0x00, // INITSLOT
+            0x72, // STLOC5
+            0x6B, // LDLOC5
+            0x40, // RET
+        ]);
+
+        while !matches!(vm.state, VMState::Halt | VMState::Fault) {
+            vm.execute_next().unwrap();
+        }
+
         assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
     }
 }

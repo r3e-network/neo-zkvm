@@ -32,6 +32,13 @@ bash scripts/verify-production.sh
 - Add tests for new features
 - Update documentation as needed
 
+## Local Verification Notes
+
+- In some environments, `sp1-prover` build-time VK download can timeout and cause otherwise-correct test runs to fail. For reliable local verification, run tests with:
+  - `DOCS_RS=1 cargo test --workspace`
+- Some `clippy` runs that pull SP1 native crates can fail locally when static SP1 sys libraries are unavailable (for example `sp1-core-machine-sys` / `sp1-recursion-core-sys`).
+  - If this happens, run clippy on directly modified crates that do not depend on those native artifacts and rely on CI/full toolchain environments for workspace-wide SP1 clippy coverage.
+
 ## Pull Request Process
 
 1. Update README.md if needed

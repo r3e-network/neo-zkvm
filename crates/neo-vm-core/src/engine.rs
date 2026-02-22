@@ -65,10 +65,6 @@ pub struct ExecutionContext {
     pub argument_slots: Vec<StackItem>,
 }
 
-// SAFETY: ExecutionContext is designed for single-threaded use within NeoVM.
-unsafe impl Send for ExecutionContext {}
-unsafe impl Sync for ExecutionContext {}
-
 /// Built-in syscall IDs (Neo N3 compatible)
 pub mod syscall {
     pub const SYSTEM_RUNTIME_LOG: u32 = 0x01;
@@ -376,6 +372,34 @@ impl NeoVM {
         }
         let split = eval_stack.len() - count;
         Ok(eval_stack.split_off(split))
+    }
+
+    #[inline]
+    fn load_local_slot(&mut self, idx: usize) -> Result<(), VMError> {
+        let item = self
+            .invocation_stack
+            .last()
+            .ok_or(VMError::StackUnderflow)?
+            .local_slots
+            .get(idx)
+            .cloned()
+            .ok_or(VMError::InvalidOperation)?;
+        self.push(item)?;
+        Ok(())
+    }
+
+    #[inline]
+    fn store_local_slot(&mut self, idx: usize) -> Result<(), VMError> {
+        let value = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+        let slot = self
+            .invocation_stack
+            .last_mut()
+            .ok_or(VMError::StackUnderflow)?
+            .local_slots
+            .get_mut(idx)
+            .ok_or(VMError::InvalidOperation)?;
+        *slot = value;
+        Ok(())
     }
 
     fn execute_native_syscall(
@@ -987,21 +1011,13 @@ impl NeoVM {
                 ctx.local_slots = vec![StackItem::Null; local_count];
                 ctx.argument_slots = argument_slots;
             }
-            // LDLOC0-LDLOC6 - Load local variable 0-6
-            0x66..=0x6C => {
+            // LDLOC0-LDLOC5 - Load local variable 0-5
+            0x66..=0x6B => {
                 let idx = (op - 0x66) as usize;
-                let item = self
-                    .invocation_stack
-                    .last()
-                    .ok_or(VMError::StackUnderflow)?
-                    .local_slots
-                    .get(idx)
-                    .cloned()
-                    .ok_or(VMError::InvalidOperation)?;
-                self.push(item)?;
+                self.load_local_slot(idx)?;
             }
-            // LDLOC_S - Load local variable (short form)
-            0x6D => {
+            // LDLOC - Load local variable (indexed form)
+            0x6C => {
                 let idx = {
                     let ctx = self
                         .invocation_stack
@@ -1009,30 +1025,14 @@ impl NeoVM {
                         .ok_or(VMError::StackUnderflow)?;
                     Self::read_u8(ctx)? as usize
                 };
-                let item = self
-                    .invocation_stack
-                    .last()
-                    .ok_or(VMError::StackUnderflow)?
-                    .local_slots
-                    .get(idx)
-                    .cloned()
-                    .ok_or(VMError::InvalidOperation)?;
-                self.push(item)?;
+                self.load_local_slot(idx)?;
             }
-            // STLOC0-STLOC4 - Store local variable 0-4
-            0x6E..=0x72 => {
-                let val = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let idx = (op - 0x6E) as usize;
-                let ctx = self
-                    .invocation_stack
-                    .last_mut()
-                    .ok_or(VMError::StackUnderflow)?;
-                if idx >= ctx.local_slots.len() {
-                    return Err(VMError::InvalidOperation);
-                }
-                ctx.local_slots[idx] = val;
+            // STLOC0-STLOC5 - Store local variable 0-5
+            0x6D..=0x72 => {
+                let idx = (op - 0x6D) as usize;
+                self.store_local_slot(idx)?;
             }
-            // STLOC_S - Store local variable (short form)
+            // STLOC - Store local variable (indexed form)
             0x73 => {
                 let idx = {
                     let ctx = self
@@ -1041,15 +1041,7 @@ impl NeoVM {
                         .ok_or(VMError::StackUnderflow)?;
                     Self::read_u8(ctx)? as usize
                 };
-                let item = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let ctx = self
-                    .invocation_stack
-                    .last_mut()
-                    .ok_or(VMError::StackUnderflow)?;
-                if idx >= ctx.local_slots.len() {
-                    return Err(VMError::InvalidOperation);
-                }
-                ctx.local_slots[idx] = item;
+                self.store_local_slot(idx)?;
             }
             // LDARG0-LDARG6 - Load argument 0-6
             0x74..=0x79 => {
@@ -1457,13 +1449,11 @@ impl NeoVM {
                     _ => return Err(VMError::InvalidType),
                 };
 
-                let result = VerifyingKey::from_sec1_bytes(&pubkey_bytes)
+                let verifying_key = VerifyingKey::from_sec1_bytes(&pubkey_bytes)
                     .map_err(|_| VMError::InvalidPublicKey)?;
                 let signature =
                     Signature::from_slice(&sig_bytes).map_err(|_| VMError::InvalidSignature)?;
-                let msg_hash = Sha256::digest(&msg_bytes);
-
-                let verified = result.verify(&msg_hash, &signature).is_ok();
+                let verified = verifying_key.verify(&msg_bytes, &signature).is_ok();
                 self.push(StackItem::Boolean(verified))?;
             }
             // SYSCALL
@@ -2357,6 +2347,13 @@ impl NeoVM {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use k256::ecdsa::{signature::Signer, SigningKey};
+
+    #[test]
+    fn test_execution_context_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ExecutionContext>();
+    }
 
     #[test]
     fn test_push_operations() {
@@ -2505,5 +2502,38 @@ mod tests {
         vm.run();
         assert!(matches!(vm.state, VMState::Halt));
         assert_eq!(vm.logs, vec!["test".to_string()]);
+    }
+
+    #[test]
+    fn test_checksig_opcode_accepts_valid_signature() {
+        let signing_key = SigningKey::from_bytes((&[7u8; 32]).into())
+            .expect("32-byte private key should be valid");
+        let verifying_key = signing_key.verifying_key();
+        let message = b"neo-zkvm-checksig".to_vec();
+        let signature: Signature = signing_key.sign(&message);
+
+        let mut script = Vec::new();
+        script.push(0x0C);
+        script.push(message.len() as u8);
+        script.extend_from_slice(&message);
+
+        let sig_bytes = signature.to_bytes();
+        script.push(0x0C);
+        script.push(sig_bytes.len() as u8);
+        script.extend_from_slice(sig_bytes.as_ref());
+
+        let pubkey_bytes = verifying_key.to_encoded_point(false);
+        script.push(0x0C);
+        script.push(pubkey_bytes.as_bytes().len() as u8);
+        script.extend_from_slice(pubkey_bytes.as_bytes());
+
+        script.push(0xF3); // CHECKSIG
+        script.push(0x40); // RET
+
+        let mut vm = NeoVM::new(1_000_000);
+        vm.load_script(script).expect("script should load");
+        vm.run();
+        assert!(matches!(vm.state, VMState::Halt));
+        assert_eq!(vm.eval_stack.pop(), Some(StackItem::Boolean(true)));
     }
 }

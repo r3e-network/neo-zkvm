@@ -52,12 +52,21 @@ struct Macro {
     body: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct PendingLabel {
+    pos: usize,
+    base_ip: usize,
+    label: String,
+    line_num: usize,
+    is_long_jump: bool,
+}
+
 const MAX_MACRO_DEPTH: usize = 100;
 
 pub struct Assembler {
     labels: HashMap<String, usize>,
     macros: HashMap<String, Macro>,
-    pending_labels: Vec<(usize, String, usize, bool)>,
+    pending_labels: Vec<PendingLabel>,
     warnings: Vec<String>,
     macro_depth: usize,
 }
@@ -408,6 +417,38 @@ impl Assembler {
                 | "LDARG3"
                 | "LDARG4"
                 | "LDARG5"
+                | "STARG0"
+                | "STARG1"
+                | "STARG2"
+                | "STARG3"
+                | "STARG4"
+                | "STARG5"
+                | "LDSFLD0"
+                | "LDSFLD1"
+                | "LDSFLD2"
+                | "LDSFLD3"
+                | "LDSFLD4"
+                | "LDSFLD5"
+                | "STSFLD0"
+                | "STSFLD1"
+                | "STSFLD2"
+                | "STSFLD3"
+                | "STSFLD4"
+                | "STSFLD5"
+                | "NEWBUFFER"
+                | "MEMCPY"
+                | "CAT"
+                | "SUBSTR"
+                | "LEFT"
+                | "RIGHT"
+                | "PACKMAP"
+                | "PACKSTRUCT"
+                | "MODMUL"
+                | "MODPOW"
+                | "CALLA"
+                | "ENDFINALLY"
+                | "ABORTMSG"
+                | "ASSERTMSG"
         )
     }
 
@@ -458,6 +499,39 @@ impl Assembler {
                 let val = self.parse_int(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
+            "PUSHINT128" => {
+                bytecode.push(0x04);
+                let val = self.parse_i128(operands, line_num)?;
+                bytecode.extend_from_slice(&val.to_le_bytes());
+            }
+            "PUSHINT256" => {
+                bytecode.push(0x05);
+                let bytes = if let Ok(val) = self.parse_i128(operands, line_num) {
+                    let mut out = [0u8; 32];
+                    out[..16].copy_from_slice(&val.to_le_bytes());
+                    out[16..].fill(if val < 0 { 0xFF } else { 0x00 });
+                    out.to_vec()
+                } else {
+                    let data = self.parse_data(operands, line_num)?;
+                    if data.len() != 32 {
+                        return Err(AssemblerError::InvalidOperand(
+                            format!(
+                                "PUSHINT256 requires either i128 value or 32-byte literal (got {} bytes)",
+                                data.len()
+                            ),
+                            line_num,
+                        )
+                        .to_string());
+                    }
+                    data
+                };
+                bytecode.extend_from_slice(&bytes);
+            }
+            "PUSHA" => {
+                bytecode.push(0x0A);
+                let offset = self.parse_i32(operands, line_num)?;
+                bytecode.extend_from_slice(&offset.to_le_bytes());
+            }
             "PUSHNULL" => bytecode.push(0x0B),
             "PUSHDATA1" => {
                 bytecode.push(0x0C);
@@ -487,6 +561,21 @@ impl Assembler {
                     .to_string());
                 }
                 bytecode.extend_from_slice(&(len as u16).to_le_bytes());
+                bytecode.extend_from_slice(&data);
+            }
+            "PUSHDATA4" => {
+                bytecode.push(0x0E);
+                let data = self.parse_data(operands, line_num)?;
+                let len = data.len();
+                if len > u32::MAX as usize {
+                    return Err(format!(
+                        "PUSHDATA4 length {} exceeds maximum {} at line {}",
+                        len,
+                        u32::MAX,
+                        line_num
+                    ));
+                }
+                bytecode.extend_from_slice(&(len as u32).to_le_bytes());
                 bytecode.extend_from_slice(&data);
             }
             "PUSHM1" => bytecode.push(0x0F),
@@ -522,41 +611,146 @@ impl Assembler {
                 bytecode.push(0x24);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
+            "JMPIF_L" => {
+                bytecode.push(0x25);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
             "JMPIFNOT" => {
                 bytecode.push(0x26);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
+            }
+            "JMPIFNOT_L" => {
+                bytecode.push(0x27);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPEQ" => {
                 bytecode.push(0x28);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
+            "JMPEQ_L" => {
+                bytecode.push(0x29);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
             "JMPNE" => {
                 bytecode.push(0x2A);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
+            }
+            "JMPNE_L" => {
+                bytecode.push(0x2B);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPGT" => {
                 bytecode.push(0x2C);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
+            "JMPGT_L" => {
+                bytecode.push(0x2D);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
             "JMPGE" => {
                 bytecode.push(0x2E);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
+            }
+            "JMPGE_L" => {
+                bytecode.push(0x2F);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPLT" => {
                 bytecode.push(0x30);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
+            "JMPLT_L" => {
+                bytecode.push(0x31);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
             "JMPLE" => {
                 bytecode.push(0x32);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
+            }
+            "JMPLE_L" => {
+                bytecode.push(0x33);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "CALL" => {
                 bytecode.push(0x34);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
+            "CALL_L" => {
+                bytecode.push(0x35);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
+            "CALLA" => bytecode.push(0x36),
+            "CALLT" => {
+                bytecode.push(0x37);
+                let token = self.parse_u16(operands, line_num)?;
+                bytecode.extend_from_slice(&token.to_le_bytes());
+            }
             "ABORT" => bytecode.push(0x38),
             "ASSERT" => bytecode.push(0x39),
             "THROW" => bytecode.push(0x3A),
+            "TRY" => {
+                bytecode.push(0x3B);
+                if operands.len() != 2 {
+                    return Err(AssemblerError::InvalidOperand(
+                        "TRY requires two offsets: <catch> <finally>".to_string(),
+                        line_num,
+                    )
+                    .to_string());
+                }
+                let base_ip = bytecode.len().checked_sub(1).ok_or_else(|| {
+                    AssemblerError::SyntaxError("Missing opcode".to_string(), line_num).to_string()
+                })?;
+                self.emit_relative_offset_with_base(
+                    bytecode,
+                    operands[0],
+                    line_num,
+                    base_ip,
+                    false,
+                )?;
+                self.emit_relative_offset_with_base(
+                    bytecode,
+                    operands[1],
+                    line_num,
+                    base_ip,
+                    false,
+                )?;
+            }
+            "TRY_L" => {
+                bytecode.push(0x3C);
+                if operands.len() != 2 {
+                    return Err(AssemblerError::InvalidOperand(
+                        "TRY_L requires two offsets: <catch> <finally>".to_string(),
+                        line_num,
+                    )
+                    .to_string());
+                }
+                let base_ip = bytecode.len().checked_sub(1).ok_or_else(|| {
+                    AssemblerError::SyntaxError("Missing opcode".to_string(), line_num).to_string()
+                })?;
+                self.emit_relative_offset_with_base(
+                    bytecode,
+                    operands[0],
+                    line_num,
+                    base_ip,
+                    true,
+                )?;
+                self.emit_relative_offset_with_base(
+                    bytecode,
+                    operands[1],
+                    line_num,
+                    base_ip,
+                    true,
+                )?;
+            }
+            "ENDTRY" => {
+                bytecode.push(0x3D);
+                self.emit_jump_offset(bytecode, operands, line_num)?;
+            }
+            "ENDTRY_L" => {
+                bytecode.push(0x3E);
+                self.emit_jump_offset_long(bytecode, operands, line_num)?;
+            }
+            "ENDFINALLY" => bytecode.push(0x3F),
             "RET" => bytecode.push(0x40),
             "SYSCALL" => {
                 bytecode.push(0x41);
@@ -582,11 +776,38 @@ impl Assembler {
             "REVERSEN" => bytecode.push(0x55),
 
             // Slot operations
+            "INITSSLOT" => {
+                bytecode.push(0x56);
+                let count = self.parse_u8(operands, line_num)?;
+                bytecode.push(count);
+            }
             "INITSLOT" => {
                 bytecode.push(0x57);
                 let (locals, args) = self.parse_slot_args(operands, line_num)?;
                 bytecode.push(locals);
                 bytecode.push(args);
+            }
+            "LDSFLD0" => bytecode.push(0x58),
+            "LDSFLD1" => bytecode.push(0x59),
+            "LDSFLD2" => bytecode.push(0x5A),
+            "LDSFLD3" => bytecode.push(0x5B),
+            "LDSFLD4" => bytecode.push(0x5C),
+            "LDSFLD5" => bytecode.push(0x5D),
+            "LDSFLD" => {
+                bytecode.push(0x5E);
+                let idx = self.parse_u8(operands, line_num)?;
+                bytecode.push(idx);
+            }
+            "STSFLD0" => bytecode.push(0x5F),
+            "STSFLD1" => bytecode.push(0x60),
+            "STSFLD2" => bytecode.push(0x61),
+            "STSFLD3" => bytecode.push(0x62),
+            "STSFLD4" => bytecode.push(0x63),
+            "STSFLD5" => bytecode.push(0x64),
+            "STSFLD" => {
+                bytecode.push(0x65);
+                let idx = self.parse_u8(operands, line_num)?;
+                bytecode.push(idx);
             }
             "LDLOC0" => bytecode.push(0x66),
             "LDLOC1" => bytecode.push(0x67),
@@ -621,6 +842,25 @@ impl Assembler {
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
+            "STARG0" => bytecode.push(0x7B),
+            "STARG1" => bytecode.push(0x7C),
+            "STARG2" => bytecode.push(0x7D),
+            "STARG3" => bytecode.push(0x7E),
+            "STARG4" => bytecode.push(0x7F),
+            "STARG5" => bytecode.push(0x80),
+            "STARG" => {
+                bytecode.push(0x81);
+                let idx = self.parse_u8(operands, line_num)?;
+                bytecode.push(idx);
+            }
+
+            // Splice operations
+            "NEWBUFFER" => bytecode.push(0x88),
+            "MEMCPY" => bytecode.push(0x89),
+            "CAT" => bytecode.push(0x8B),
+            "SUBSTR" => bytecode.push(0x8C),
+            "LEFT" => bytecode.push(0x8D),
+            "RIGHT" => bytecode.push(0x8E),
 
             // Bitwise operations
             "INVERT" => bytecode.push(0x90),
@@ -643,6 +883,8 @@ impl Assembler {
             "MOD" => bytecode.push(0xA2),
             "POW" => bytecode.push(0xA3),
             "SQRT" => bytecode.push(0xA4),
+            "MODMUL" => bytecode.push(0xA5),
+            "MODPOW" => bytecode.push(0xA6),
             "SHL" => bytecode.push(0xA8),
             "SHR" => bytecode.push(0xA9),
             "NOT" => bytecode.push(0xAA),
@@ -660,10 +902,17 @@ impl Assembler {
             "WITHIN" => bytecode.push(0xBB),
 
             // Compound types
+            "PACKMAP" => bytecode.push(0xBE),
+            "PACKSTRUCT" => bytecode.push(0xBF),
             "PACK" => bytecode.push(0xC0),
             "UNPACK" => bytecode.push(0xC1),
             "NEWARRAY0" => bytecode.push(0xC2),
             "NEWARRAY" => bytecode.push(0xC3),
+            "NEWARRAY_T" => {
+                bytecode.push(0xC4);
+                let type_id = self.parse_u8(operands, line_num)?;
+                bytecode.push(type_id);
+            }
             "NEWSTRUCT0" => bytecode.push(0xC5),
             "NEWSTRUCT" => bytecode.push(0xC6),
             "NEWMAP" => bytecode.push(0xC8),
@@ -681,8 +930,18 @@ impl Assembler {
 
             // Types
             "ISNULL" => bytecode.push(0xD8),
-            "ISTYPE" => bytecode.push(0xD9),
-            "CONVERT" => bytecode.push(0xDB),
+            "ISTYPE" => {
+                bytecode.push(0xD9);
+                let type_id = self.parse_u8(operands, line_num)?;
+                bytecode.push(type_id);
+            }
+            "CONVERT" => {
+                bytecode.push(0xDB);
+                let type_id = self.parse_u8(operands, line_num)?;
+                bytecode.push(type_id);
+            }
+            "ABORTMSG" => bytecode.push(0xE0),
+            "ASSERTMSG" => bytecode.push(0xE1),
 
             // Crypto
             "SHA256" => bytecode.push(0xF0),
@@ -720,19 +979,10 @@ impl Assembler {
             .to_string());
         }
 
-        let target = operands[0];
-
-        // Check if it's a numeric offset
-        if let Ok(offset) = target.parse::<i8>() {
-            bytecode.push(offset as u8);
-        } else {
-            // It's a label - record for later resolution
-            self.pending_labels
-                .push((bytecode.len(), target.to_string(), line_num, false)); // false = short jump
-            bytecode.push(0); // Placeholder
-        }
-
-        Ok(())
+        let base_ip = bytecode.len().checked_sub(1).ok_or_else(|| {
+            AssemblerError::SyntaxError("Missing opcode".to_string(), line_num).to_string()
+        })?;
+        self.emit_relative_offset_with_base(bytecode, operands[0], line_num, base_ip, false)
     }
 
     fn emit_jump_offset_long(
@@ -749,47 +999,91 @@ impl Assembler {
             .to_string());
         }
 
-        let target = operands[0];
+        let base_ip = bytecode.len().checked_sub(1).ok_or_else(|| {
+            AssemblerError::SyntaxError("Missing opcode".to_string(), line_num).to_string()
+        })?;
+        self.emit_relative_offset_with_base(bytecode, operands[0], line_num, base_ip, true)
+    }
 
-        if let Ok(offset) = target.parse::<i32>() {
-            bytecode.extend_from_slice(&offset.to_le_bytes());
-        } else {
-            self.pending_labels
-                .push((bytecode.len(), target.to_string(), line_num, true)); // true = long jump
-            bytecode.extend_from_slice(&[0, 0, 0, 0]); // Placeholder
+    fn emit_relative_offset_with_base(
+        &mut self,
+        bytecode: &mut Vec<u8>,
+        target: &str,
+        line_num: usize,
+        base_ip: usize,
+        is_long_jump: bool,
+    ) -> Result<(), String> {
+        let parse_as_number = Self::looks_numeric_literal(target);
+        if parse_as_number {
+            if is_long_jump {
+                let offset = self.parse_i32(&[target], line_num)?;
+                bytecode.extend_from_slice(&offset.to_le_bytes());
+            } else {
+                let offset = self.parse_i8(&[target], line_num)?;
+                bytecode.push(offset as u8);
+            }
+            return Ok(());
         }
 
+        self.pending_labels.push(PendingLabel {
+            pos: bytecode.len(),
+            base_ip,
+            label: target.to_string(),
+            line_num,
+            is_long_jump,
+        });
+        if is_long_jump {
+            bytecode.extend_from_slice(&[0, 0, 0, 0]);
+        } else {
+            bytecode.push(0);
+        }
         Ok(())
     }
 
+    fn looks_numeric_literal(value: &str) -> bool {
+        if value.is_empty() {
+            return false;
+        }
+        let unsigned = value
+            .strip_prefix('+')
+            .or_else(|| value.strip_prefix('-'))
+            .unwrap_or(value);
+        if let Some(hex) = unsigned
+            .strip_prefix("0x")
+            .or_else(|| unsigned.strip_prefix("0X"))
+        {
+            return !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit());
+        }
+        !unsigned.is_empty() && unsigned.chars().all(|c| c.is_ascii_digit())
+    }
+
     fn resolve_labels(&self, bytecode: &mut Vec<u8>) -> Result<(), String> {
-        for (pos, label, line_num, is_long_jump) in &self.pending_labels {
-            let target = self.labels.get(label).ok_or_else(|| {
-                AssemblerError::UndefinedLabel(label.clone(), *line_num).to_string()
+        for pending in &self.pending_labels {
+            let target = self.labels.get(&pending.label).ok_or_else(|| {
+                AssemblerError::UndefinedLabel(pending.label.clone(), pending.line_num).to_string()
             })?;
 
-            let instr_start = pos - 1;
-            let offset = (*target as isize) - (instr_start as isize);
+            let offset = (*target as isize) - (pending.base_ip as isize);
 
-            if *is_long_jump {
+            if pending.is_long_jump {
                 if i32::MIN as isize <= offset && offset <= i32::MAX as isize {
                     let offset_bytes = (offset as i32).to_le_bytes();
-                    bytecode[*pos] = offset_bytes[0];
-                    bytecode[*pos + 1] = offset_bytes[1];
-                    bytecode[*pos + 2] = offset_bytes[2];
-                    bytecode[*pos + 3] = offset_bytes[3];
+                    bytecode[pending.pos] = offset_bytes[0];
+                    bytecode[pending.pos + 1] = offset_bytes[1];
+                    bytecode[pending.pos + 2] = offset_bytes[2];
+                    bytecode[pending.pos + 3] = offset_bytes[3];
                 } else {
                     return Err(format!(
                         "Jump offset {} too large for long jump at line {}",
-                        offset, line_num
+                        offset, pending.line_num
                     ));
                 }
             } else if (-128..=127).contains(&offset) {
-                bytecode[*pos] = offset as i8 as u8;
+                bytecode[pending.pos] = offset as i8 as u8;
             } else {
                 return Err(format!(
                     "Jump offset {} too large for short jump at line {}",
-                    offset, line_num
+                    offset, pending.line_num
                 ));
             }
         }
@@ -841,6 +1135,27 @@ impl Assembler {
         })
     }
 
+    fn parse_i128(&self, operands: &[&str], line_num: usize) -> Result<i128, String> {
+        if operands.is_empty() {
+            return Err(AssemblerError::InvalidOperand(
+                "Missing integer value".to_string(),
+                line_num,
+            )
+            .to_string());
+        }
+
+        let s = operands[0];
+        if s.starts_with("0x") || s.starts_with("0X") {
+            i128::from_str_radix(&s[2..], 16)
+        } else {
+            s.parse::<i128>()
+        }
+        .map_err(|_| {
+            AssemblerError::InvalidOperand(format!("Invalid i128 value: {}", s), line_num)
+                .to_string()
+        })
+    }
+
     fn parse_u8(&self, operands: &[&str], line_num: usize) -> Result<u8, String> {
         let val = self.parse_int(operands, line_num)?;
         if !(0..=255).contains(&val) {
@@ -851,6 +1166,18 @@ impl Assembler {
             .to_string());
         }
         Ok(val as u8)
+    }
+
+    fn parse_u16(&self, operands: &[&str], line_num: usize) -> Result<u16, String> {
+        let val = self.parse_int(operands, line_num)?;
+        if !(0..=u16::MAX as i64).contains(&val) {
+            return Err(AssemblerError::InvalidOperand(
+                format!("Value {} out of u16 range", val),
+                line_num,
+            )
+            .to_string());
+        }
+        Ok(val as u16)
     }
 
     fn parse_byte(&self, s: &str, line_num: usize) -> Result<u8, String> {
@@ -991,5 +1318,146 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.contains("Unterminated macro definition"));
+    }
+
+    #[test]
+    fn test_assembles_extended_flow_control_opcodes() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble(
+                "
+                JMPIF_L 4
+                TRY 2 -1
+                TRY_L 256 -2
+                ENDTRY_L 8
+                ENDFINALLY
+                CALL_L -4
+                CALLT 513
+                ABORTMSG
+                ASSERTMSG
+            ",
+            )
+            .unwrap();
+
+        assert_eq!(bytes[0], 0x25); // JMPIF_L
+        assert_eq!(&bytes[1..5], &[0x04, 0x00, 0x00, 0x00]);
+        assert_eq!(&bytes[5..8], &[0x3B, 0x02, 0xFF]); // TRY
+        assert_eq!(
+            &bytes[8..17],
+            &[0x3C, 0x00, 0x01, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF]
+        ); // TRY_L
+        assert_eq!(&bytes[17..22], &[0x3E, 0x08, 0x00, 0x00, 0x00]); // ENDTRY_L
+        assert_eq!(bytes[22], 0x3F); // ENDFINALLY
+        assert_eq!(&bytes[23..28], &[0x35, 0xFC, 0xFF, 0xFF, 0xFF]); // CALL_L -4
+        assert_eq!(&bytes[28..31], &[0x37, 0x01, 0x02]); // CALLT 513
+        assert_eq!(&bytes[31..33], &[0xE0, 0xE1]); // ABORTMSG, ASSERTMSG
+    }
+
+    #[test]
+    fn test_try_supports_label_operands() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble(
+                "
+                start:
+                    TRY catch finally
+                    PUSH0
+                    JMP end
+                catch:
+                    PUSH1
+                    ENDTRY end
+                finally:
+                    PUSH2
+                    ENDFINALLY
+                end:
+                    RET
+            ",
+            )
+            .unwrap();
+
+        assert_eq!(&bytes[0..3], &[0x3B, 0x06, 0x09]); // TRY catch, finally
+        assert_eq!(&bytes[4..6], &[0x22, 0x07]); // JMP end
+        assert_eq!(&bytes[7..9], &[0x3D, 0x04]); // ENDTRY end
+    }
+
+    #[test]
+    fn test_try_l_supports_label_operands() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble(
+                "
+                start:
+                    TRY_L catch finally
+                    RET
+                catch:
+                    RET
+                finally:
+                    RET
+            ",
+            )
+            .unwrap();
+
+        assert_eq!(bytes[0], 0x3C);
+        assert_eq!(&bytes[1..5], &[0x0A, 0x00, 0x00, 0x00]); // catch label
+        assert_eq!(&bytes[5..9], &[0x0B, 0x00, 0x00, 0x00]); // finally label
+    }
+
+    #[test]
+    fn test_assembles_extended_slot_and_type_opcodes() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble(
+                "
+                INITSSLOT 3
+                LDSFLD 2
+                STSFLD 1
+                STARG 4
+                NEWARRAY_T 0x40
+                ISTYPE 0x21
+                CONVERT 0x28
+            ",
+            )
+            .unwrap();
+
+        assert_eq!(
+            bytes,
+            vec![
+                0x56, 0x03, 0x5E, 0x02, 0x65, 0x01, 0x81, 0x04, 0xC4, 0x40, 0xD9, 0x21, 0xDB, 0x28
+            ]
+        );
+    }
+
+    #[test]
+    fn test_istype_requires_type_operand() {
+        let mut assembler = Assembler::new();
+        let err = assembler.assemble("ISTYPE").unwrap_err();
+        assert!(err.contains("Missing integer value"));
+    }
+
+    #[test]
+    fn test_pushint128_and_pushint256_encoding() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler.assemble("PUSHINT128 -1\nPUSHINT256 -1").unwrap();
+
+        assert_eq!(bytes[0], 0x04);
+        assert!(bytes[1..17].iter().all(|b| *b == 0xFF));
+
+        assert_eq!(bytes[17], 0x05);
+        assert!(bytes[18..50].iter().all(|b| *b == 0xFF));
+    }
+
+    #[test]
+    fn test_pushint256_accepts_32_byte_literal() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble(
+                "PUSHINT256 0x000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+            )
+            .unwrap();
+
+        assert_eq!(bytes[0], 0x05);
+        assert_eq!(bytes.len(), 33);
+        assert_eq!(bytes[1], 0x00);
+        assert_eq!(bytes[32], 0x1F);
     }
 }
