@@ -1,7 +1,7 @@
 # Neo zkVM Technical Whitepaper
 
-**Version 1.0**  
-**January 2025**
+**Version 2.0**
+**February 2026**
 
 ---
 
@@ -30,7 +30,7 @@ Neo zkVM is a production-grade zero-knowledge virtual machine that enables verif
 **Key Contributions:**
 
 - **Full Neo N3 Compatibility**: Support for 100+ Neo VM opcodes with identical execution semantics
-- **Production-Grade ZK Proofs**: Integration with SP1 for STARK and PLONK proof generation
+- **Production-Grade ZK Proofs**: Integration with SP1 for STARK, PLONK, and Groth16 proof generation
 - **Merkle-Proven Storage**: Cryptographically verifiable state management
 - **High Performance**: ~85ns per arithmetic operation with optimized execution engine
 - **Developer-Friendly**: CLI tools, assembler, disassembler, and comprehensive documentation
@@ -57,12 +57,12 @@ Zero-knowledge proofs (ZKPs) offer a solution by allowing a prover to convince a
 
 Current zkVM implementations face several challenges:
 
-| Challenge | Description |
-|-----------|-------------|
-| **Compatibility** | Most zkVMs use custom instruction sets, requiring contract rewrites |
-| **Performance** | Proof generation can take minutes to hours for complex computations |
-| **Complexity** | Developers must understand cryptographic primitives to use ZK systems |
-| **Integration** | Existing blockchain VMs lack native ZK support |
+| Challenge         | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| **Compatibility** | Most zkVMs use custom instruction sets, requiring contract rewrites   |
+| **Performance**   | Proof generation can take minutes to hours for complex computations   |
+| **Complexity**    | Developers must understand cryptographic primitives to use ZK systems |
+| **Integration**   | Existing blockchain VMs lack native ZK support                        |
 
 For the Neo ecosystem specifically, there was no way to generate zero-knowledge proofs for Neo smart contract execution, limiting the platform's ability to support privacy-preserving applications and scalable Layer 2 solutions.
 
@@ -111,7 +111,7 @@ Neo zkVM consists of six core components organized in a layered architecture:
 ├─────────────────────────────────────────────────────────────────────┤
 │  neo-zkvm-cli     │ CLI tools (run, prove, asm, disasm)             │
 ├───────────────────┼─────────────────────────────────────────────────┤
-│  neo-zkvm-prover  │ SP1 proof generation (STARK/PLONK)              │
+│  neo-zkvm-prover  │ SP1 proof generation (STARK/PLONK/Groth16)      │
 ├───────────────────┼─────────────────────────────────────────────────┤
 │  neo-zkvm-verifier│ Cryptographic proof verification                │
 ├───────────────────┼─────────────────────────────────────────────────┤
@@ -146,6 +146,7 @@ pub struct NeoVM {
 ```
 
 **Key Features:**
+
 - Full Neo N3 opcode support (100+ opcodes)
 - Gas metering with configurable limits
 - Execution tracing for proof generation
@@ -170,6 +171,7 @@ pub struct ProofOutput {
     pub state: u8,                // 0=Halt, 1=Fault
     pub result: Option<StackItem>, // Return value
     pub gas_consumed: u64,        // Actual gas used
+    pub error: Option<String>,    // Error message if faulted
 }
 ```
 
@@ -177,12 +179,13 @@ pub struct ProofOutput {
 
 Production-grade prover supporting multiple proving modes:
 
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `Execute` | Run only, no proof | Development/testing |
-| `Mock` | Simulated proof | Fast integration testing |
-| `Sp1` | Compressed STARK proof | Off-chain verification |
-| `Sp1Plonk` | PLONK proof | On-chain verification |
+| Mode      | Description            | Use Case                               |
+| --------- | ---------------------- | -------------------------------------- |
+| `Execute` | Run only, no proof     | Development/testing                    |
+| `Mock`    | Simulated proof        | Fast integration testing               |
+| `Sp1`     | Compressed STARK proof | Off-chain verification                 |
+| `Plonk`   | PLONK proof            | On-chain verification (Ethereum)       |
+| `Groth16` | Groth16 proof          | On-chain verification (smallest proof) |
 
 #### 3.2.4 neo-zkvm-verifier
 
@@ -194,7 +197,9 @@ pub fn verify(proof: &NeoProof) -> bool {
         ProofType::Mock => verify_mock_proof(...),
         ProofType::Sp1Compressed => verify_sp1_proof(...),
         ProofType::Sp1Plonk => verify_sp1_plonk_proof(...),
+        ProofType::Sp1Groth16 => verify_sp1_groth16_proof(...),
         ProofType::Empty => true,  // Execute-only mode
+        ProofType::Unknown => false,
     }
 }
 ```
@@ -237,7 +242,7 @@ pub fn verify(proof: &NeoProof) -> bool {
 
 #### Proof Generation Pipeline
 
-```
+````
   ProofInput                    SP1 Guest                    NeoProof
  ┌──────────┐              ┌───────────────┐              ┌──────────┐
  │ script   │              │               │              │ output   │
@@ -286,7 +291,7 @@ Neo zkVM implements the complete Neo N3 opcode set, ensuring bytecode-level comp
         .ok_or(VMError::StackUnderflow)?;
     self.eval_stack.push(StackItem::Integer(a + b));
 }
-```
+````
 
 ### 4.2 Execution Semantics
 
@@ -295,6 +300,7 @@ Neo zkVM maintains identical execution semantics to the native Neo VM:
 #### 4.2.1 Stack Machine Model
 
 The VM operates as a stack-based machine with:
+
 - **Evaluation Stack**: Primary data stack for operations
 - **Invocation Stack**: Call stack for nested script execution
 - **Slot System**: Local variables, arguments, and static fields
@@ -353,6 +359,7 @@ For any script $S$, arguments $A$, and initial state $\sigma_0$:
 $$\text{NeoVM}(S, A, \sigma_0) = \text{Neo-zkVM}(S, A, \sigma_0)$$
 
 Where the equality holds for:
+
 - Final execution state (Halt/Fault)
 - Return value on evaluation stack
 - Gas consumed
@@ -367,7 +374,7 @@ Where the equality holds for:
 Neo zkVM integrates with SP1, a production-grade zkVM developed by Succinct Labs. SP1 provides:
 
 - **STARK-based proving**: Scalable transparent arguments of knowledge
-- **PLONK support**: Efficient on-chain verification
+- **PLONK/Groth16 support**: Efficient on-chain verification
 - **Rust compatibility**: Native support for Rust programs
 - **Performance**: Optimized for practical proof generation times
 
@@ -415,23 +422,23 @@ pub struct GuestInput {
 fn generate_sp1_proof(&self, input: &ProofInput) -> (Vec<u8>, [u8; 32]) {
     // 1. Initialize SP1 prover client
     let client = ProverClient::from_env();
-    
+
     // 2. Prepare stdin with input data
     let mut stdin = SP1Stdin::new();
     stdin.write(&guest_input);
-    
+
     // 3. Setup proving/verification keys
     let (pk, vk) = client.setup(NEO_ZKVM_ELF);
-    
+
     // 4. Generate proof
     let proof = client.prove(&pk, &stdin)
         .compressed()
         .run()
         .expect("SP1 proving failed");
-    
+
     // 5. Verify locally
     client.verify(&proof, &vk).expect("Verification failed");
-    
+
     (proof_bytes, vkey_hash)
 }
 ```
@@ -471,14 +478,14 @@ pub struct PublicInputs {
   │   TYPE    │
   └─────┬─────┘
         │
-        ├──────────────┬──────────────┬──────────────┐
-        ▼              ▼              ▼              ▼
-   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
-   │  Empty  │   │  Mock   │   │  STARK  │   │  PLONK  │
-   │ (skip)  │   │ Verify  │   │ Verify  │   │ Verify  │
-   └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘
-        │             │             │             │
-        └─────────────┴─────────────┴─────────────┘
+        ├──────────────┬──────────────┬──────────────┬──────────────┐
+        ▼              ▼              ▼              ▼              ▼
+   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐
+   │  Empty  │   │  Mock   │   │  STARK  │   │  PLONK  │   │ Groth16 │
+   │ (skip)  │   │ Verify  │   │ Verify  │   │ Verify  │   │ Verify  │
+   └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘
+        │             │             │             │             │
+        └─────────────┴─────────────┴─────────────┴─────────────┘
                               │
                               ▼
                     ┌───────────────────┐
@@ -504,7 +511,9 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
         ProofType::Mock => verify_mock_proof(...),
         ProofType::Sp1Compressed => verify_sp1_proof(...),
         ProofType::Sp1Plonk => verify_sp1_plonk_proof(...),
+        ProofType::Sp1Groth16 => verify_sp1_groth16_proof(...),
         ProofType::Empty => VerificationResult { valid: true, error: None },
+        ProofType::Unknown => VerificationResult { valid: false, error: Some("Unknown proof type".into()) },
     }
 }
 ```
@@ -515,11 +524,11 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
 
 Neo zkVM's security relies on standard cryptographic assumptions:
 
-| Assumption | Description |
-|------------|-------------|
-| **Collision Resistance** | SHA-256 hash function is collision-resistant |
-| **STARK Soundness** | FRI-based polynomial commitment is sound |
-| **PLONK Security** | KZG polynomial commitment is secure under DLP |
+| Assumption               | Description                                   |
+| ------------------------ | --------------------------------------------- |
+| **Collision Resistance** | SHA-256 hash function is collision-resistant  |
+| **STARK Soundness**      | FRI-based polynomial commitment is sound      |
+| **PLONK Security**       | KZG polynomial commitment is secure under DLP |
 
 #### 5.4.2 Security Properties
 
@@ -651,6 +660,7 @@ pub struct StorageChange {
 ```
 
 This enables:
+
 - **Rollback**: Revert changes on execution failure
 - **Audit**: Track all state modifications
 - **Proof Generation**: Include state transitions in ZK proofs
@@ -671,15 +681,15 @@ The Standard Library provides utility functions for common operations.
 
 #### 7.1.2 Methods
 
-| Method | Description | Example |
-|--------|-------------|---------|
-| `serialize` | Binary serialization | `serialize(obj) → bytes` |
-| `deserialize` | Binary deserialization | `deserialize(bytes) → obj` |
-| `jsonSerialize` | JSON encoding | `jsonSerialize(obj) → string` |
-| `base64Encode` | Base64 encoding | `base64Encode(bytes) → string` |
-| `base64Decode` | Base64 decoding | `base64Decode(string) → bytes` |
-| `itoa` | Integer to string | `itoa(123, 10) → "123"` |
-| `atoi` | String to integer | `atoi("123", 10) → 123` |
+| Method          | Description            | Example                        |
+| --------------- | ---------------------- | ------------------------------ |
+| `serialize`     | Binary serialization   | `serialize(obj) → bytes`       |
+| `deserialize`   | Binary deserialization | `deserialize(bytes) → obj`     |
+| `jsonSerialize` | JSON encoding          | `jsonSerialize(obj) → string`  |
+| `base64Encode`  | Base64 encoding        | `base64Encode(bytes) → string` |
+| `base64Decode`  | Base64 decoding        | `base64Decode(string) → bytes` |
+| `itoa`          | Integer to string      | `itoa(123, 10) → "123"`        |
+| `atoi`          | String to integer      | `atoi("123", 10) → 123`        |
 
 #### 7.1.3 Implementation
 
@@ -712,11 +722,11 @@ The Cryptography Library provides cryptographic primitives.
 
 #### 7.2.2 Methods
 
-| Method | Description | Gas Cost |
-|--------|-------------|----------|
-| `sha256` | SHA-256 hash | 512 |
-| `ripemd160` | RIPEMD-160 hash | 512 |
-| `verifyWithECDsa` | ECDSA signature verification | 32768 |
+| Method            | Description                  | Gas Cost |
+| ----------------- | ---------------------------- | -------- |
+| `sha256`          | SHA-256 hash                 | 512      |
+| `ripemd160`       | RIPEMD-160 hash              | 512      |
+| `verifyWithECDsa` | ECDSA signature verification | 32768    |
 
 #### 7.2.3 Hash Functions
 
@@ -753,9 +763,9 @@ impl NativeRegistry {
     pub fn register(&mut self, contract: Box<dyn NativeContract>) {
         self.contracts.insert(contract.hash(), contract);
     }
-    
-    pub fn invoke(&self, hash: &[u8; 20], method: &str, args: Vec<StackItem>) 
-        -> Result<StackItem, String> 
+
+    pub fn invoke(&self, hash: &[u8; 20], method: &str, args: Vec<StackItem>)
+        -> Result<StackItem, String>
     {
         self.contracts.get(hash)
             .ok_or("Unknown contract")?
@@ -796,16 +806,17 @@ Neo zkVM has been extensively benchmarked across various operation types.
 | Mock | ~200 bytes | < 1 ms |
 | SP1 Compressed | ~100 KB | ~100 ms |
 | SP1 PLONK | ~1 KB | ~10 ms |
+| SP1 Groth16 | ~300 bytes | ~5 ms |
 
 ### 8.2 Comparison with Other zkVMs
 
 | Feature | Neo zkVM | zkEVM | RISC Zero | SP1 |
 |---------|----------|-------|-----------|-----|
 | **VM Type** | Neo N3 | EVM | RISC-V | RISC-V |
-| **Proof System** | STARK/PLONK | STARK | STARK | STARK/PLONK |
+| **Proof System** | STARK/PLONK/Groth16 | STARK | STARK | STARK/PLONK |
 | **Compatibility** | Neo contracts | Solidity | General | General |
 | **Proof Size** | ~1-100 KB | ~100 KB | ~200 KB | ~100 KB |
-| **On-chain Verify** | ✓ (PLONK) | ✓ | ✓ | ✓ |
+| **On-chain Verify** | ✓ (PLONK/Groth16) | ✓ | ✓ | ✓ |
 
 ### 8.3 Optimization Strategies
 
@@ -839,21 +850,23 @@ Neo zkVM has been extensively benchmarked across various operation types.
 #### 9.1.2 Trust Boundaries
 
 ```
+
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Trust Boundaries                            │
+│ Trust Boundaries │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  TRUSTED:                                                        │
-│  ├── SP1 proving system                                         │
-│  ├── Cryptographic primitives (SHA256, ECDSA)                   │
-│  └── Rust compiler and runtime                                  │
-│                                                                  │
-│  UNTRUSTED:                                                      │
-│  ├── User-provided scripts                                      │
-│  ├── External inputs and arguments                              │
-│  └── Network communication                                      │
-│                                                                  │
+│ │
+│ TRUSTED: │
+│ ├── SP1 proving system │
+│ ├── Cryptographic primitives (SHA256, ECDSA) │
+│ └── Rust compiler and runtime │
+│ │
+│ UNTRUSTED: │
+│ ├── User-provided scripts │
+│ ├── External inputs and arguments │
+│ └── Network communication │
+│ │
 └─────────────────────────────────────────────────────────────────┘
+
 ```
 
 ### 9.2 Security Assumptions
@@ -891,21 +904,23 @@ Neo zkVM has been extensively benchmarked across various operation types.
 Neo zkVM enables token transfers where amounts and recipients are hidden:
 
 ```
+
 ┌─────────────────────────────────────────────────────────────────┐
-│                  Private Transfer Flow                           │
+│ Private Transfer Flow │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. User creates transfer: Alice → Bob, 100 NEO                 │
-│  2. Neo zkVM executes transfer logic privately                  │
-│  3. Proof generated: "Valid transfer occurred"                  │
-│  4. On-chain: Only proof + commitment published                 │
-│  5. Verifier confirms: Balance updates are valid                │
-│                                                                  │
-│  Public: Proof π, Commitment C                                  │
-│  Private: Sender, Recipient, Amount                             │
-│                                                                  │
+│ │
+│ 1. User creates transfer: Alice → Bob, 100 NEO │
+│ 2. Neo zkVM executes transfer logic privately │
+│ 3. Proof generated: "Valid transfer occurred" │
+│ 4. On-chain: Only proof + commitment published │
+│ 5. Verifier confirms: Balance updates are valid │
+│ │
+│ Public: Proof π, Commitment C │
+│ Private: Sender, Recipient, Amount │
+│ │
 └─────────────────────────────────────────────────────────────────┘
-```
+
+````
 
 #### 10.1.2 Privacy-Preserving DeFi
 
@@ -929,15 +944,15 @@ let proof = prover.prove(input);
 
 // On-chain: Lightweight verification
 assert!(verify(&proof));  // ~10ms verification
-```
+````
 
 #### 10.2.2 Use Cases
 
-| Application | Off-Chain Work | On-Chain Proof |
-|-------------|----------------|----------------|
-| ML Inference | Run neural network | Verify prediction |
-| Data Analytics | Process large datasets | Verify aggregation |
-| Game Logic | Execute game rules | Verify state transition |
+| Application    | Off-Chain Work         | On-Chain Proof          |
+| -------------- | ---------------------- | ----------------------- |
+| ML Inference   | Run neural network     | Verify prediction       |
+| Data Analytics | Process large datasets | Verify aggregation      |
+| Game Logic     | Execute game rules     | Verify state transition |
 
 ### 10.3 Cross-Chain Bridges
 
@@ -969,24 +984,28 @@ assert!(verify(&proof));  // ~10ms verification
 ### 11.1 Roadmap
 
 #### Phase 1: Foundation (Completed)
+
 - [x] Core VM implementation
 - [x] SP1 integration
 - [x] Basic proof generation
 - [x] CLI tooling
 
-#### Phase 2: Production (Q1 2025)
-- [ ] Full opcode coverage
-- [ ] Performance optimizations
-- [ ] Security audit
-- [ ] Documentation
+#### Phase 2: Production (Completed)
 
-#### Phase 3: Ecosystem (Q2 2025)
+- [x] Full opcode coverage (100+ opcodes)
+- [x] Performance optimizations
+- [x] Security hardening (stack/invocation depth limits)
+- [x] Documentation (whitepaper, API reference, migration guide)
+
+#### Phase 3: Ecosystem (In Progress)
+
 - [ ] On-chain verifier contracts
 - [ ] SDK for multiple languages
 - [ ] Integration with Neo wallets
 - [ ] Developer tutorials
 
-#### Phase 4: Advanced (Q3-Q4 2025)
+#### Phase 4: Advanced (Planned)
+
 - [ ] Recursive proofs
 - [ ] Hardware acceleration
 - [ ] Cross-chain bridges
@@ -997,6 +1016,7 @@ assert!(verify(&proof));  // ~10ms verification
 #### 11.2.1 Recursive Proof Composition
 
 Enable proofs that verify other proofs, allowing:
+
 - Aggregation of multiple transaction proofs
 - Incremental verification of long computations
 - Proof compression for on-chain storage
@@ -1028,7 +1048,7 @@ The modular architecture ensures extensibility, while the integration with SP1 p
 **Key Takeaways:**
 
 1. Neo zkVM executes unmodified Neo smart contracts with ZK proof generation
-2. SP1 integration provides STARK and PLONK proof systems
+2. SP1 integration provides STARK, PLONK, and Groth16 proof systems
 3. Performance is suitable for production use (~85ns per operation)
 4. Security relies on well-established cryptographic assumptions
 5. Multiple use cases enabled: privacy, scalability, interoperability
@@ -1039,11 +1059,11 @@ The modular architecture ensures extensibility, while the integration with SP1 p
 
 ### Academic Papers
 
-1. Ben-Sasson, E., et al. "Scalable, transparent, and post-quantum secure computational integrity." *IACR Cryptology ePrint Archive* (2018).
+1. Ben-Sasson, E., et al. "Scalable, transparent, and post-quantum secure computational integrity." _IACR Cryptology ePrint Archive_ (2018).
 
-2. Gabizon, A., Williamson, Z., & Ciobotaru, O. "PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge." *IACR Cryptology ePrint Archive* (2019).
+2. Gabizon, A., Williamson, Z., & Ciobotaru, O. "PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge." _IACR Cryptology ePrint Archive_ (2019).
 
-3. Goldwasser, S., Micali, S., & Rackoff, C. "The knowledge complexity of interactive proof systems." *SIAM Journal on Computing* (1989).
+3. Goldwasser, S., Micali, S., & Rackoff, C. "The knowledge complexity of interactive proof systems." _SIAM Journal on Computing_ (1989).
 
 ### Technical Documentation
 
@@ -1075,38 +1095,38 @@ The modular architecture ensures extensibility, while the integration with SP1 p
 
 ### A.1 Complete Opcode Table
 
-| Opcode | Hex | Category | Description |
-|--------|-----|----------|-------------|
-| PUSHINT8 | 0x00 | Constants | Push 1-byte integer |
-| PUSHINT16 | 0x01 | Constants | Push 2-byte integer |
-| PUSHINT32 | 0x02 | Constants | Push 4-byte integer |
-| PUSHINT64 | 0x03 | Constants | Push 8-byte integer |
-| PUSHINT128 | 0x04 | Constants | Push 16-byte integer |
-| PUSHINT256 | 0x05 | Constants | Push 32-byte integer |
-| PUSHNULL | 0x0B | Constants | Push null |
-| PUSHDATA1 | 0x0C | Constants | Push data (1-byte len) |
-| PUSHDATA2 | 0x0D | Constants | Push data (2-byte len) |
-| PUSHDATA4 | 0x0E | Constants | Push data (4-byte len) |
-| PUSHM1 | 0x0F | Constants | Push -1 |
-| PUSH0-16 | 0x10-0x20 | Constants | Push 0-16 |
-| NOP | 0x21 | Flow | No operation |
-| JMP | 0x22 | Flow | Unconditional jump |
-| JMPIF | 0x24 | Flow | Jump if true |
-| JMPIFNOT | 0x26 | Flow | Jump if false |
-| CALL | 0x34 | Flow | Call subroutine |
-| RET | 0x40 | Flow | Return |
-| SYSCALL | 0x41 | Flow | System call |
-| DEPTH | 0x43 | Stack | Stack depth |
-| DROP | 0x45 | Stack | Remove top |
-| DUP | 0x4A | Stack | Duplicate top |
-| SWAP | 0x50 | Stack | Swap top two |
-| ROT | 0x51 | Stack | Rotate top three |
-| ADD | 0x9E | Arithmetic | Addition |
-| SUB | 0x9F | Arithmetic | Subtraction |
-| MUL | 0xA0 | Arithmetic | Multiplication |
-| DIV | 0xA1 | Arithmetic | Division |
-| MOD | 0xA2 | Arithmetic | Modulo |
-| POW | 0xA3 | Arithmetic | Power |
+| Opcode     | Hex       | Category   | Description            |
+| ---------- | --------- | ---------- | ---------------------- |
+| PUSHINT8   | 0x00      | Constants  | Push 1-byte integer    |
+| PUSHINT16  | 0x01      | Constants  | Push 2-byte integer    |
+| PUSHINT32  | 0x02      | Constants  | Push 4-byte integer    |
+| PUSHINT64  | 0x03      | Constants  | Push 8-byte integer    |
+| PUSHINT128 | 0x04      | Constants  | Push 16-byte integer   |
+| PUSHINT256 | 0x05      | Constants  | Push 32-byte integer   |
+| PUSHNULL   | 0x0B      | Constants  | Push null              |
+| PUSHDATA1  | 0x0C      | Constants  | Push data (1-byte len) |
+| PUSHDATA2  | 0x0D      | Constants  | Push data (2-byte len) |
+| PUSHDATA4  | 0x0E      | Constants  | Push data (4-byte len) |
+| PUSHM1     | 0x0F      | Constants  | Push -1                |
+| PUSH0-16   | 0x10-0x20 | Constants  | Push 0-16              |
+| NOP        | 0x21      | Flow       | No operation           |
+| JMP        | 0x22      | Flow       | Unconditional jump     |
+| JMPIF      | 0x24      | Flow       | Jump if true           |
+| JMPIFNOT   | 0x26      | Flow       | Jump if false          |
+| CALL       | 0x34      | Flow       | Call subroutine        |
+| RET        | 0x40      | Flow       | Return                 |
+| SYSCALL    | 0x41      | Flow       | System call            |
+| DEPTH      | 0x43      | Stack      | Stack depth            |
+| DROP       | 0x45      | Stack      | Remove top             |
+| DUP        | 0x4A      | Stack      | Duplicate top          |
+| SWAP       | 0x50      | Stack      | Swap top two           |
+| ROT        | 0x51      | Stack      | Rotate top three       |
+| ADD        | 0x9E      | Arithmetic | Addition               |
+| SUB        | 0x9F      | Arithmetic | Subtraction            |
+| MUL        | 0xA0      | Arithmetic | Multiplication         |
+| DIV        | 0xA1      | Arithmetic | Division               |
+| MOD        | 0xA2      | Arithmetic | Modulo                 |
+| POW        | 0xA3      | Arithmetic | Power                  |
 
 ---
 
@@ -1114,20 +1134,19 @@ The modular architecture ensures extensibility, while the integration with SP1 p
 
 ### B.1 Gas Cost Table
 
-| Category | Operations | Gas Cost |
-|----------|------------|----------|
-| Push | PUSH0-16, PUSHDATA | 1 |
-| Stack | DUP, DROP, SWAP | 2 |
-| Flow | JMP, CALL, RET | 2 |
-| Arithmetic | ADD, SUB, MUL, DIV | 8 |
-| Bitwise | AND, OR, XOR | 8 |
-| Comparison | LT, GT, EQ | 8 |
-| Hash | SHA256, RIPEMD160 | 512 |
-| Signature | CHECKSIG | 32,768 |
+| Category   | Operations         | Gas Cost |
+| ---------- | ------------------ | -------- |
+| Push       | PUSH0-16, PUSHDATA | 1        |
+| Stack      | DUP, DROP, SWAP    | 2        |
+| Flow       | JMP, CALL, RET     | 2        |
+| Arithmetic | ADD, SUB, MUL, DIV | 8        |
+| Bitwise    | AND, OR, XOR       | 8        |
+| Comparison | LT, GT, EQ         | 8        |
+| Hash       | SHA256, RIPEMD160  | 512      |
+| Signature  | CHECKSIG           | 32,768   |
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: January 2025*  
-*License: MIT*
-
+_Document Version: 2.0_
+_Last Updated: February 2026_  
+_License: MIT_

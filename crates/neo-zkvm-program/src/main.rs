@@ -8,22 +8,14 @@
 #![allow(dead_code)]
 
 use bincode::Options;
+use serde::Serialize;
 #[cfg(target_os = "zkvm")]
 sp1_zkvm::entrypoint!(zkvm_main);
 
 #[cfg(any(target_os = "zkvm", test))]
 use neo_vm_guest::ProofInput;
-use serde::{Deserialize, Serialize};
-
-/// Public values committed to the proof
-#[derive(Serialize, Deserialize)]
-pub struct PublicValues {
-    pub script_hash: [u8; 32],
-    pub input_hash: [u8; 32],
-    pub output_hash: [u8; 32],
-    pub gas_consumed: u64,
-    pub execution_success: bool,
-}
+#[cfg(target_os = "zkvm")]
+use neo_vm_guest::PublicInputs;
 
 /// SHA256 hash function
 fn sha256_hash(data: &[u8]) -> [u8; 32] {
@@ -62,16 +54,16 @@ pub fn zkvm_main() {
     let output_hash = hash_with_bincode_limit(&output);
 
     // Create public values
-    let public_values = PublicValues {
-        script_hash: script_hash.into(),
-        input_hash: input_hash.into(),
+    let public_inputs = PublicInputs {
+        script_hash,
+        input_hash,
         output_hash,
         gas_consumed: output.gas_consumed,
         execution_success: output.state == 0,
     };
 
     // Commit public values to the proof
-    sp1_zkvm::io::commit(&public_values);
+    sp1_zkvm::io::commit(&public_inputs);
 }
 
 /// Main function for non-zkVM targets

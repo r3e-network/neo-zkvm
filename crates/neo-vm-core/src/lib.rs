@@ -133,7 +133,7 @@ pub mod opcode;
 pub mod stack_item;
 pub mod storage;
 
-pub use engine::{NeoVM, VMError, VMState};
+pub use engine::{NeoVM, VMError, VMState, MAX_SCRIPT_SIZE};
 pub use native::{CryptoLib, NativeContract, NativeContractError, NativeRegistry, StdLib};
 pub use opcode::OpCode;
 pub use stack_item::StackItem;

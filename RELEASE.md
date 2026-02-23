@@ -1,18 +1,18 @@
-# Neo zkVM v0.2.0 Release Notes
+# Neo zkVM v0.2.2 Release Notes
 
-**Release Date:** 2026-01-31  
-**Version:** 0.2.0  
+**Release Date:** 2026-02-23
+**Version:** 0.2.2
 **Status:** Production Ready
 
 ---
 
 ## 🎯 Highlights
 
-This release brings significant improvements to Neo zkVM, focusing on:
+Comprehensive codebase review and production hardening:
 
-- **Multi-Mode Proof Generation** - Choose the right proof type for your use case
-- **Enhanced Security** - Stack and invocation depth protection
-- **Production Hardening** - 310 tests, comprehensive documentation, security review
+- **Code Quality** - Full review of all source files, documentation, CI, and scripts
+- **Documentation Accuracy** - All docs verified against implementation and corrected
+- **Hardened Internals** - Panic-free prover hashing, strict fallback policy, improved error handling
 
 ---
 
@@ -22,12 +22,12 @@ This release brings significant improvements to Neo zkVM, focusing on:
 
 Choose from 5 proof modes based on your needs:
 
-| Mode | Speed | Use Case |
-|------|-------|----------|
-| `Execute` | Instant | Development, debugging |
-| `Mock` | Fast | Testing, CI/CD |
-| `Sp1` | Slow | Off-chain verification (compressed) |
-| `Plonk` | Slowest | On-chain verification (Ethereum) |
+| Mode      | Speed   | Use Case                               |
+| --------- | ------- | -------------------------------------- |
+| `Execute` | Instant | Development, debugging                 |
+| `Mock`    | Fast    | Testing, CI/CD                         |
+| `Sp1`     | Slow    | Off-chain verification (compressed)    |
+| `Plonk`   | Slowest | On-chain verification (Ethereum)       |
 | `Groth16` | Slowest | On-chain verification (smallest proof) |
 
 ```rust
@@ -62,15 +62,15 @@ let vm = NeoVM::with_limits(
 
 ## 📊 Test Coverage
 
-- **310 tests** (up from 292 in v0.1.0)
+- **417 tests** (up from 292 in v0.1.0)
 - **100% opcode coverage**
 - **Edge case testing** for all arithmetic, bitwise, and control flow operations
 - **Security tests** for overflow, underflow, and depth limits
 
 ```bash
 $ cargo test --all
-running 310 tests
-test result: ok. 310 passed; 0 failed; 0 ignored
+running 417 tests
+test result: ok. 417 passed; 0 failed; 0 ignored
 ```
 
 ---
@@ -182,14 +182,14 @@ let config = ProverConfig {
 
 ## 🔒 Security
 
-| Feature | Status |
-|---------|--------|
-| Integer overflow protection | ✅ |
-| Stack depth limiting | ✅ |
-| Invocation depth limiting | ✅ |
-| Gas metering | ✅ |
-| Input validation | ✅ |
-| Comprehensive test coverage | ✅ |
+| Feature                     | Status |
+| --------------------------- | ------ |
+| Integer overflow protection | ✅     |
+| Stack depth limiting        | ✅     |
+| Invocation depth limiting   | ✅     |
+| Gas metering                | ✅     |
+| Input validation            | ✅     |
+| Comprehensive test coverage | ✅     |
 
 ---
 
@@ -206,8 +206,7 @@ neo-zkvm/
 │   ├── neo-zkvm-cli/      # CLI tool
 │   └── neo-zkvm-examples/ # Usage examples
 ├── docs/                  # Documentation
-├── examples/              # More examples
-└── tests/                 # Integration tests
+└── examples/              # Standalone examples
 ```
 
 ---

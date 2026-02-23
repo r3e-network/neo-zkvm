@@ -10,7 +10,6 @@ description = "Proof verification utilities for Neo zkVM"
 neo-vm-guest = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 sp1-sdk = { workspace = true }
-serde.workspace = true
 bincode.workspace = true
 
 [dev-dependencies]

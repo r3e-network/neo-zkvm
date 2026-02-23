@@ -43,6 +43,7 @@ pub const NEO_ZKVM_ELF: &[u8] =
 
 type DynError = Box<dyn std::error::Error>;
 type Sp1ProofArtifacts = (Vec<u8>, [u8; 32], PublicInputs);
+type Sp1FallbackResult = (Vec<u8>, [u8; 32], ProofMode, Option<PublicInputs>);
 
 /// Prover configuration
 #[derive(Clone, Debug)]
@@ -104,8 +105,8 @@ impl NeoProver {
         Self { config }
     }
 
-    /// Maximum allowed script size (1 MB).
-    const MAX_SCRIPT_SIZE: usize = 1024 * 1024;
+    /// Maximum allowed script size — imported from `neo_vm_core`.
+    const MAX_SCRIPT_SIZE: usize = neo_vm_core::MAX_SCRIPT_SIZE;
     /// Keep failed-proof error payloads small and deterministic.
     const MAX_FAILED_PROOF_ERROR_BYTES: usize = 8 * 1024;
 
@@ -117,6 +118,10 @@ impl NeoProver {
         let mut boundary = Self::MAX_FAILED_PROOF_ERROR_BYTES;
         while boundary > 0 && !error.is_char_boundary(boundary) {
             boundary -= 1;
+        }
+        // If boundary hit 0 (all multi-byte chars at limit), keep at least one char
+        if boundary == 0 {
+            boundary = error.char_indices().nth(1).map_or(error.len(), |(i, _)| i);
         }
         let omitted_bytes = error.len().saturating_sub(boundary);
         error.truncate(boundary);
@@ -170,15 +175,46 @@ impl NeoProver {
         )
     }
 
-    /// Hash a serialized `ProofInput` for public input commitment.
-    pub fn try_hash_proof_input(input: &ProofInput) -> Result<[u8; 32], bincode::Error> {
-        let bytes = bincode_options().serialize(input)?;
-        Ok(hash_data(&bytes))
+    /// Try generating an SP1 proof in the given mode, falling back to mock or
+    /// returning a failed proof depending on `allow_mock_fallback`.
+    fn try_sp1_proof_or_fallback(
+        &self,
+        input: &ProofInput,
+        sp1_mode: SP1ProofMode,
+        neo_mode: ProofMode,
+        script_hash: [u8; 32],
+        input_hash: [u8; 32],
+        public_inputs: &PublicInputs,
+    ) -> Result<Sp1FallbackResult, Box<NeoProof>> {
+        match self.generate_sp1_proof(input, sp1_mode) {
+            Ok((bytes, hash, inputs)) => Ok((bytes, hash, neo_mode, Some(inputs))),
+            Err(err) => {
+                let warning = format!(
+                    "{neo_mode:?} proof generation failed ({err}), {}",
+                    if self.config.allow_mock_fallback {
+                        "falling back to mock"
+                    } else {
+                        "and mock fallback is disabled"
+                    }
+                );
+                if self.config.allow_mock_fallback {
+                    let (bytes, hash, inputs) = self.fallback_artifacts(public_inputs, &warning);
+                    Ok((bytes, hash, ProofMode::Mock, Some(inputs)))
+                } else {
+                    Err(Box::new(self.failed_proof(
+                        script_hash,
+                        input_hash,
+                        warning,
+                    )))
+                }
+            }
+        }
     }
 
     /// Hash a serialized `ProofInput` for public input commitment.
     pub fn hash_proof_input(input: &ProofInput) -> Result<[u8; 32], bincode::Error> {
-        Self::try_hash_proof_input(input)
+        let bytes = bincode_options().serialize(input)?;
+        Ok(hash_data(&bytes))
     }
 
     /// Generate a proof for the given input.
@@ -204,7 +240,7 @@ impl NeoProver {
         }
 
         let script_hash = hash_data(&input.script);
-        let input_hash = match Self::try_hash_proof_input(&input) {
+        let input_hash = match Self::hash_proof_input(&input) {
             Ok(hash) => hash,
             Err(err) => {
                 return self.failed_proof(
@@ -247,69 +283,42 @@ impl NeoProver {
                 None,
             ),
             ProofMode::Sp1 if sp1_available => {
-                match self.generate_sp1_proof(&input, SP1ProofMode::Compressed) {
-                    Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Sp1, Some(inputs)),
-                    Err(err) => {
-                        let warning = format!(
-                            "SP1 proof generation failed ({err}), {}",
-                            if self.config.allow_mock_fallback {
-                                "falling back to mock"
-                            } else {
-                                "and mock fallback is disabled"
-                            }
-                        );
-                        if self.config.allow_mock_fallback {
-                            let (bytes, hash, inputs) =
-                                self.fallback_artifacts(&public_inputs, &warning);
-                            (bytes, hash, ProofMode::Mock, Some(inputs))
-                        } else {
-                            return self.failed_proof(script_hash, input_hash, warning);
-                        }
-                    }
+                match self.try_sp1_proof_or_fallback(
+                    &input,
+                    SP1ProofMode::Compressed,
+                    ProofMode::Sp1,
+                    script_hash,
+                    input_hash,
+                    &public_inputs,
+                ) {
+                    Ok(result) => result,
+                    Err(failed) => return *failed,
                 }
             }
             ProofMode::Plonk if sp1_available => {
-                match self.generate_sp1_proof(&input, SP1ProofMode::Plonk) {
-                    Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Plonk, Some(inputs)),
-                    Err(err) => {
-                        let warning = format!(
-                            "PLONK proof generation failed ({err}), {}",
-                            if self.config.allow_mock_fallback {
-                                "falling back to mock"
-                            } else {
-                                "and mock fallback is disabled"
-                            }
-                        );
-                        if self.config.allow_mock_fallback {
-                            let (bytes, hash, inputs) =
-                                self.fallback_artifacts(&public_inputs, &warning);
-                            (bytes, hash, ProofMode::Mock, Some(inputs))
-                        } else {
-                            return self.failed_proof(script_hash, input_hash, warning);
-                        }
-                    }
+                match self.try_sp1_proof_or_fallback(
+                    &input,
+                    SP1ProofMode::Plonk,
+                    ProofMode::Plonk,
+                    script_hash,
+                    input_hash,
+                    &public_inputs,
+                ) {
+                    Ok(result) => result,
+                    Err(failed) => return *failed,
                 }
             }
             ProofMode::Groth16 if sp1_available => {
-                match self.generate_sp1_proof(&input, SP1ProofMode::Groth16) {
-                    Ok((bytes, hash, inputs)) => (bytes, hash, ProofMode::Groth16, Some(inputs)),
-                    Err(err) => {
-                        let warning = format!(
-                            "Groth16 proof generation failed ({err}), {}",
-                            if self.config.allow_mock_fallback {
-                                "falling back to mock"
-                            } else {
-                                "and mock fallback is disabled"
-                            }
-                        );
-                        if self.config.allow_mock_fallback {
-                            let (bytes, hash, inputs) =
-                                self.fallback_artifacts(&public_inputs, &warning);
-                            (bytes, hash, ProofMode::Mock, Some(inputs))
-                        } else {
-                            return self.failed_proof(script_hash, input_hash, warning);
-                        }
-                    }
+                match self.try_sp1_proof_or_fallback(
+                    &input,
+                    SP1ProofMode::Groth16,
+                    ProofMode::Groth16,
+                    script_hash,
+                    input_hash,
+                    &public_inputs,
+                ) {
+                    Ok(result) => result,
+                    Err(failed) => return *failed,
                 }
             }
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
@@ -423,7 +432,9 @@ impl NeoProver {
             commitment: compute_commitment(inputs),
             timestamp,
         };
-        bincode_options().serialize(&mock).unwrap_or_default()
+        bincode_options()
+            .serialize(&mock)
+            .expect("MockProof serialization must not fail")
     }
 
     fn verify_mock_proof(&self, proof: &NeoProof) -> bool {
@@ -431,7 +442,7 @@ impl NeoProver {
             Ok(mock) => {
                 let expected = compute_commitment(&proof.public_inputs);
                 mock.commitment == expected
-                    && mock.public_inputs.script_hash == proof.public_inputs.script_hash
+                    && public_inputs_equal(&mock.public_inputs, &proof.public_inputs)
             }
             Err(_) => false,
         }
@@ -661,14 +672,14 @@ mod tests {
     }
 
     #[test]
-    fn test_try_hash_proof_input_rejects_oversized_arguments() {
+    fn test_hash_proof_input_rejects_oversized_arguments() {
         let input = ProofInput {
             script: vec![0x40],
             arguments: vec![StackItem::ByteString(vec![0u8; 10 * 1024 * 1024 + 1])],
             gas_limit: 1_000_000,
         };
 
-        assert!(NeoProver::try_hash_proof_input(&input).is_err());
+        assert!(NeoProver::hash_proof_input(&input).is_err());
     }
 
     #[test]

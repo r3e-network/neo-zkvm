@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED** — This is a historical snapshot from 2026-01-31. See [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md) for the current authoritative review.
+
 # Neo zkVM Comprehensive Review - Complete
 
 **Date:** 2026-01-31  
@@ -12,12 +14,12 @@ A comprehensive review of the Neo zkVM project has been completed. All identifie
 
 ### Final Metrics
 
-| Metric | Before | After |
-|--------|--------|-------|
-| **Tests Passing** | 292 | **310** (+18 new tests) |
-| **Clippy Warnings** | 0 | **0** (clean) |
-| **Documentation Issues** | 5 | **0** (all fixed) |
-| **Code Issues** | 1 | **0** (CALL depth check added) |
+| Metric                   | Before | After                          |
+| ------------------------ | ------ | ------------------------------ |
+| **Tests Passing**        | 292    | **310** (+18 new tests)        |
+| **Clippy Warnings**      | 0      | **0** (clean)                  |
+| **Documentation Issues** | 5      | **0** (all fixed)              |
+| **Code Issues**          | 1      | **0** (CALL depth check added) |
 
 ---
 
@@ -26,18 +28,21 @@ A comprehensive review of the Neo zkVM project has been completed. All identifie
 ### 1. Documentation Fixes ✅
 
 **File:** `docs/getting-started.md`
+
 - Fixed hex string example: `1213 9E40` → `12139E40`
 - Fixed enum name: `ProveMode` → `ProofMode` (3 occurrences)
 - Updated CLI output examples to match actual output format
 - Added `Groth16` to proof modes table
 
 **File:** `README.md`
+
 - Fixed proof generation example to use `ProofMode`
 - Updated verification call to use `prover.verify(&proof)`
 
 ### 2. Code Fixes ✅
 
 **File:** `crates/neo-vm-core/src/engine.rs`
+
 - **Line ~1182:** Added `check_invocation_depth()` call to CALL opcode
   - Prevents infinite recursion attacks
   - Properly enforces the `max_invocation_depth` limit
@@ -45,9 +50,10 @@ A comprehensive review of the Neo zkVM project has been completed. All identifie
 ### 3. Test Improvements ✅
 
 **File:** `crates/neo-vm-core/tests/boundary_tests.rs`
+
 - Added 18 new comprehensive tests:
   - Stack overflow protection tests
-  - Invocation depth limit tests  
+  - Invocation depth limit tests
   - Edge case tests for all arithmetic operations
   - Bitwise operation edge cases
   - Jump instruction edge cases
@@ -58,6 +64,7 @@ A comprehensive review of the Neo zkVM project has been completed. All identifie
 ### 4. Doc Tests ✅
 
 **File:** `crates/neo-vm-core/src/lib.rs`
+
 - Enabled previously ignored doc tests
 - Gas metering example now runs correctly
 - Error handling example now runs correctly
@@ -164,16 +171,19 @@ $ cargo run --package neo-zkvm-cli -- run 12139E40
 ## API Consistency
 
 ### Error Handling ✅
+
 - Consistent `Result<T, VMError>` throughout
 - `thiserror` for error definitions
 - Proper error propagation
 
 ### Naming Conventions ✅
+
 - `snake_case` for functions/variables
 - `PascalCase` for types/traits
 - `SCREAMING_SNAKE_CASE` for constants
 
 ### Documentation Style ✅
+
 - All public APIs documented
 - Examples in doc comments
 - Comprehensive guides
@@ -182,16 +192,16 @@ $ cargo run --package neo-zkvm-cli -- run 12139E40
 
 ## Production Readiness Checklist
 
-| Requirement | Status |
-|-------------|--------|
-| All tests passing | ✅ 310 tests |
-| Clippy clean | ✅ No warnings |
-| Documentation accurate | ✅ All examples work |
-| Security features | ✅ Depth limits, gas metering |
-| Error handling | ✅ Comprehensive |
-| Examples working | ✅ All 4 examples |
-| CLI functional | ✅ All commands work |
-| API stable | ✅ Consistent patterns |
+| Requirement            | Status                        |
+| ---------------------- | ----------------------------- |
+| All tests passing      | ✅ 310 tests                  |
+| Clippy clean           | ✅ No warnings                |
+| Documentation accurate | ✅ All examples work          |
+| Security features      | ✅ Depth limits, gas metering |
+| Error handling         | ✅ Comprehensive              |
+| Examples working       | ✅ All 4 examples             |
+| CLI functional         | ✅ All commands work          |
+| API stable             | ✅ Consistent patterns        |
 
 ---
 

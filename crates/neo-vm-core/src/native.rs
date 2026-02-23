@@ -9,35 +9,65 @@ use thiserror::Error;
 /// Maximum input size for native contract functions (1MB)
 const MAX_INPUT_SIZE: usize = 1024 * 1024;
 
+/// Extract a `ByteString` from `args[idx]` with a size check against `MAX_INPUT_SIZE`.
+fn extract_bytes<'a>(args: &'a [StackItem], idx: usize, method: &str) -> Result<&'a [u8], String> {
+    match args.get(idx) {
+        Some(StackItem::ByteString(b)) => {
+            if b.len() > MAX_INPUT_SIZE {
+                Err(format!(
+                    "{method} input exceeds maximum size of {MAX_INPUT_SIZE} bytes"
+                ))
+            } else {
+                Ok(b.as_slice())
+            }
+        }
+        Some(_) => Err(format!("{method} requires ByteString argument")),
+        None => Err(format!("{method} missing argument at index {idx}")),
+    }
+}
+
+/// Contract hash for the Neo N3 StdLib native contract.
 pub const STDLIB_HASH: [u8; 20] = [
     0xac, 0xce, 0x6f, 0xd8, 0x0d, 0x44, 0xe1, 0xa3, 0x92, 0x6d, 0xe2, 0x1c, 0xcf, 0x30, 0x96, 0x9a,
     0x22, 0x4b, 0xc0, 0x6b,
 ];
 
+/// Contract hash for the Neo N3 CryptoLib native contract.
 pub const CRYPTOLIB_HASH: [u8; 20] = [
     0x72, 0x6c, 0xb6, 0xe0, 0xcd, 0x8b, 0x0a, 0xc3, 0x3c, 0xe1, 0xde, 0xc0, 0xd4, 0x7e, 0x5c, 0x3c,
     0x4a, 0x6b, 0x8a, 0x0d,
 ];
 
-/// Errors from native contract invocations
+/// Errors from native contract invocations.
 #[derive(Error, Debug, PartialEq)]
 pub enum NativeContractError {
+    /// The requested method does not exist on the contract.
     #[error("Unknown method '{method}' on contract {contract}")]
     UnknownMethod {
+        /// Name of the target contract.
         contract: &'static str,
+        /// Method name that was not found.
         method: String,
     },
+    /// An argument failed validation.
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
+    /// Input data exceeds the allowed byte limit.
     #[error("Input exceeds maximum size of {max} bytes")]
-    InputTooLarge { max: usize },
+    InputTooLarge {
+        /// Maximum allowed size in bytes.
+        max: usize,
+    },
+    /// Catch-all for other native contract errors.
     #[error("{0}")]
     Other(String),
 }
 
-/// Native contract interface
+/// Native contract interface.
 pub trait NativeContract {
+    /// Return the 20-byte contract hash that identifies this contract.
     fn hash(&self) -> [u8; 20];
+    /// Invoke `method` with the given arguments and return the result.
     fn invoke(&self, method: &str, args: Vec<StackItem>) -> Result<StackItem, NativeContractError>;
 }
 
@@ -46,7 +76,9 @@ pub trait NativeContract {
 pub struct StdLib;
 
 impl StdLib {
+    /// Create a new StdLib instance.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -61,17 +93,8 @@ impl StdLib {
     }
 
     fn deserialize(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(bytes)) = args.first() {
-            if bytes.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "deserialize input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            bincode::deserialize(bytes).map_err(|e| format!("deserialize failed: {}", e))
-        } else {
-            Err("deserialize requires ByteString argument".to_string())
-        }
+        let bytes = extract_bytes(&args, 0, "deserialize")?;
+        bincode::deserialize(bytes).map_err(|e| format!("deserialize failed: {}", e))
     }
 
     #[inline]
@@ -90,58 +113,28 @@ impl StdLib {
     }
 
     fn json_deserialize(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(bytes)) = args.first() {
-            if bytes.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "jsonDeserialize input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            let s = String::from_utf8(bytes.to_vec())
-                .map_err(|e| format!("jsonDeserialize: invalid UTF-8: {}", e))?;
-            let item: StackItem = serde_json::from_str(&s)
-                .map_err(|e| format!("jsonDeserialize: invalid JSON: {}", e))?;
-            Ok(item)
-        } else {
-            Err("jsonDeserialize requires ByteString argument".to_string())
-        }
+        let bytes = extract_bytes(&args, 0, "jsonDeserialize")?;
+        let s = String::from_utf8(bytes.to_vec())
+            .map_err(|e| format!("jsonDeserialize: invalid UTF-8: {}", e))?;
+        serde_json::from_str(&s).map_err(|e| format!("jsonDeserialize: invalid JSON: {}", e))
     }
 }
 
 impl StdLib {
     #[inline]
     fn base64_encode(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(bytes)) = args.first() {
-            if bytes.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "base64Encode input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            use base64::{engine::general_purpose::STANDARD, Engine};
-            let encoded = STANDARD.encode(bytes);
-            Ok(StackItem::ByteString(encoded.into_bytes()))
-        } else {
-            Err("base64Encode requires ByteString".to_string())
-        }
+        let bytes = extract_bytes(&args, 0, "base64Encode")?;
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        Ok(StackItem::ByteString(STANDARD.encode(bytes).into_bytes()))
     }
 
     #[inline]
     fn base64_decode(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(bytes)) = args.first() {
-            if bytes.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "base64Decode input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            use base64::{engine::general_purpose::STANDARD, Engine};
-            let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
-            let decoded = STANDARD.decode(s.as_str()).map_err(|e| e.to_string())?;
-            Ok(StackItem::ByteString(decoded))
-        } else {
-            Err("base64Decode requires ByteString".to_string())
-        }
+        let bytes = extract_bytes(&args, 0, "base64Decode")?;
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
+        let decoded = STANDARD.decode(s.as_str()).map_err(|e| e.to_string())?;
+        Ok(StackItem::ByteString(decoded))
     }
 }
 
@@ -179,35 +172,26 @@ impl StdLib {
 
     #[inline]
     fn atoi(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(bytes)) = args.first() {
-            if bytes.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "atoi input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
-            let base = args
-                .get(1)
-                .and_then(|i| {
-                    if let StackItem::Integer(b) = i {
-                        Some(*b as u32)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(10);
-            if base != 2 && base != 10 && base != 16 {
-                return Err(format!(
-                    "Unsupported base {}. Supported bases: 2 (binary), 10 (decimal), 16 (hexadecimal)",
-                    base
-                ));
-            }
-            let n = i128::from_str_radix(s.trim(), base).map_err(|e| e.to_string())?;
-            Ok(StackItem::Integer(n))
-        } else {
-            Err("atoi requires ByteString".to_string())
+        let bytes = extract_bytes(&args, 0, "atoi")?;
+        let s = String::from_utf8(bytes.to_vec()).map_err(|e| e.to_string())?;
+        let base = args
+            .get(1)
+            .and_then(|i| {
+                if let StackItem::Integer(b) = i {
+                    Some(*b as u32)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(10);
+        if base != 2 && base != 10 && base != 16 {
+            return Err(format!(
+                "Unsupported base {}. Supported bases: 2 (binary), 10 (decimal), 16 (hexadecimal)",
+                base
+            ));
         }
+        let n = i128::from_str_radix(s.trim(), base).map_err(|e| e.to_string())?;
+        Ok(StackItem::Integer(n))
     }
 }
 
@@ -242,6 +226,8 @@ impl NativeContract for StdLib {
 pub struct CryptoLib;
 
 impl CryptoLib {
+    /// Create a new CryptoLib instance.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -273,79 +259,38 @@ impl NativeContract for CryptoLib {
 impl CryptoLib {
     #[inline]
     fn sha256(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(data)) = args.first() {
-            if data.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "sha256 input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            let hash = Sha256::digest(data);
-            Ok(StackItem::ByteString(hash.to_vec()))
-        } else {
-            Err("sha256 requires ByteString".to_string())
-        }
+        let data = extract_bytes(&args, 0, "sha256")?;
+        let hash = Sha256::digest(data);
+        Ok(StackItem::ByteString(hash.to_vec()))
     }
 
     #[inline]
     fn ripemd160(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if let Some(StackItem::ByteString(data)) = args.first() {
-            if data.len() > MAX_INPUT_SIZE {
-                return Err(format!(
-                    "ripemd160 input exceeds maximum size of {} bytes",
-                    MAX_INPUT_SIZE
-                ));
-            }
-            use ripemd::Ripemd160;
-            let hash = Ripemd160::digest(data);
-            Ok(StackItem::ByteString(hash.to_vec()))
-        } else {
-            Err("ripemd160 requires ByteString".to_string())
-        }
+        let data = extract_bytes(&args, 0, "ripemd160")?;
+        use ripemd::Ripemd160;
+        let hash = Ripemd160::digest(data);
+        Ok(StackItem::ByteString(hash.to_vec()))
+    }
+
+    /// Shared ECDSA verification logic.
+    fn verify_ecdsa_inner(message: &[u8], signature: &[u8], pubkey: &[u8]) -> Result<bool, String> {
+        use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+        let sig = Signature::from_slice(signature)
+            .map_err(|_| "Invalid ECDSA signature format".to_string())?;
+        let vk = VerifyingKey::from_sec1_bytes(pubkey)
+            .map_err(|_| "Invalid public key format".to_string())?;
+        Ok(vk.verify(message, &sig).is_ok())
     }
 
     #[inline]
     fn verify_ecdsa(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-
-        if args.len() < 2 {
-            return Err("verify_ecdsa requires at least 2 arguments".to_string());
-        }
-
-        let message = match &args[0] {
-            StackItem::ByteString(msg) => msg.as_slice(),
-            _ => return Err("verify_ecdsa: first argument must be ByteString".to_string()),
-        };
-
-        let signature = match &args[1] {
-            StackItem::ByteString(sig) => sig.as_slice(),
-            _ => return Err("verify_ecdsa: second argument must be ByteString".to_string()),
-        };
-
-        let pubkey = if args.len() >= 3 {
-            match &args[2] {
-                StackItem::ByteString(pk) => pk.as_slice(),
-                _ => return Err("verify_ecdsa: third argument must be ByteString".to_string()),
-            }
-        } else {
-            return Err("verify_ecdsa: public key required".to_string());
-        };
-
-        if message.len() > MAX_INPUT_SIZE {
-            return Err(format!(
-                "verify_ecdsa message exceeds maximum size of {} bytes",
-                MAX_INPUT_SIZE
-            ));
-        }
-
-        let signature = Signature::from_slice(signature)
-            .map_err(|_| "Invalid ECDSA signature format".to_string())?;
-        let verifying_key = VerifyingKey::from_sec1_bytes(pubkey)
-            .map_err(|_| "Invalid public key format".to_string())?;
-
-        Ok(StackItem::Boolean(
-            verifying_key.verify(message, &signature).is_ok(),
-        ))
+        let message = extract_bytes(&args, 0, "verifyWithECDsa")?;
+        let signature = extract_bytes(&args, 1, "verifyWithECDsa")?;
+        let pubkey = extract_bytes(&args, 2, "verifyWithECDsa")
+            .map_err(|_| "verify_ecdsa: public key required".to_string())?;
+        Ok(StackItem::Boolean(Self::verify_ecdsa_inner(
+            message, signature, pubkey,
+        )?))
     }
 
     /// Verify a single ECDSA signature with a simplified API.
@@ -354,40 +299,12 @@ impl CryptoLib {
     /// Returns: Boolean indicating whether the signature is valid.
     #[inline]
     fn check_sig(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if args.len() < 3 {
-            return Err("checkSig requires 3 arguments: message, signature, pubkey".to_string());
-        }
-
-        let message = match &args[0] {
-            StackItem::ByteString(msg) => msg.as_slice(),
-            _ => return Err("checkSig: first argument (message) must be ByteString".to_string()),
-        };
-
-        let signature = match &args[1] {
-            StackItem::ByteString(sig) => sig.as_slice(),
-            _ => return Err("checkSig: second argument (signature) must be ByteString".to_string()),
-        };
-
-        let pubkey = match &args[2] {
-            StackItem::ByteString(pk) => pk.as_slice(),
-            _ => return Err("checkSig: third argument (pubkey) must be ByteString".to_string()),
-        };
-
-        if message.len() > MAX_INPUT_SIZE {
-            return Err(format!(
-                "checkSig message exceeds maximum size of {} bytes",
-                MAX_INPUT_SIZE
-            ));
-        }
-
-        use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-
-        let sig = Signature::from_slice(signature)
-            .map_err(|_| "checkSig: invalid ECDSA signature format".to_string())?;
-        let vk = VerifyingKey::from_sec1_bytes(pubkey)
-            .map_err(|_| "checkSig: invalid public key format".to_string())?;
-
-        Ok(StackItem::Boolean(vk.verify(message, &sig).is_ok()))
+        let message = extract_bytes(&args, 0, "checkSig")?;
+        let signature = extract_bytes(&args, 1, "checkSig")?;
+        let pubkey = extract_bytes(&args, 2, "checkSig")?;
+        Ok(StackItem::Boolean(Self::verify_ecdsa_inner(
+            message, signature, pubkey,
+        )?))
     }
 
     /// Compute Murmur3 32-bit hash.
@@ -396,22 +313,7 @@ impl CryptoLib {
     /// Returns: ByteString containing the 4-byte hash in little-endian order.
     #[inline]
     fn murmur32(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
-        if args.is_empty() {
-            return Err("murmur32 requires at least 1 argument: data".to_string());
-        }
-
-        let data = match &args[0] {
-            StackItem::ByteString(d) => d.as_slice(),
-            _ => return Err("murmur32: first argument (data) must be ByteString".to_string()),
-        };
-
-        if data.len() > MAX_INPUT_SIZE {
-            return Err(format!(
-                "murmur32 input exceeds maximum size of {} bytes",
-                MAX_INPUT_SIZE
-            ));
-        }
-
+        let data = extract_bytes(&args, 0, "murmur32")?;
         let seed = args
             .get(1)
             .map(|item| match item {
@@ -501,7 +403,9 @@ pub struct NativeRegistry {
 }
 
 impl NativeRegistry {
+    /// Create a new registry containing all built-in native contracts.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             stdlib: StdLib::new(),
@@ -509,6 +413,7 @@ impl NativeRegistry {
         }
     }
 
+    /// Dispatch a method call to the native contract identified by `hash`.
     #[inline]
     pub fn invoke(
         &self,

@@ -36,6 +36,7 @@ Neo zkVM is a zero-knowledge virtual machine that enables verifiable computation
 The core VM engine implementing the Neo N3 virtual machine specification.
 
 **Key Features:**
+
 - Full Neo N3 opcode support (100+ opcodes)
 - Gas metering and limits
 - Execution tracing for proof generation
@@ -44,6 +45,7 @@ The core VM engine implementing the Neo N3 virtual machine specification.
 - Native contract support
 
 **Module Structure:**
+
 ```
 neo-vm-core/
 ├── src/
@@ -56,6 +58,7 @@ neo-vm-core/
 ```
 
 **Key Types:**
+
 - `NeoVM` - Main VM instance
 - `VMState` - Execution state (None, Halt, Fault, Break)
 - `StackItem` - Stack value types
@@ -67,11 +70,13 @@ neo-vm-core/
 Guest program wrapper for zkVM proving. This crate provides the interface between the Neo VM and the SP1 proving system.
 
 **Responsibilities:**
+
 - Serialize/deserialize proof inputs
 - Execute Neo VM within SP1 guest environment
 - Produce deterministic outputs for verification
 
 **Key Types:**
+
 ```rust
 pub struct ProofInput {
     pub script: Vec<u8>,
@@ -80,9 +85,10 @@ pub struct ProofInput {
 }
 
 pub struct ProofOutput {
-    pub result: Vec<StackItem>,
+    pub state: u8,  // 0 = Halt, non-zero = Fault
+    pub result: Option<StackItem>,
     pub gas_consumed: u64,
-    pub state: u8,  // 0 = Halt, 1 = Fault
+    pub error: Option<String>,
 }
 ```
 
@@ -96,9 +102,11 @@ Production-grade prover using SP1 framework for generating zero-knowledge proofs
 | `Execute` | Run only, no proof | Development/testing |
 | `Mock` | Simulated proof | Fast testing |
 | `Sp1` | Compressed SP1 proof | Off-chain verification |
-| `Sp1Plonk` | PLONK proof | On-chain verification |
+| `Plonk` | SP1 PLONK proof | On-chain verification |
+| `Groth16` | SP1 Groth16 proof | On-chain (smallest proof) |
 
 **Key Types:**
+
 ```rust
 pub struct NeoProof {
     pub output: ProofOutput,
@@ -121,20 +129,25 @@ pub struct PublicInputs {
 Proof verification layer supporting multiple proof types.
 
 **Supported Proof Types:**
+
 - Empty (execute-only mode)
 - Mock (testing)
 - SP1 Compressed
 - SP1 PLONK
+- SP1 Groth16
 
 ### 5. neo-zkvm-cli
 
 Command-line interface for development and testing.
 
 **Commands:**
+
 - `run` - Execute scripts
 - `prove` - Generate proofs
 - `asm` - Assemble source code
 - `disasm` - Disassemble bytecode
+- `debug` - Interactive step-by-step debugger
+- `inspect` - Analyze script structure and gas costs
 
 ### 6. neo-zkvm-program
 
@@ -350,11 +363,11 @@ SP1 guest program that runs inside the zkVM. This is the actual program that get
 
 ### Verification Guarantees
 
-| Property | Guarantee |
-|----------|-----------|
-| **Soundness** | Invalid executions cannot produce valid proofs |
-| **Completeness** | Valid executions always produce verifiable proofs |
-| **Zero-Knowledge** | Proofs reveal nothing beyond public inputs |
+| Property           | Guarantee                                         |
+| ------------------ | ------------------------------------------------- |
+| **Soundness**      | Invalid executions cannot produce valid proofs    |
+| **Completeness**   | Valid executions always produce verifiable proofs |
+| **Zero-Knowledge** | Proofs reveal nothing beyond public inputs        |
 
 ### Gas Metering
 
@@ -388,19 +401,19 @@ Gas prevents denial-of-service attacks and ensures bounded execution:
 
 ### Proof Generation Time
 
-| Script Complexity | Approximate Time |
-|-------------------|------------------|
-| Simple (< 100 ops) | < 1 second |
-| Medium (100-1000 ops) | 1-10 seconds |
-| Complex (1000+ ops) | 10+ seconds |
+| Script Complexity     | Approximate Time |
+| --------------------- | ---------------- |
+| Simple (< 100 ops)    | < 1 second       |
+| Medium (100-1000 ops) | 1-10 seconds     |
+| Complex (1000+ ops)   | 10+ seconds      |
 
 ### Proof Size
 
-| Proof Type | Approximate Size |
-|------------|------------------|
-| Mock | ~200 bytes |
-| SP1 Compressed | ~100 KB |
-| SP1 PLONK | ~1 KB |
+| Proof Type     | Approximate Size |
+| -------------- | ---------------- |
+| Mock           | ~200 bytes       |
+| SP1 Compressed | ~100 KB          |
+| SP1 PLONK      | ~1 KB            |
 
 ## Future Enhancements
 

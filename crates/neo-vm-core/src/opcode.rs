@@ -5,7 +5,7 @@
 /// Names follow the official Neo N3 specification exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, missing_docs)]
 pub enum OpCode {
     // Constants
     PUSHINT8 = 0x00,
@@ -209,6 +209,7 @@ pub enum OpCode {
     // Types
     ISNULL = 0xD8,
     ISTYPE = 0xD9,
+    TYPE = 0xDA,
     CONVERT = 0xDB,
     ABORTMSG = 0xE0,
     ASSERTMSG = 0xE1,
@@ -410,6 +411,7 @@ impl TryFrom<u8> for OpCode {
             0xD4 => Ok(OpCode::POPITEM),
             0xD8 => Ok(OpCode::ISNULL),
             0xD9 => Ok(OpCode::ISTYPE),
+            0xDA => Ok(OpCode::TYPE),
             0xDB => Ok(OpCode::CONVERT),
             0xE0 => Ok(OpCode::ABORTMSG),
             0xE1 => Ok(OpCode::ASSERTMSG),
@@ -422,8 +424,279 @@ impl TryFrom<u8> for OpCode {
     }
 }
 
+impl OpCode {
+    /// Returns the number of fixed operand bytes that follow this opcode.
+    /// For variable-length opcodes (PUSHDATA1/2/4, PUSHINT*), returns the
+    /// size of the length prefix only; the caller must read the actual data.
+    #[must_use]
+    pub fn operand_size(&self) -> usize {
+        match self {
+            // 1-byte offset jumps and calls
+            OpCode::JMP
+            | OpCode::JMPIF
+            | OpCode::JMPIFNOT
+            | OpCode::JMPEQ
+            | OpCode::JMPNE
+            | OpCode::JMPGT
+            | OpCode::JMPGE
+            | OpCode::JMPLT
+            | OpCode::JMPLE
+            | OpCode::CALL
+            | OpCode::ENDTRY => 1,
+            // 4-byte offset jumps and calls
+            OpCode::JMP_L
+            | OpCode::JMPIF_L
+            | OpCode::JMPIFNOT_L
+            | OpCode::JMPEQ_L
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE_L
+            | OpCode::CALL_L
+            | OpCode::ENDTRY_L
+            | OpCode::SYSCALL => 4,
+            // TRY has 2 one-byte offsets
+            OpCode::TRY => 2,
+            // TRY_L has 2 four-byte offsets
+            OpCode::TRY_L => 8,
+            // PUSHINT variants
+            OpCode::PUSHINT8 => 1,
+            OpCode::PUSHINT16 => 2,
+            OpCode::PUSHINT32 => 4,
+            OpCode::PUSHINT64 => 8,
+            OpCode::PUSHINT128 => 16,
+            OpCode::PUSHINT256 => 32,
+            // PUSHDATA has variable length prefix
+            OpCode::PUSHDATA1 => 1,
+            OpCode::PUSHDATA2 => 2,
+            OpCode::PUSHDATA4 => 4,
+            // PUSHA has 4-byte address
+            OpCode::PUSHA => 4,
+            // CALLT has 2-byte token
+            OpCode::CALLT => 2,
+            // Slot init
+            OpCode::INITSSLOT => 1,
+            OpCode::INITSLOT => 2,
+            // Indexed slot access
+            OpCode::LDSFLD
+            | OpCode::STSFLD
+            | OpCode::LDLOC
+            | OpCode::STLOC
+            | OpCode::LDARG
+            | OpCode::STARG => 1,
+            // ISTYPE and CONVERT take 1-byte type
+            OpCode::ISTYPE | OpCode::CONVERT => 1,
+            // NEWARRAY_T takes 1-byte type
+            OpCode::NEWARRAY_T => 1,
+            // All other opcodes have no operands
+            _ => 0,
+        }
+    }
+
+    /// Returns the canonical name of this opcode as a static string.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            OpCode::PUSHINT8 => "PUSHINT8",
+            OpCode::PUSHINT16 => "PUSHINT16",
+            OpCode::PUSHINT32 => "PUSHINT32",
+            OpCode::PUSHINT64 => "PUSHINT64",
+            OpCode::PUSHINT128 => "PUSHINT128",
+            OpCode::PUSHINT256 => "PUSHINT256",
+            OpCode::PUSHA => "PUSHA",
+            OpCode::PUSHNULL => "PUSHNULL",
+            OpCode::PUSHDATA1 => "PUSHDATA1",
+            OpCode::PUSHDATA2 => "PUSHDATA2",
+            OpCode::PUSHDATA4 => "PUSHDATA4",
+            OpCode::PUSHM1 => "PUSHM1",
+            OpCode::PUSH0 => "PUSH0",
+            OpCode::PUSH1 => "PUSH1",
+            OpCode::PUSH2 => "PUSH2",
+            OpCode::PUSH3 => "PUSH3",
+            OpCode::PUSH4 => "PUSH4",
+            OpCode::PUSH5 => "PUSH5",
+            OpCode::PUSH6 => "PUSH6",
+            OpCode::PUSH7 => "PUSH7",
+            OpCode::PUSH8 => "PUSH8",
+            OpCode::PUSH9 => "PUSH9",
+            OpCode::PUSH10 => "PUSH10",
+            OpCode::PUSH11 => "PUSH11",
+            OpCode::PUSH12 => "PUSH12",
+            OpCode::PUSH13 => "PUSH13",
+            OpCode::PUSH14 => "PUSH14",
+            OpCode::PUSH15 => "PUSH15",
+            OpCode::PUSH16 => "PUSH16",
+            OpCode::NOP => "NOP",
+            OpCode::JMP => "JMP",
+            OpCode::JMP_L => "JMP_L",
+            OpCode::JMPIF => "JMPIF",
+            OpCode::JMPIF_L => "JMPIF_L",
+            OpCode::JMPIFNOT => "JMPIFNOT",
+            OpCode::JMPIFNOT_L => "JMPIFNOT_L",
+            OpCode::JMPEQ => "JMPEQ",
+            OpCode::JMPEQ_L => "JMPEQ_L",
+            OpCode::JMPNE => "JMPNE",
+            OpCode::JMPNE_L => "JMPNE_L",
+            OpCode::JMPGT => "JMPGT",
+            OpCode::JMPGT_L => "JMPGT_L",
+            OpCode::JMPGE => "JMPGE",
+            OpCode::JMPGE_L => "JMPGE_L",
+            OpCode::JMPLT => "JMPLT",
+            OpCode::JMPLT_L => "JMPLT_L",
+            OpCode::JMPLE => "JMPLE",
+            OpCode::JMPLE_L => "JMPLE_L",
+            OpCode::CALL => "CALL",
+            OpCode::CALL_L => "CALL_L",
+            OpCode::CALLA => "CALLA",
+            OpCode::CALLT => "CALLT",
+            OpCode::ABORT => "ABORT",
+            OpCode::ASSERT => "ASSERT",
+            OpCode::THROW => "THROW",
+            OpCode::TRY => "TRY",
+            OpCode::TRY_L => "TRY_L",
+            OpCode::ENDTRY => "ENDTRY",
+            OpCode::ENDTRY_L => "ENDTRY_L",
+            OpCode::ENDFINALLY => "ENDFINALLY",
+            OpCode::RET => "RET",
+            OpCode::SYSCALL => "SYSCALL",
+            OpCode::DEPTH => "DEPTH",
+            OpCode::DROP => "DROP",
+            OpCode::NIP => "NIP",
+            OpCode::XDROP => "XDROP",
+            OpCode::CLEAR => "CLEAR",
+            OpCode::DUP => "DUP",
+            OpCode::OVER => "OVER",
+            OpCode::PICK => "PICK",
+            OpCode::TUCK => "TUCK",
+            OpCode::SWAP => "SWAP",
+            OpCode::ROT => "ROT",
+            OpCode::ROLL => "ROLL",
+            OpCode::REVERSE3 => "REVERSE3",
+            OpCode::REVERSE4 => "REVERSE4",
+            OpCode::REVERSEN => "REVERSEN",
+            OpCode::INITSSLOT => "INITSSLOT",
+            OpCode::INITSLOT => "INITSLOT",
+            OpCode::LDSFLD0 => "LDSFLD0",
+            OpCode::LDSFLD1 => "LDSFLD1",
+            OpCode::LDSFLD2 => "LDSFLD2",
+            OpCode::LDSFLD3 => "LDSFLD3",
+            OpCode::LDSFLD4 => "LDSFLD4",
+            OpCode::LDSFLD5 => "LDSFLD5",
+            OpCode::LDSFLD => "LDSFLD",
+            OpCode::STSFLD0 => "STSFLD0",
+            OpCode::STSFLD1 => "STSFLD1",
+            OpCode::STSFLD2 => "STSFLD2",
+            OpCode::STSFLD3 => "STSFLD3",
+            OpCode::STSFLD4 => "STSFLD4",
+            OpCode::STSFLD5 => "STSFLD5",
+            OpCode::STSFLD => "STSFLD",
+            OpCode::LDLOC0 => "LDLOC0",
+            OpCode::LDLOC1 => "LDLOC1",
+            OpCode::LDLOC2 => "LDLOC2",
+            OpCode::LDLOC3 => "LDLOC3",
+            OpCode::LDLOC4 => "LDLOC4",
+            OpCode::LDLOC5 => "LDLOC5",
+            OpCode::LDLOC => "LDLOC",
+            OpCode::STLOC0 => "STLOC0",
+            OpCode::STLOC1 => "STLOC1",
+            OpCode::STLOC2 => "STLOC2",
+            OpCode::STLOC3 => "STLOC3",
+            OpCode::STLOC4 => "STLOC4",
+            OpCode::STLOC5 => "STLOC5",
+            OpCode::STLOC => "STLOC",
+            OpCode::LDARG0 => "LDARG0",
+            OpCode::LDARG1 => "LDARG1",
+            OpCode::LDARG2 => "LDARG2",
+            OpCode::LDARG3 => "LDARG3",
+            OpCode::LDARG4 => "LDARG4",
+            OpCode::LDARG5 => "LDARG5",
+            OpCode::LDARG => "LDARG",
+            OpCode::STARG0 => "STARG0",
+            OpCode::STARG1 => "STARG1",
+            OpCode::STARG2 => "STARG2",
+            OpCode::STARG3 => "STARG3",
+            OpCode::STARG4 => "STARG4",
+            OpCode::STARG5 => "STARG5",
+            OpCode::STARG => "STARG",
+            OpCode::NEWBUFFER => "NEWBUFFER",
+            OpCode::MEMCPY => "MEMCPY",
+            OpCode::CAT => "CAT",
+            OpCode::SUBSTR => "SUBSTR",
+            OpCode::LEFT => "LEFT",
+            OpCode::RIGHT => "RIGHT",
+            OpCode::INVERT => "INVERT",
+            OpCode::AND => "AND",
+            OpCode::OR => "OR",
+            OpCode::XOR => "XOR",
+            OpCode::EQUAL => "EQUAL",
+            OpCode::NOTEQUAL => "NOTEQUAL",
+            OpCode::SIGN => "SIGN",
+            OpCode::ABS => "ABS",
+            OpCode::NEGATE => "NEGATE",
+            OpCode::INC => "INC",
+            OpCode::DEC => "DEC",
+            OpCode::ADD => "ADD",
+            OpCode::SUB => "SUB",
+            OpCode::MUL => "MUL",
+            OpCode::DIV => "DIV",
+            OpCode::MOD => "MOD",
+            OpCode::POW => "POW",
+            OpCode::SQRT => "SQRT",
+            OpCode::MODMUL => "MODMUL",
+            OpCode::MODPOW => "MODPOW",
+            OpCode::SHL => "SHL",
+            OpCode::SHR => "SHR",
+            OpCode::NOT => "NOT",
+            OpCode::BOOLAND => "BOOLAND",
+            OpCode::BOOLOR => "BOOLOR",
+            OpCode::NZ => "NZ",
+            OpCode::NUMEQUAL => "NUMEQUAL",
+            OpCode::NUMNOTEQUAL => "NUMNOTEQUAL",
+            OpCode::LT => "LT",
+            OpCode::LE => "LE",
+            OpCode::GT => "GT",
+            OpCode::GE => "GE",
+            OpCode::MIN => "MIN",
+            OpCode::MAX => "MAX",
+            OpCode::WITHIN => "WITHIN",
+            OpCode::PACKMAP => "PACKMAP",
+            OpCode::PACKSTRUCT => "PACKSTRUCT",
+            OpCode::PACK => "PACK",
+            OpCode::UNPACK => "UNPACK",
+            OpCode::NEWARRAY0 => "NEWARRAY0",
+            OpCode::NEWARRAY => "NEWARRAY",
+            OpCode::NEWARRAY_T => "NEWARRAY_T",
+            OpCode::NEWSTRUCT0 => "NEWSTRUCT0",
+            OpCode::NEWSTRUCT => "NEWSTRUCT",
+            OpCode::NEWMAP => "NEWMAP",
+            OpCode::SIZE => "SIZE",
+            OpCode::HASKEY => "HASKEY",
+            OpCode::KEYS => "KEYS",
+            OpCode::VALUES => "VALUES",
+            OpCode::PICKITEM => "PICKITEM",
+            OpCode::APPEND => "APPEND",
+            OpCode::SETITEM => "SETITEM",
+            OpCode::REVERSEITEMS => "REVERSEITEMS",
+            OpCode::REMOVE => "REMOVE",
+            OpCode::CLEARITEMS => "CLEARITEMS",
+            OpCode::POPITEM => "POPITEM",
+            OpCode::ISNULL => "ISNULL",
+            OpCode::ISTYPE => "ISTYPE",
+            OpCode::TYPE => "TYPE",
+            OpCode::CONVERT => "CONVERT",
+            OpCode::ABORTMSG => "ABORTMSG",
+            OpCode::ASSERTMSG => "ASSERTMSG",
+            OpCode::SHA256 => "SHA256",
+            OpCode::RIPEMD160 => "RIPEMD160",
+            OpCode::HASH160 => "HASH160",
+            OpCode::CHECKSIG => "CHECKSIG",
+        }
+    }
+}
+
 impl std::fmt::Display for OpCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        f.write_str(self.name())
     }
 }

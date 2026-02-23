@@ -1,11 +1,9 @@
-#![allow(clippy::ptr_arg)]
-
 //! Neo zkVM CLI - Complete development toolkit
 //!
 //! A comprehensive command-line interface for Neo zkVM development,
 //! including execution, debugging, assembly, and proof generation.
 
-use neo_vm_core::{NeoVM, VMState};
+use neo_vm_core::{NeoVM, OpCode, VMState, MAX_SCRIPT_SIZE};
 use neo_vm_guest::ProofInput;
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
@@ -20,7 +18,7 @@ mod disassembler;
 use assembler::Assembler;
 use disassembler::Disassembler;
 
-const VERSION: &str = "0.2.1";
+const VERSION: &str = "0.2.2";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -182,7 +180,6 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
     let script = parse_script(&args[0])?;
     let gas_limit = parse_gas_limit(args)?;
     let proof_mode = parse_proof_mode(args)?;
-    let explicitly_requested_mode = parse_requested_proof_mode(args)?.is_some();
     let allow_fallback = parse_allow_fallback(args);
 
     if !allow_fallback
@@ -216,12 +213,7 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
         prover.prove_strict(input)?
     };
 
-    if should_error_on_fallback(
-        proof_mode,
-        proof.proof_mode,
-        explicitly_requested_mode,
-        allow_fallback,
-    ) {
+    if should_error_on_fallback(proof_mode, proof.proof_mode, allow_fallback) {
         return Err(format!(
             "Requested proof mode {:?} but prover produced {:?}. Re-run with --allow-fallback to accept mock fallback, or fix SP1 setup.",
             proof_mode, proof.proof_mode
@@ -325,8 +317,6 @@ fn cmd_inspect(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-const MAX_SCRIPT_SIZE: usize = 1024 * 1024; // 1MB
-
 fn parse_script(input: &str) -> Result<Vec<u8>, String> {
     if input.ends_with(".nef") || input.ends_with(".bin") {
         let metadata =
@@ -409,7 +399,6 @@ fn parse_allow_fallback(args: &[String]) -> bool {
 fn should_error_on_fallback(
     requested_mode: ProofMode,
     actual_mode: ProofMode,
-    _explicitly_requested_mode: bool,
     allow_fallback: bool,
 ) -> bool {
     !allow_fallback
@@ -553,7 +542,10 @@ Available commands:
                 && !self
                     .history
                     .last()
-                    .map(|s| s.starts_with("continue"))
+                    .map(|s| {
+                        let cmd = s.split_whitespace().next().unwrap_or("");
+                        cmd == "continue" || cmd == "c"
+                    })
                     .unwrap_or(false)
             {
                 println!("Breakpoint hit at 0x{:04X}", ip);
@@ -813,7 +805,8 @@ impl<'a> Inspector<'a> {
 
         while ip < self.script.len() {
             let (name, size) = disasm.decode_instruction(ip);
-            *stats.entry(name).or_insert(0) += 1;
+            let opcode_name = name.split_whitespace().next().unwrap_or(&name).to_string();
+            *stats.entry(opcode_name).or_insert(0) += 1;
             ip += size;
         }
 
@@ -854,7 +847,39 @@ impl<'a> Inspector<'a> {
                     }
                     ip += 5;
                 }
-                _ => ip += 1,
+                _ => {
+                    ip += 1;
+                    // Skip operand bytes using OpCode metadata
+                    if let Ok(opcode) = OpCode::try_from(op) {
+                        let size = opcode.operand_size();
+                        // PUSHDATA: operand_size is the length-prefix size; read actual data length
+                        match opcode {
+                            OpCode::PUSHDATA1 if ip < self.script.len() => {
+                                ip = ip
+                                    .saturating_add(1 + self.script[ip] as usize)
+                                    .min(self.script.len());
+                            }
+                            OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
+                                let len = u16::from_le_bytes([self.script[ip], self.script[ip + 1]])
+                                    as usize;
+                                ip = ip.saturating_add(2 + len).min(self.script.len());
+                            }
+                            OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
+                                let len = u32::from_le_bytes([
+                                    self.script[ip],
+                                    self.script[ip + 1],
+                                    self.script[ip + 2],
+                                    self.script[ip + 3],
+                                ]) as usize;
+                                ip = ip
+                                    .saturating_add(4)
+                                    .saturating_add(len)
+                                    .min(self.script.len());
+                            }
+                            _ => ip += size,
+                        }
+                    }
+                }
             }
         }
 
@@ -870,18 +895,46 @@ impl<'a> Inspector<'a> {
         while ip < self.script.len() {
             let op = self.script[ip];
             let cost = match op {
-                0x0B..=0x20 => 1,
-                0x43..=0x55 => 2,
-                0x90..=0xBB => 8,
-                0x21..=0x40 => 2,
-                0xF0..=0xF2 => 512,
-                0xF3 => 32768,
-                0x41 => 16,
+                0x00..=0x20 => 1,   // push constants
+                0x21..=0x41 => 2,   // flow control, NOP, RET, SYSCALL base
+                0x42..=0x9F => 2,   // stack, slot, splice, buffer, bitwise, INC/DEC, ADD/SUB
+                0xA0..=0xDF => 8,   // arithmetic (MUL+), comparison, compound types
+                0xE0..=0xEF => 2,   // ABORTMSG, ASSERTMSG, reserved
+                0xF0..=0xF2 => 512, // SHA256, RIPEMD160, HASH160
+                0xF3 => 32768,      // CHECKSIG
                 _ => 1,
             };
             min_gas += cost;
             max_gas += cost;
             ip += 1;
+            // Skip operand bytes
+            if let Ok(opcode) = OpCode::try_from(op) {
+                match opcode {
+                    OpCode::PUSHDATA1 if ip < self.script.len() => {
+                        ip = ip
+                            .saturating_add(1 + self.script[ip] as usize)
+                            .min(self.script.len());
+                    }
+                    OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
+                        let len =
+                            u16::from_le_bytes([self.script[ip], self.script[ip + 1]]) as usize;
+                        ip = ip.saturating_add(2 + len).min(self.script.len());
+                    }
+                    OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
+                        let len = u32::from_le_bytes([
+                            self.script[ip],
+                            self.script[ip + 1],
+                            self.script[ip + 2],
+                            self.script[ip + 3],
+                        ]) as usize;
+                        ip = ip
+                            .saturating_add(4)
+                            .saturating_add(len)
+                            .min(self.script.len());
+                    }
+                    _ => ip += opcode.operand_size(),
+                }
+            }
         }
 
         // Account for potential loops (rough estimate)
@@ -976,28 +1029,22 @@ mod tests {
 
     #[test]
     fn test_should_error_on_fallback_for_crypto_modes() {
-        assert!(should_error_on_fallback(
-            ProofMode::Sp1,
-            ProofMode::Mock,
-            true,
-            false,
-        ));
+        // Sp1 requested, Mock produced, fallback not allowed → error
         assert!(should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
             false,
-            false,
         ));
+        // Sp1 requested, Mock produced, fallback allowed → no error
         assert!(!should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
             true,
-            true,
         ));
+        // Mock requested, Mock produced → no error (modes match)
         assert!(!should_error_on_fallback(
             ProofMode::Mock,
             ProofMode::Mock,
-            true,
             false,
         ));
     }

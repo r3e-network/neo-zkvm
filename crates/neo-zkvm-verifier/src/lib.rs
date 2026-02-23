@@ -31,36 +31,48 @@ use neo_vm_guest::{
 use neo_zkvm_prover::{NeoProver, NEO_ZKVM_ELF};
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues};
 
-/// Verification result
+/// Verification result returned by detailed verification functions.
 #[derive(Debug, Clone)]
 pub struct VerificationResult {
+    /// Whether the proof passed all verification checks.
     pub valid: bool,
+    /// Human-readable error description on failure, `None` on success.
     pub error: Option<String>,
+    /// The proof type detected during verification.
     pub proof_type: ProofType,
 }
 
-/// Proof type detected during verification
+/// Proof type detected during verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProofType {
+    /// No cryptographic proof (execute-only mode).
     Empty,
+    /// Mock proof for testing (not cryptographically secure).
     Mock,
+    /// SP1 compressed proof.
     Sp1Compressed,
+    /// SP1 PLONK proof.
     Sp1Plonk,
+    /// SP1 Groth16 proof.
     Sp1Groth16,
+    /// Unrecognized proof type.
     Unknown,
 }
 
 /// Verify a Neo zkVM proof (simple interface)
+#[must_use]
 pub fn verify(proof: &NeoProof) -> bool {
     verify_detailed(proof).valid
 }
 
 /// Verify a proof and require an expected proof mode.
+#[must_use]
 pub fn verify_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> bool {
     verify_detailed_for_mode(proof, expected_mode).valid
 }
 
 /// Verify with detailed result
+#[must_use]
 pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
         return VerificationResult {
@@ -128,6 +140,16 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
             }
         }
         ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
+            if proof.output.state != 0 {
+                return VerificationResult {
+                    valid: false,
+                    error: Some(format!(
+                        "Execution fault: VM exited with state {} (expected 0/Halt)",
+                        proof.output.state
+                    )),
+                    proof_type: expected_proof_type(proof.proof_mode),
+                };
+            }
             let expected_type = match proof.proof_mode {
                 ProofMode::Sp1 => ProofType::Sp1Compressed,
                 ProofMode::Plonk => ProofType::Sp1Plonk,
@@ -154,6 +176,7 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
 }
 
 /// Verify with detailed result and require an expected proof mode.
+#[must_use]
 pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> VerificationResult {
     if proof.proof_mode != expected_mode {
         return VerificationResult {
@@ -170,6 +193,7 @@ pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> V
 }
 
 /// Verify a proof with explicit vkey
+#[must_use]
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
         return false;
@@ -179,6 +203,9 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
     }
     if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
         return verify(proof);
+    }
+    if proof.output.state != 0 {
+        return false;
     }
     if verify_claimed_vkey_hash(&proof.vkey_hash, vkey).is_err() {
         return false;
@@ -201,6 +228,7 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
 }
 
 /// Verify a proof with explicit vkey and require an expected proof mode.
+#[must_use]
 pub fn verify_with_vkey_for_mode(
     proof: &NeoProof,
     expected_mode: ProofMode,

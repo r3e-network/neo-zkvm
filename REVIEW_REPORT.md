@@ -1,7 +1,9 @@
+> **⚠️ SUPERSEDED** — This is a historical snapshot from 2026-01-31. See [`PRODUCTION_READINESS_REPORT.md`](PRODUCTION_READINESS_REPORT.md) for the current authoritative review.
+
 # Neo zkVM Comprehensive Review Report
 
-**Date:** 2026-01-31  
-**Reviewer:** Code Review Agent  
+**Date:** 2026-01-31
+**Reviewer:** Code Review Agent
 **Scope:** Complete codebase review for production readiness
 
 ---
@@ -81,12 +83,14 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 
 **Issue:** The `neo-zkvm-program` (SP1 guest) duplicates VM implementation from `neo-vm-core`.
 
-**Impact:** 
+**Impact:**
+
 - Maintenance burden (changes must be synced)
 - Risk of behavior divergence
 - Larger attack surface
 
-**Recommendation:** 
+**Recommendation:**
+
 - Extract common VM logic into a shared crate
 - Use conditional compilation for zkVM-specific parts
 - Or use the guest program only for SP1 and share core types
@@ -96,28 +100,33 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 **Issue:** `StackItem` uses `bincode` for serialization which may not be stable across versions.
 
 **Recommendation:**
+
 - Consider using a more stable format like Protocol Buffers
 - Or pin bincode version strictly
 
 ### 3. **Missing Opcode Implementations** ⚠️
 
 **Issue:** Some opcodes are documented but not fully implemented:
+
 - `PACK`, `UNPACK` - partially implemented
 - `TRY`, `CATCH`, `FINALLY` - not implemented
 - String operations (`CAT`, `SUBSTR`, etc.) - not implemented
 
 **Recommendation:**
+
 - Document which opcodes are fully/partially/not implemented
 - Add `unimplemented!()` macros with clear messages
 
 ### 4. **Debugger Limitations** ⚠️
 
 **Issue:** Interactive debugger lacks:
+
 - Memory inspection for slots
 - Step-over vs step-into distinction
 - Watchpoints for variable changes
 
 **Recommendation:**
+
 - Add slot inspection commands
 - Implement step-over (skip CALL)
 
@@ -126,6 +135,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 **Issue:** Gas costs in `engine.rs` (GAS_COSTS table) and CLI inspector may diverge.
 
 **Recommendation:**
+
 - Share gas cost constants between crates
 - Single source of truth for opcode costs
 
@@ -134,6 +144,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 **Issue:** No version field in proof format for future compatibility.
 
 **Recommendation:**
+
 - Add version field to `NeoProof` struct
 - Implement migration path for old proofs
 
@@ -142,6 +153,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 ## Production Readiness Checklist
 
 ### Core Functionality
+
 - [x] VM executes Neo N3 scripts correctly
 - [x] Gas metering prevents abuse
 - [x] Error handling is comprehensive
@@ -151,6 +163,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 - [x] Storage with Merkle proofs works
 
 ### Security
+
 - [x] Gas limits prevent infinite loops
 - [x] Stack depth limits prevent exhaustion
 - [x] Input size limits on all operations
@@ -158,6 +171,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 - [x] Proper error handling for all failure modes
 
 ### Testing
+
 - [x] Unit tests for all major components
 - [x] Integration tests for proof generation/verification
 - [x] Boundary tests for edge cases
@@ -165,6 +179,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 - [x] 282 tests passing
 
 ### Documentation
+
 - [x] README with quick start
 - [x] Architecture documentation
 - [x] API reference
@@ -173,6 +188,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 - [x] Code examples
 
 ### Tooling
+
 - [x] Assembler with labels and macros
 - [x] Disassembler with jump resolution
 - [x] Interactive debugger
@@ -180,6 +196,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 - [x] CLI with all commands
 
 ### CI/CD
+
 - [x] GitHub Actions workflow
 - [x] Format checking
 - [x] Clippy linting
@@ -231,6 +248,7 @@ The Neo zkVM project is a well-structured implementation of a Neo N3-compatible 
 The Neo zkVM project is **well-architected, thoroughly tested, and professionally developed**. The codebase is suitable for production use with the noted recommendations implemented.
 
 **Key Strengths:**
+
 - Clean, modular architecture
 - Comprehensive test coverage
 - Professional developer tooling
@@ -238,6 +256,7 @@ The Neo zkVM project is **well-architected, thoroughly tested, and professionall
 - Security-conscious design
 
 **Areas for Improvement:**
+
 - Code duplication between core and guest
 - Missing some advanced opcode implementations
 - Proof format needs versioning

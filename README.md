@@ -26,6 +26,8 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 ├───────────────────┼─────────────────────────────────────┤
 │  neo-zkvm-verifier│ Cryptographic proof verification    │
 ├───────────────────┼─────────────────────────────────────┤
+│  neo-vm-guest     │ Shared proof types & serialization  │
+├───────────────────┼─────────────────────────────────────┤
 │  neo-zkvm-program │ SP1 guest program (zkVM execution)  │
 ├───────────────────┼─────────────────────────────────────┤
 │  neo-vm-core      │ VM engine, storage, native contracts│
@@ -90,7 +92,7 @@ neo-zkvm-verifier = "0.2"
 use neo_vm_core::{NeoVM, VMState, StackItem};
 
 let mut vm = NeoVM::new(1_000_000);
-vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]); // 2 + 3
+vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap(); // 2 + 3
 
 while !matches!(vm.state, VMState::Halt | VMState::Fault) {
     vm.execute_next().unwrap();
@@ -118,7 +120,7 @@ let input = ProofInput {
 };
 
 let proof = prover.prove(input);
-assert!(prover.verify(&proof));
+assert!(verify(&proof));
 ```
 
 ### Use Storage
@@ -129,7 +131,7 @@ use neo_vm_core::{TrackedStorage, StorageContext, StorageBackend};
 let mut storage = TrackedStorage::new();
 let ctx = StorageContext::default();
 
-storage.put(&ctx, b"key", b"value");
+storage.put(&ctx, b"key", b"value").unwrap();
 assert_eq!(storage.get(&ctx, b"key"), Some(b"value".to_vec()));
 
 // Get Merkle root for ZK proof
@@ -138,15 +140,15 @@ let root = storage.merkle_root();
 
 ## Supported Opcodes
 
-| Category | Count | Examples |
-|----------|-------|----------|
-| Constants | 25+ | PUSH0-16, PUSHDATA1-4, PUSHINT* |
-| Flow Control | 20+ | JMP, JMPIF, CALL, RET, ASSERT |
-| Stack | 15+ | DUP, SWAP, ROT, PICK, ROLL |
-| Arithmetic | 20+ | ADD, SUB, MUL, DIV, MOD, POW |
-| Bitwise | 10+ | AND, OR, XOR, SHL, SHR |
-| Compound | 15+ | PACK, NEWARRAY, PICKITEM |
-| Slots | 20+ | LDLOC, STLOC, LDARG, STARG |
+| Category     | Count | Examples                         |
+| ------------ | ----- | -------------------------------- |
+| Constants    | 25+   | PUSH0-16, PUSHDATA1-4, PUSHINT\* |
+| Flow Control | 20+   | JMP, JMPIF, CALL, RET, ASSERT    |
+| Stack        | 15+   | DUP, SWAP, ROT, PICK, ROLL       |
+| Arithmetic   | 20+   | ADD, SUB, MUL, DIV, MOD, POW     |
+| Bitwise      | 10+   | AND, OR, XOR, SHL, SHR           |
+| Compound     | 15+   | PACK, NEWARRAY, PICKITEM         |
+| Slots        | 20+   | LDLOC, STLOC, LDARG, STARG       |
 
 ## Benchmarks
 

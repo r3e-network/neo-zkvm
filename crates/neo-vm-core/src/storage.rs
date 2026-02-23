@@ -6,9 +6,10 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-/// Storage operation errors
+/// Storage operation errors.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum StorageError {
+    /// Attempted to write to a read-only storage context.
     #[error("Storage is read-only")]
     ReadOnly,
 }
@@ -22,16 +23,20 @@ pub struct StorageContext {
     pub read_only: bool,
 }
 
-/// Storage backend trait
+/// Storage backend trait.
 pub trait StorageBackend {
+    /// Read the value associated with `key`, or `None` if absent.
     fn get(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>>;
+    /// Write `value` under `key`. Fails if the context is read-only.
     fn put(
         &mut self,
         context: &StorageContext,
         key: &[u8],
         value: &[u8],
     ) -> Result<(), StorageError>;
+    /// Remove `key` from storage. Fails if the context is read-only.
     fn delete(&mut self, context: &StorageContext, key: &[u8]) -> Result<(), StorageError>;
+    /// Return all key-value pairs whose keys start with `prefix`.
     fn find(&self, context: &StorageContext, prefix: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)>;
 }
 
@@ -42,7 +47,9 @@ pub struct MemoryStorage {
 }
 
 impl MemoryStorage {
+    /// Create an empty in-memory storage.
     #[inline]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -56,6 +63,7 @@ impl MemoryStorage {
 
     /// Compute Merkle root of storage
     #[inline]
+    #[must_use]
     pub fn merkle_root(&self) -> [u8; 32] {
         if self.data.is_empty() {
             return [0u8; 32];
@@ -63,7 +71,7 @@ impl MemoryStorage {
 
         // Collect and sort leaves by key for deterministic Merkle root
         // This ensures cross-platform/environment determinism
-        let mut leaves: Vec<[u8; 32]> = self
+        let leaves: Vec<[u8; 32]> = self
             .data
             .iter()
             .map(|(k, v)| {
@@ -73,9 +81,6 @@ impl MemoryStorage {
                 hasher.finalize().into()
             })
             .collect();
-
-        // Sort leaves to ensure deterministic ordering
-        leaves.sort();
 
         Self::compute_merkle_root(&leaves)
     }
@@ -162,15 +167,26 @@ pub struct MerklePathNode {
 /// Storage proof for ZK verification
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StorageProof {
+    /// Storage key being proved.
     pub key: Vec<u8>,
+    /// Value at the key, or `None` for absence proofs.
     pub value: Option<Vec<u8>>,
+    /// Sibling hashes from leaf to root.
     pub merkle_path: Vec<MerklePathNode>,
+    /// Expected Merkle root this proof was generated against.
     pub root: [u8; 32],
 }
 
 impl StorageProof {
+    /// Maximum merkle path depth (supports up to 2^64 leaves)
+    const MAX_MERKLE_DEPTH: usize = 64;
+
     /// Verify a storage proof against a given root
+    #[must_use]
     pub fn verify(&self, expected_root: [u8; 32]) -> bool {
+        if self.merkle_path.len() > Self::MAX_MERKLE_DEPTH {
+            return false;
+        }
         // Compute leaf hash from key and value
         let leaf = if let Some(ref value) = self.value {
             let mut hasher = Sha256::new();
@@ -214,9 +230,13 @@ impl StorageProof {
 /// Storage change record
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StorageChange {
+    /// Contract that owns this storage entry.
     pub script_hash: [u8; 20],
+    /// Storage key that was modified.
     pub key: Vec<u8>,
+    /// Previous value, or `None` if the key was new.
     pub old_value: Option<Vec<u8>>,
+    /// Updated value, or `None` if the key was deleted.
     pub new_value: Option<Vec<u8>>,
 }
 
@@ -228,14 +248,20 @@ pub struct TrackedStorage {
 }
 
 impl TrackedStorage {
+    /// Create an empty tracked storage.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Return the recorded change log.
+    #[must_use]
     pub fn changes(&self) -> &[StorageChange] {
         &self.changes
     }
 
+    /// Compute the Merkle root of the underlying storage.
+    #[must_use]
     pub fn merkle_root(&self) -> [u8; 32] {
         self.inner.merkle_root()
     }

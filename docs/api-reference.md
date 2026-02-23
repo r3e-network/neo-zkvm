@@ -26,13 +26,15 @@ pub struct NeoVM {
     pub invocation_stack: Vec<ExecutionContext>,
     pub gas_consumed: u64,
     pub gas_limit: u64,
+    pub max_stack_depth: usize,
+    pub max_invocation_depth: usize,
     pub notifications: Vec<StackItem>,
     pub logs: Vec<String>,
     pub trace: ExecutionTrace,
     pub tracing_enabled: bool,
-    pub local_slots: Vec<StackItem>,
-    pub argument_slots: Vec<StackItem>,
-    pub static_slots: Vec<StackItem>,
+    pub storage: MemoryStorage,
+    pub storage_context: StorageContext,
+    pub native_registry: NativeRegistry,
 }
 ```
 
@@ -46,12 +48,12 @@ Create a new VM instance with the specified gas limit.
 let vm = NeoVM::new(1_000_000);
 ```
 
-##### `load_script(script: Vec<u8>)`
+##### `load_script(script: Vec<u8>) -> Result<(), VMError>`
 
 Load a script into the VM for execution.
 
 ```rust
-vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
+vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap();
 ```
 
 ##### `execute_next() -> Result<(), VMError>`
@@ -360,29 +362,23 @@ Configuration for the prover.
 ```rust
 pub struct ProverConfig {
     pub max_cycles: u64,
-    pub prove_mode: ProveMode,
-}
-
-impl Default for ProverConfig {
-    fn default() -> Self {
-        Self {
-            max_cycles: 1_000_000,
-            prove_mode: ProveMode::Mock,
-        }
-    }
+    pub proof_mode: ProofMode,
+    pub allow_mock_fallback: bool,
+    pub deterministic_mock_timestamp: Option<u64>,
 }
 ```
 
-### ProveMode
+### ProofMode
 
 Proving mode enumeration.
 
 ```rust
-pub enum ProveMode {
+pub enum ProofMode {
     Execute,    // No proof, execution only
     Mock,       // Simulated proof for testing
     Sp1,        // Real SP1 compressed proof
-    Sp1Plonk,   // SP1 PLONK proof for on-chain
+    Plonk,      // SP1 PLONK proof for on-chain
+    Groth16,    // SP1 Groth16 proof (smallest)
 }
 ```
 
@@ -465,6 +461,7 @@ pub enum ProofType {
     Mock,
     Sp1Compressed,
     Sp1Plonk,
+    Sp1Groth16,
     Unknown,
 }
 ```
@@ -478,42 +475,40 @@ Here's a complete example using all components:
 ```rust
 use neo_vm_core::{NeoVM, VMState, StackItem};
 use neo_vm_guest::ProofInput;
-use neo_zkvm_prover::{NeoProver, ProverConfig, ProveMode};
+use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
 use neo_zkvm_verifier::{verify, verify_detailed};
 
 fn main() {
     // 1. Create and test script locally
     let script = vec![0x12, 0x13, 0x9E, 0x40]; // 2 + 3
-    
+
     let mut vm = NeoVM::new(1_000_000);
-    vm.load_script(script.clone());
-    
+    vm.load_script(script.clone()).unwrap();
+
     while !matches!(vm.state, VMState::Halt | VMState::Fault) {
         vm.execute_next().unwrap();
     }
-    
+
     println!("Local result: {:?}", vm.eval_stack);
-    
+
     // 2. Generate proof
     let input = ProofInput {
         script,
         arguments: vec![],
         gas_limit: 1_000_000,
     };
-    
+
     let prover = NeoProver::new(ProverConfig {
-        prove_mode: ProveMode::Mock,
+        proof_mode: ProofMode::Mock,
         ..Default::default()
     });
-    
+
     let proof = prover.prove(input);
-    
+
     // 3. Verify proof
     let result = verify_detailed(&proof);
-    
+
     println!("Proof valid: {}", result.valid);
     println!("Gas consumed: {}", proof.public_inputs.gas_consumed);
 }
-```
-```
 ```

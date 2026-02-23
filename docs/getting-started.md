@@ -75,16 +75,16 @@ use neo_vm_core::{NeoVM, VMState, StackItem};
 fn main() {
     // Create a VM with 1 million gas limit
     let mut vm = NeoVM::new(1_000_000);
-    
+
     // Load a script: PUSH2, PUSH3, ADD, RET
     // This computes 2 + 3 = 5
-    vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
-    
+    vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap();
+
     // Execute until completion
     while !matches!(vm.state, VMState::Halt | VMState::Fault) {
         vm.execute_next().unwrap();
     }
-    
+
     // Check the result
     println!("State: {:?}", vm.state);
     println!("Gas consumed: {}", vm.gas_consumed);
@@ -157,20 +157,20 @@ fn main() {
         arguments: vec![],
         gas_limit: 1_000_000,
     };
-    
+
     // Create prover with mock mode (fast, for testing)
     let config = ProverConfig {
         proof_mode: ProofMode::Mock,
         ..Default::default()
     };
     let prover = NeoProver::new(config);
-    
+
     // Generate proof
     let proof = prover.prove(input);
-    
+
     // Verify the proof
     let is_valid = verify(&proof);
-    
+
     println!("Execution result: {:?}", proof.output.result);
     println!("Gas consumed: {}", proof.output.gas_consumed);
     println!("Proof valid: {}", is_valid);
@@ -219,24 +219,24 @@ use neo_vm_core::{MemoryStorage, StorageBackend, StorageContext, TrackedStorage}
 fn main() {
     // Create in-memory storage
     let mut storage = MemoryStorage::new();
-    
+
     // Create a storage context
     let ctx = StorageContext::default();
-    
+
     // Store a value
-    storage.put(&ctx, b"mykey", b"myvalue");
-    
+    storage.put(&ctx, b"mykey", b"myvalue").unwrap();
+
     // Retrieve the value
     let value = storage.get(&ctx, b"mykey");
     println!("Value: {:?}", value);
-    
+
     // Use tracked storage for change logging
     let mut tracked = TrackedStorage::new();
-    tracked.put(&ctx, b"key2", b"value2");
-    
+    tracked.put(&ctx, b"key2", b"value2").unwrap();
+
     // Get all changes
     println!("Changes: {:?}", tracked.changes());
-    
+
     // Compute Merkle root
     println!("Merkle root: {:?}", tracked.merkle_root());
 }
@@ -252,13 +252,13 @@ use neo_vm_core::{NativeContract, NativeRegistry, StdLib, CryptoLib, StackItem};
 fn main() {
     // Create registry with built-in contracts
     let registry = NativeRegistry::new();
-    
+
     // Use StdLib for serialization
     let stdlib = StdLib::new();
     let item = StackItem::Integer(42);
     let serialized = stdlib.invoke("serialize", vec![item]).unwrap();
     println!("Serialized: {:?}", serialized);
-    
+
     // Use CryptoLib for hashing
     let cryptolib = CryptoLib::new();
     let data = StackItem::ByteString(b"Hello, Neo!".to_vec());
@@ -291,7 +291,7 @@ JMPLE end   ; if n <= 0, exit
 ; Calculate next Fibonacci
 DEC         ; n = n - 1
 ROT         ; bring a to top
-ROT         ; bring b to top  
+ROT         ; bring b to top
 OVER        ; copy a
 ADD         ; new_b = a + b
 SWAP        ; swap to get (new_a=old_b, new_b)
@@ -308,12 +308,12 @@ RET         ; return b (the result)
 
 Neo zkVM supports different proving modes for various use cases:
 
-| Mode | Speed | Use Case |
-|------|-------|----------|
-| `Execute` | Instant | Development, debugging |
-| `Mock` | Fast | Testing, CI/CD |
-| `Sp1` | Slow | Off-chain verification |
-| `Plonk` | Slowest | On-chain verification (Ethereum) |
+| Mode      | Speed   | Use Case                               |
+| --------- | ------- | -------------------------------------- |
+| `Execute` | Instant | Development, debugging                 |
+| `Mock`    | Fast    | Testing, CI/CD                         |
+| `Sp1`     | Slow    | Off-chain verification                 |
+| `Plonk`   | Slowest | On-chain verification (Ethereum)       |
 | `Groth16` | Slowest | On-chain verification (smallest proof) |
 
 ```rust
@@ -347,20 +347,20 @@ use neo_vm_core::{NeoVM, VMState};
 
 fn main() {
     let mut vm = NeoVM::new(1_000_000);
-    
+
     // Enable tracing before execution
     vm.enable_tracing();
-    
-    vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]);
-    
+
+    vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap();
+
     while !matches!(vm.state, VMState::Halt | VMState::Fault) {
         vm.execute_next().unwrap();
     }
-    
+
     // Access the execution trace
     println!("Trace steps: {}", vm.trace.steps.len());
     for step in &vm.trace.steps {
-        println!("  IP: {}, Op: 0x{:02X}, Gas: {}", 
+        println!("  IP: {}, Op: 0x{:02X}, Gas: {}",
             step.ip, step.opcode, step.gas_consumed);
     }
 }
@@ -382,6 +382,7 @@ Now that you have the basics, explore these resources:
 ### Common Issues
 
 **Build fails with SP1 errors:**
+
 ```bash
 # Install/update SP1 toolchain
 curl -L https://sp1.succinct.xyz | bash
@@ -391,17 +392,20 @@ sp1up
 If you are evaluating SP1 v6 pre-releases, review **[SP1 v6 Migration Notes](sp1-v6-migration-notes.md)** first for additional prerequisites (for example `protoc` and target/toolchain alignment).
 
 **`cargo install neo-zkvm-cli` fails with `OUT_DIR does not have parent called "target"`:**
+
 ```bash
 CARGO_TARGET_DIR=/tmp/target cargo install neo-zkvm-cli
 ```
 
 **Out of gas error:**
+
 ```rust
 // Increase gas limit
 let mut vm = NeoVM::new(10_000_000);
 ```
 
 **Stack underflow:**
+
 - Check that you have enough values on the stack
 - Use `DEPTH` opcode to debug stack size
 

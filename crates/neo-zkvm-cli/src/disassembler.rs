@@ -71,20 +71,23 @@ impl<'a> Disassembler<'a> {
             0x0C => {
                 let len = self.read_u8(ip + 1) as usize;
                 let data = self.read_bytes(ip + 2, len);
-                (format!("PUSHDATA1 0x{}", hex::encode(&data)), 2 + len)
+                let size = 2usize.saturating_add(len).min(self.script.len() - ip);
+                (format!("PUSHDATA1 0x{}", hex::encode(&data)), size)
             }
             0x0D => {
                 let len = self.read_u16(ip + 1) as usize;
                 let data = self.read_bytes(ip + 3, len.min(32));
                 let suffix = if len > 32 { "..." } else { "" };
+                let size = 3usize.saturating_add(len).min(self.script.len() - ip);
                 (
                     format!("PUSHDATA2 0x{}{}", hex::encode(&data), suffix),
-                    3 + len,
+                    size,
                 )
             }
             0x0E => {
                 let len = self.read_u32(ip + 1) as usize;
-                (format!("PUSHDATA4 [{}B]", len), 5 + len)
+                let size = 5usize.saturating_add(len).min(self.script.len() - ip);
+                (format!("PUSHDATA4 [{}B]", len), size)
             }
             0x0F => ("PUSHM1".to_string(), 1),
             0x10 => ("PUSH0".to_string(), 1),
@@ -408,6 +411,7 @@ impl<'a> Disassembler<'a> {
                 let t = self.read_u8(ip + 1);
                 (format!("ISTYPE {}", self.type_name(t)), 2)
             }
+            0xDA => ("TYPE".to_string(), 1),
             0xDB => {
                 let t = self.read_u8(ip + 1);
                 (format!("CONVERT {}", self.type_name(t)), 2)

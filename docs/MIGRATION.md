@@ -9,12 +9,14 @@ This guide outlines breaking changes and migration steps for upgrading from neo-
 ### 1. `load_script` API Change
 
 **Before (v0.1.0):**
+
 ```rust
 let mut vm = NeoVM::new(1_000_000);
 vm.load_script(script); // Returns ()
 ```
 
 **After (v0.2.0):**
+
 ```rust
 let mut vm = NeoVM::new(1_000_000);
 vm.load_script(script)?; // Returns Result<(), VMError>
@@ -22,6 +24,7 @@ vm.load_script(script)?; // Returns Result<(), VMError>
 
 **Migration:**
 Add error handling for script loading failures:
+
 ```rust
 if let Err(e) = vm.load_script(script) {
     eprintln!("Failed to load script: {}", e);
@@ -32,11 +35,13 @@ if let Err(e) = vm.load_script(script) {
 ### 2. `VMError` Enum Changes
 
 **New error variants:**
+
 - `VMError::StackOverflow` - Stack depth exceeded maximum
 - `VMError::InvalidScript` - Script validation failed
 
 **Migration:**
 Update pattern matching to handle new variants:
+
 ```rust
 match vm.load_script(script) {
     Ok(()) => { /* success */ }
@@ -51,6 +56,7 @@ Maximum script size is now 1MB. Scripts exceeding this limit will return `VMErro
 
 **Migration:**
 Validate script size before loading:
+
 ```rust
 if script.len() > 1024 * 1024 {
     return Err("Script too large".into());
@@ -61,6 +67,7 @@ vm.load_script(script)?;
 ### 4. `ProofOutput` Structure
 
 **New field:**
+
 ```rust
 pub struct ProofOutput {
     pub state: u8,
@@ -72,6 +79,7 @@ pub struct ProofOutput {
 
 **Migration:**
 Access error information when needed:
+
 ```rust
 let output = execute(input);
 if let Some(err) = &output.error {
@@ -94,23 +102,29 @@ Safe to share across threads with proper synchronization.
 ### 1. SP1 zkVM Integration
 
 Build the guest program to enable full proof generation:
+
 ```bash
 cargo build --package neo-zkvm-program --release
 ```
 
-### 2. Opcode Handler Pattern
+### 2. Stack and Invocation Depth Limits
 
-New handler-based architecture for opcode implementation:
+Configurable depth limits protect against resource exhaustion:
+
 ```rust
-use neo_vm_core::engine::handlers::{OpHandler, arithmetic_handlers::AddHandler};
+use neo_vm_core::NeoVM;
 
-let handler = AddHandler;
-handler.handle(&mut vm, &mut ctx)?;
+// Default limits (stack: 2048, invocation: 1024)
+let vm = NeoVM::new(1_000_000);
+
+// Custom limits
+let vm = NeoVM::with_limits(1_000_000, 4096, 2048);
 ```
 
 ### 3. Enhanced CI/CD
 
 New security and coverage checks:
+
 ```bash
 cargo deny check advisories  # Security audit
 cargo tarpaulin --out Xml    # Code coverage
@@ -129,6 +143,7 @@ None in this release.
 ## Testing Recommendations
 
 Run comprehensive tests after migration:
+
 ```bash
 cargo test --all
 cargo clippy --all -- -D warnings

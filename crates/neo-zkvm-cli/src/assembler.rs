@@ -935,6 +935,7 @@ impl Assembler {
                 let type_id = self.parse_u8(operands, line_num)?;
                 bytecode.push(type_id);
             }
+            "TYPE" => bytecode.push(0xDA),
             "CONVERT" => {
                 bytecode.push(0xDB);
                 let type_id = self.parse_u8(operands, line_num)?;
@@ -1057,7 +1058,7 @@ impl Assembler {
         !unsigned.is_empty() && unsigned.chars().all(|c| c.is_ascii_digit())
     }
 
-    fn resolve_labels(&self, bytecode: &mut Vec<u8>) -> Result<(), String> {
+    fn resolve_labels(&self, bytecode: &mut [u8]) -> Result<(), String> {
         for pending in &self.pending_labels {
             let target = self.labels.get(&pending.label).ok_or_else(|| {
                 AssemblerError::UndefinedLabel(pending.label.clone(), pending.line_num).to_string()

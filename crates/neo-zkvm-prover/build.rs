@@ -85,6 +85,7 @@ fn main() {
     let has_sp1 = has_sp1_toolchain();
     println!("cargo:rerun-if-env-changed=SP1_FORCE_DUMMY");
     println!("cargo:rerun-if-env-changed=SP1_TOOLCHAIN_AVAILABLE");
+    println!("cargo:rerun-if-env-changed=NEO_ZKVM_PROGRAM_DIR");
 
     if has_sp1 {
         let is_clippy_invocation = std::env::var("RUSTC_WORKSPACE_WRAPPER")
@@ -146,7 +147,6 @@ fn main() {
                 "cargo:rerun-if-changed={}",
                 program_dir.join("Cargo.toml").display()
             );
-            println!("cargo:rerun-if-env-changed=NEO_ZKVM_PROGRAM_DIR");
         } else {
             println!(
                 "cargo:warning=SP1 toolchain found but neo-zkvm-program source is unavailable; using dummy ELF"

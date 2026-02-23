@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED** — This is a historical summary. See [`docs/SP1_REFACTOR.md`](docs/SP1_REFACTOR.md) for the comprehensive SP1 integration documentation.
+
 # SP1 Refactoring Summary
 
 This document summarizes the changes made to refactor Neo zkVM for proper SP1 integration.
@@ -21,11 +23,13 @@ if has_sp1 {
 ### 2. ELF Embedding (`crates/neo-zkvm-prover/src/lib.rs`)
 
 **Before:** Static empty slice
+
 ```rust
 pub const NEO_ZKVM_ELF: &[u8] = &[];
 ```
 
 **After:** Dynamic embedding with fallback
+
 ```rust
 pub const NEO_ZKVM_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/elf/..."));
 ```
@@ -167,8 +171,9 @@ let prover = NeoProver::new(ProverConfig {
 ## Test Results
 
 All tests pass:
+
 - ✅ neo-vm-core: 282 tests
-- ✅ neo-zkvm-prover: 2 tests  
+- ✅ neo-zkvm-prover: 2 tests
 - ✅ neo-zkvm-verifier: 3 tests
 - ✅ neo-zkvm-program: 2 tests
 - ✅ Doc tests: 5 tests
@@ -178,12 +183,14 @@ All tests pass:
 To fully utilize SP1:
 
 1. **Install SP1 toolchain:**
+
    ```bash
    curl -L https://sp1.succinct.xyz | bash
    sp1up
    ```
 
 2. **Set environment variables:**
+
    ```bash
    export SP1_PROVER=network  # or local
    ```
@@ -196,8 +203,9 @@ To fully utilize SP1:
 ## Performance Improvements
 
 With SP1 precompiles:
+
 - SHA256: ~100x faster
-- Keccak256: ~100x faster  
+- Keccak256: ~100x faster
 - Ed25519 verify: ~10x faster
 - Secp256k1 verify: ~10x faster
 

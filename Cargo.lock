@@ -2184,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "base64",
  "bincode",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "neo-vm-guest"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "neo-vm-core",
@@ -2210,9 +2210,8 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
- "anyhow",
  "hex",
  "neo-vm-core",
  "neo-vm-guest",
@@ -2222,9 +2221,8 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-examples"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
- "hex",
  "neo-vm-core",
  "neo-vm-guest",
  "neo-zkvm-prover",
@@ -2233,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-program"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "neo-vm-guest",
@@ -2245,25 +2243,23 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-prover"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "neo-vm-core",
  "neo-vm-guest",
- "serde",
  "sp1-build",
  "sp1-sdk",
 ]
 
 [[package]]
 name = "neo-zkvm-verifier"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bincode",
  "neo-vm-core",
  "neo-vm-guest",
  "neo-zkvm-prover",
- "serde",
  "sp1-sdk",
 ]
 

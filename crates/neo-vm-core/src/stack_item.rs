@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Stack item types in Neo VM (simplified for zkVM)
+/// Stack item types in Neo VM (simplified for zkVM).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(missing_docs)]
 pub enum StackItem {
     Null,
     Boolean(bool),
@@ -18,7 +19,9 @@ pub enum StackItem {
 }
 
 impl StackItem {
+    /// Convert this item to a boolean following Neo N3 truthiness rules.
     #[inline]
+    #[must_use]
     pub fn to_bool(&self) -> bool {
         match self {
             StackItem::Null => false,
@@ -31,11 +34,45 @@ impl StackItem {
         }
     }
 
+    /// Convert to integer following Neo N3 semantics.
+    ///
+    /// - `Integer` → value directly
+    /// - `Boolean` → 0 or 1
+    /// - `ByteString`/`Buffer` → little-endian two's complement (up to 16 bytes)
     #[inline]
+    #[must_use]
     pub fn to_integer(&self) -> Option<i128> {
         match self {
             StackItem::Integer(i) => Some(*i),
             StackItem::Boolean(b) => Some(*b as i128),
+            StackItem::ByteString(b) | StackItem::Buffer(b) => {
+                if b.is_empty() {
+                    return Some(0);
+                }
+                if b.len() > 16 {
+                    return None;
+                }
+                // Neo N3: little-endian two's complement
+                let mut padded = [0u8; 16];
+                let sign_extend = if b[b.len() - 1] & 0x80 != 0 {
+                    0xFF
+                } else {
+                    0x00
+                };
+                padded.iter_mut().for_each(|p| *p = sign_extend);
+                padded[..b.len()].copy_from_slice(b);
+                Some(i128::from_le_bytes(padded))
+            }
+            _ => None,
+        }
+    }
+
+    /// Extract byte content from ByteString or Buffer variants.
+    #[inline]
+    #[must_use]
+    pub fn to_bytes(&self) -> Option<&[u8]> {
+        match self {
+            StackItem::ByteString(b) | StackItem::Buffer(b) => Some(b),
             _ => None,
         }
     }
