@@ -62,8 +62,25 @@ neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 
 ```bash
 # Run full production-readiness gates locally
+# Requires: cargo install cargo-deny
+# Requires SP1 toolchain/guest build support for the release proof step
 ./scripts/verify-production.sh
+
+# Validate release notes/version metadata only
+./scripts/verify-release-metadata.sh
+
+# Validate crates.io package assembly only
+./scripts/verify-packaging.sh
+
+# Print the full release plan without tagging or publishing
+./scripts/release.sh --plan
+
+# Print the crates.io publish order without publishing
+./scripts/publish-crates.sh --plan
 ```
+
+A manual GitHub Actions release workflow is also available via `Actions -> Release -> Run workflow`
+with `plan` or `verify` mode for remote operator runs.
 
 ## Installation
 
@@ -105,7 +122,7 @@ assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
 
 ```rust
 use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
-use neo_zkvm_verifier::verify;
+use neo_zkvm_verifier::verify_for_mode;
 use neo_vm_guest::ProofInput;
 
 let prover = NeoProver::new(ProverConfig {
@@ -120,7 +137,7 @@ let input = ProofInput {
 };
 
 let proof = prover.prove(input);
-assert!(verify(&proof));
+assert!(verify_for_mode(&proof, ProofMode::Mock));
 ```
 
 ### Use Storage
@@ -170,6 +187,12 @@ loop/1000           time: [8.2 µs 8.5 µs 8.8 µs]
 - [Production Readiness Report](PRODUCTION_READINESS_REPORT.md)
 - [SP1 v6 Migration Notes](docs/sp1-v6-migration-notes.md)
 - [Examples](examples/)
+
+### Use Cases Included in Examples
+- **zk_dao_voting**: Anonymous DAO voting logic proving validity without revealing vote choices.
+- **zk_dex_rollup**: Zero-cost Layer 2 order matching proving thousands of transactions in a single verified root.
+- **zk_preimage**: Hash preimage proof demonstrating secret password handling.
+- **zk_scaling**: Complex algorithm scaling loop via Off-chain Computation.
 
 ## License
 

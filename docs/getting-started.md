@@ -8,7 +8,8 @@ Before you begin, ensure you have the following installed:
 
 - **Rust** (1.75 or later) - [Install Rust](https://rustup.rs/)
 - **Git** - For cloning the repository
-- **SP1** (optional) - For real proof generation
+- **cargo-deny** - Required for `./scripts/verify-production.sh`
+- **SP1** - Required for real proof generation and the full `./scripts/verify-production.sh` gate
 
 ### Check Your Environment
 
@@ -148,7 +149,7 @@ The real power of Neo zkVM is generating zero-knowledge proofs of execution.
 use neo_vm_core::StackItem;
 use neo_vm_guest::ProofInput;
 use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
-use neo_zkvm_verifier::verify;
+use neo_zkvm_verifier::verify_for_mode;
 
 fn main() {
     // Prepare the input
@@ -169,7 +170,7 @@ fn main() {
     let proof = prover.prove(input);
 
     // Verify the proof
-    let is_valid = verify(&proof);
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
 
     println!("Execution result: {:?}", proof.output.result);
     println!("Gas consumed: {}", proof.output.gas_consumed);
@@ -267,41 +268,61 @@ fn main() {
 }
 ```
 
-## Example: Fibonacci Calculator
+## Example: Anonymous DAO Voting
 
-Here's a more complex example that calculates Fibonacci numbers.
+Here is a more practical, real-world example demonstrating how to validate a private user's vote off-chain.
 
-Create `fibonacci.neoasm`:
+Create `vote_validation.neoasm`:
 
 ```asm
-; Calculate Fibonacci(10)
-; Result: 55
+; Validate if a private vote choice is exactly '1' or '2'
+; If Valid, Returns 1. If Invalid, Returns 0.
 
-PUSH10      ; n = 10
-PUSH0       ; a = 0
-PUSH1       ; b = 1
+DUP         ; Duplicate the vote for the first check
+PUSH1       ; Push 1
+NUMEQUAL    ; Check if vote == 1
+JMPIF 10    ; If yes, jump forward 10 bytes to the success block
 
-; Loop: while n > 0
-:loop
-ROT         ; bring n to top
-DUP         ; duplicate n
-PUSH0       ; push 0
-JMPLE end   ; if n <= 0, exit
+DUP         ; Duplicate the vote for the second check
+PUSH2       ; Push 2
+NUMEQUAL    ; Check if vote == 2
+JMPIF 5     ; If yes, jump forward 5 bytes to the success block
 
-; Calculate next Fibonacci
-DEC         ; n = n - 1
-ROT         ; bring a to top
-ROT         ; bring b to top
-OVER        ; copy a
-ADD         ; new_b = a + b
-SWAP        ; swap to get (new_a=old_b, new_b)
-ROT         ; put n back on top
-JMP loop    ; continue loop
+; Failure block (Not 1 or 2)
+DROP        ; Clean up the duplicated vote
+PUSH0       ; Return 0
+RET
 
-:end
-DROP        ; remove n
-DROP        ; remove a
-RET         ; return b (the result)
+; Success block
+DROP        ; Clean up the duplicated vote
+PUSH1       ; Return 1
+RET
+```
+
+To run this in Rust and generate the ZK Proof, the user only has to pass their vote secretly locally:
+
+```rust
+use neo_vm_core::StackItem;
+use neo_vm_guest::ProofInput;
+use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
+
+let config = ProverConfig {
+    proof_mode: ProofMode::Mock,
+    ..Default::default()
+};
+let prover = NeoProver::new(config);
+
+let secret_vote = 2; // User's private vote
+
+let proof = prover.prove(ProofInput {
+    // Bytecode assembled from vote_validation.neoasm
+    script: hex::decode("4a11b3240a4a12b32405451040451140").unwrap(),
+    arguments: vec![StackItem::Integer(secret_vote)],
+    gas_limit: 1_000_000,
+});
+
+// The blockchain smart contract verifies the proof, ensuring the vote is valid
+// without ever knowing whether the user picked candidate 1 or 2.
 ```
 
 ## Proof Modes

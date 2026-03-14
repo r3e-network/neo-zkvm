@@ -35,6 +35,22 @@ path = "src/private_inputs.rs"
 name = "tamper_resistance"
 path = "src/tamper_resistance.rs"
 
+[[bin]]
+name = "zk_preimage"
+path = "src/zk_preimage.rs"
+
+[[bin]]
+name = "zk_scaling"
+path = "src/zk_scaling.rs"
+
+[[bin]]
+name = "zk_dao_voting"
+path = "src/zk_dao_voting.rs"
+
+[[bin]]
+name = "zk_dex_rollup"
+path = "src/zk_dex_rollup.rs"
+
 [dependencies]
 neo-vm-core = { workspace = true }
 neo-vm-guest = { workspace = true }
