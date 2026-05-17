@@ -27,7 +27,7 @@ fn main() {
     let script = hex_decode(script_hex);
 
     let prover = NeoProver::new(ProverConfig {
-        proof_mode: ProofMode::Mock, 
+        proof_mode: ProofMode::Mock,
         ..Default::default()
     });
 
@@ -42,12 +42,18 @@ fn main() {
         gas_limit: 1_000_000,
     });
 
-    println!("[Prover] Vote ZK-Proof generated! Size: {} bytes", proof.proof_bytes.len());
-    
+    println!(
+        "[Prover] Vote ZK-Proof generated! Size: {} bytes",
+        proof.proof_bytes.len()
+    );
+
     println!("\n--- DAO Smart Contract (On-Chain) Side ---");
     let is_valid = verify_for_mode(&proof, proof.proof_mode);
-    println!("DAO verifies the proof... Is the vote mathematically valid? {}", is_valid);
-    
+    println!(
+        "DAO verifies the proof... Is the vote mathematically valid? {}",
+        is_valid
+    );
+
     let result = proof.output.result.as_ref().unwrap();
     if let StackItem::Integer(val) = result {
         println!("Execution Output: {}", val); // 1 = valid vote, 0 = invalid

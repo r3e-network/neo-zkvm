@@ -1,4 +1,4 @@
-use neo_vm_core::{StackItem, NeoVM, VMState};
+use neo_vm_core::{NeoVM, StackItem, VMState};
 use neo_vm_guest::ProofInput;
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
@@ -14,10 +14,10 @@ fn main() {
     println!("state root to L1. L1 users pay almost zero gas.\n");
 
     // A simulated "Batch order matching" script
-    // It takes 3 balances, adds them up (simulating calculating new state), 
+    // It takes 3 balances, adds them up (simulating calculating new state),
     // and returns the final L2 state root.
     // PUSH 100, PUSH 200, ADD, PUSH 50, ADD, RET -> 100 + 200 + 50 = 350
-    // Bytecode: 1c64 1cc800 9e 1c32 9e 40 
+    // Bytecode: 1c64 1cc800 9e 1c32 9e 40
     // Using PUSHINT8 for 100, 50 and PUSHINT16 for 200
     // 100 = 0x64
     // 200 = 0xc800
@@ -34,11 +34,14 @@ fn main() {
     let l1_gas_cost = normal_vm.gas_consumed;
 
     println!("[L1 Node] Traditional Execution Gas Cost: {}", l1_gas_cost);
-    println!("[L1 Node] Imagine running this for 10,000 trades... Gas: {}\n", l1_gas_cost * 10000);
+    println!(
+        "[L1 Node] Imagine running this for 10,000 trades... Gas: {}\n",
+        l1_gas_cost * 10000
+    );
 
     println!("--- Using the zkVM Sequencer ---");
     let prover = NeoProver::new(ProverConfig {
-        proof_mode: ProofMode::Mock, 
+        proof_mode: ProofMode::Mock,
         ..Default::default()
     });
 
@@ -50,11 +53,14 @@ fn main() {
     });
 
     println!("[Sequencer] Proof generated! Sequencer submits Proof to L1.");
-    
+
     println!("\n--- DEX Smart Contract (On-Chain) Side ---");
     let is_valid = verify_for_mode(&proof, proof.proof_mode);
-    println!("L1 verifies the succinct mathematical proof... Valid? {}", is_valid);
-    
+    println!(
+        "L1 verifies the succinct mathematical proof... Valid? {}",
+        is_valid
+    );
+
     let result = proof.output.result.as_ref().unwrap();
     if let StackItem::Integer(val) = result {
         println!("New DEX State Root (Total Liquidity): {}", val);

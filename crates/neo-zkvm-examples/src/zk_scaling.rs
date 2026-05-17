@@ -16,7 +16,7 @@ fn main() {
     let script = hex_decode(script_hex);
 
     let prover = NeoProver::new(ProverConfig {
-        proof_mode: ProofMode::Mock, 
+        proof_mode: ProofMode::Mock,
         ..Default::default()
     });
 
@@ -27,13 +27,19 @@ fn main() {
         gas_limit: 1_000_000,
     });
 
-    println!("[Prover] Proof generated! Size: {} bytes (Mock)", proof.proof_bytes.len());
-    println!("[Prover] Gas consumed off-chain: {}", proof.output.gas_consumed);
-    
+    println!(
+        "[Prover] Proof generated! Size: {} bytes (Mock)",
+        proof.proof_bytes.len()
+    );
+    println!(
+        "[Prover] Gas consumed off-chain: {}",
+        proof.output.gas_consumed
+    );
+
     println!("\n--- Verifier (On-Chain) Side ---");
     let is_valid = verify_for_mode(&proof, proof.proof_mode);
     println!("Verifier checks the proof... Valid? {}", is_valid);
-    
+
     let result = proof.output.result.as_ref().unwrap();
     if let StackItem::Integer(val) = result {
         println!("Verified Output: Sum = {}", val);
