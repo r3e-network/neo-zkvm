@@ -315,14 +315,22 @@ The CLI accepts scripts in multiple formats:
 | DEC         | 0x9D      | Decrement      |
 | LT/LE/GT/GE | 0xB5-0xB8 | Comparisons    |
 
-### Crypto (0xF0-0xF3)
+### Crypto System Calls
 
-| Opcode    | Hex  | Description            |
-| --------- | ---- | ---------------------- |
-| SHA256    | 0xF0 | SHA-256 hash           |
-| RIPEMD160 | 0xF1 | RIPEMD-160 hash        |
-| HASH160   | 0xF2 | SHA256 + RIPEMD160     |
-| CHECKSIG  | 0xF3 | Verify ECDSA signature |
+Neo N3 crypto operations are invoked through `SYSCALL` with canonical interop
+hashes. The assembler keeps `SHA256`, `RIPEMD160`, `HASH160`, and `CHECKSIG` as
+convenience aliases, but they emit `SYSCALL <interop-hash>` instead of private
+opcodes.
+
+| Alias     | Emitted Instruction               | Description            |
+| --------- | --------------------------------- | ---------------------- |
+| SHA256    | `SYSCALL System.Crypto.SHA256`    | SHA-256 hash           |
+| RIPEMD160 | `SYSCALL System.Crypto.RIPEMD160` | RIPEMD-160 hash        |
+| HASH160   | `SYSCALL System.Crypto.Hash160`   | SHA256 + RIPEMD160     |
+| CHECKSIG  | `SYSCALL System.Crypto.CheckSig`  | Verify ECDSA signature |
+
+`0xF1` is the canonical `THROWIFNOT` opcode. `0xF0`, `0xF2`, and `0xF3` are not
+crypto opcodes in the canonical VM profile.
 
 ## Exit Codes
 

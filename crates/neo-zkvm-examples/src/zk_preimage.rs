@@ -1,5 +1,4 @@
-use neo_vm_core::StackItem;
-use neo_vm_guest::ProofInput;
+use neo_vm_guest::{interop_hash, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
 
@@ -12,9 +11,11 @@ fn main() {
 
     let secret_password = b"my_super_secret_password".to_vec();
 
-    // In NeoVM, SHA256 is opcode 0xF0, RET is 0x40.
-    // The script expects the secret to be at the top of the stack.
-    let script = vec![0xF0, 0x40];
+    // Deterministic zkVM crypto is exposed through the syscall adapter so it
+    // does not consume canonical NeoVM opcode space.
+    let mut script = vec![0x41]; // SYSCALL
+    script.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
+    script.push(0x40); // RET
 
     let prover = NeoProver::new(ProverConfig {
         proof_mode: ProofMode::Mock, // Use Mock for fast demonstration

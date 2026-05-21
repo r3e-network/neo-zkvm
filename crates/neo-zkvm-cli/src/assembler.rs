@@ -9,6 +9,7 @@
 
 #![allow(dead_code)]
 
+use neo_vm_rs::interop_hash;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -327,6 +328,7 @@ impl Assembler {
                 | "ABORT"
                 | "ASSERT"
                 | "THROW"
+                | "THROWIFNOT"
                 | "DEPTH"
                 | "DROP"
                 | "NIP"
@@ -943,12 +945,14 @@ impl Assembler {
             }
             "ABORTMSG" => bytecode.push(0xE0),
             "ASSERTMSG" => bytecode.push(0xE1),
+            "THROWIFNOT" => bytecode.push(0xF1),
 
-            // Crypto
-            "SHA256" => bytecode.push(0xF0),
-            "RIPEMD160" => bytecode.push(0xF1),
-            "HASH160" => bytecode.push(0xF2),
-            "CHECKSIG" => bytecode.push(0xF3),
+            // Convenience syscall aliases. These are emitted as canonical
+            // SYSCALL instructions instead of private crypto opcodes.
+            "SHA256" => self.emit_named_syscall(bytecode, "System.Crypto.SHA256"),
+            "RIPEMD160" => self.emit_named_syscall(bytecode, "System.Crypto.RIPEMD160"),
+            "HASH160" => self.emit_named_syscall(bytecode, "System.Crypto.Hash160"),
+            "CHECKSIG" => self.emit_named_syscall(bytecode, "System.Crypto.CheckSig"),
 
             // Raw byte emission
             "DB" | ".BYTE" => {
@@ -964,6 +968,11 @@ impl Assembler {
         }
 
         Ok(())
+    }
+
+    fn emit_named_syscall(&self, bytecode: &mut Vec<u8>, name: &str) {
+        bytecode.push(0x41);
+        bytecode.extend_from_slice(&interop_hash(name).to_le_bytes());
     }
 
     fn emit_jump_offset(
@@ -1242,12 +1251,22 @@ impl Assembler {
 
         // Named syscalls
         match s.to_uppercase().as_str() {
-            "LOG" | "SYSTEM.RUNTIME.LOG" => return Ok(0x01),
-            "NOTIFY" | "SYSTEM.RUNTIME.NOTIFY" => return Ok(0x02),
-            "GETTIME" | "SYSTEM.RUNTIME.GETTIME" => return Ok(0x03),
-            "STORAGE.GET" | "SYSTEM.STORAGE.GET" => return Ok(0x10),
-            "STORAGE.PUT" | "SYSTEM.STORAGE.PUT" => return Ok(0x11),
-            "STORAGE.DELETE" | "SYSTEM.STORAGE.DELETE" => return Ok(0x12),
+            "LOG" => return Ok(interop_hash("System.Runtime.Log")),
+            "NOTIFY" => return Ok(interop_hash("System.Runtime.Notify")),
+            "GETTIME" => return Ok(interop_hash("System.Runtime.GetTime")),
+            "STORAGE.GET" => return Ok(interop_hash("System.Storage.Get")),
+            "STORAGE.PUT" => return Ok(interop_hash("System.Storage.Put")),
+            "STORAGE.DELETE" => return Ok(interop_hash("System.Storage.Delete")),
+            "SYSTEM.RUNTIME.LOG" => return Ok(interop_hash("System.Runtime.Log")),
+            "SYSTEM.RUNTIME.NOTIFY" => return Ok(interop_hash("System.Runtime.Notify")),
+            "SYSTEM.RUNTIME.GETTIME" => return Ok(interop_hash("System.Runtime.GetTime")),
+            "SYSTEM.STORAGE.GET" => return Ok(interop_hash("System.Storage.Get")),
+            "SYSTEM.STORAGE.PUT" => return Ok(interop_hash("System.Storage.Put")),
+            "SYSTEM.STORAGE.DELETE" => return Ok(interop_hash("System.Storage.Delete")),
+            "SYSTEM.CRYPTO.SHA256" => return Ok(interop_hash("System.Crypto.SHA256")),
+            "SYSTEM.CRYPTO.RIPEMD160" => return Ok(interop_hash("System.Crypto.RIPEMD160")),
+            "SYSTEM.CRYPTO.HASH160" => return Ok(interop_hash("System.Crypto.Hash160")),
+            "SYSTEM.CRYPTO.CHECKSIG" => return Ok(interop_hash("System.Crypto.CheckSig")),
             _ => {}
         }
 
@@ -1267,6 +1286,7 @@ impl Assembler {
 #[cfg(test)]
 mod tests {
     use super::Assembler;
+    use neo_vm_rs::interop_hash;
 
     #[test]
     fn test_pushint8_out_of_range_returns_error() {
@@ -1352,6 +1372,37 @@ mod tests {
         assert_eq!(&bytes[23..28], &[0x35, 0xFC, 0xFF, 0xFF, 0xFF]); // CALL_L -4
         assert_eq!(&bytes[28..31], &[0x37, 0x01, 0x02]); // CALLT 513
         assert_eq!(&bytes[31..33], &[0xE0, 0xE1]); // ABORTMSG, ASSERTMSG
+    }
+
+    #[test]
+    fn test_crypto_aliases_emit_canonical_syscalls() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler.assemble("SHA256").unwrap();
+
+        let mut expected = vec![0x41];
+        expected.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
+
+        assert_eq!(bytes, expected);
+        assert_ne!(bytes, vec![0xF0]);
+    }
+
+    #[test]
+    fn test_syscall_accepts_canonical_name() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler.assemble("SYSCALL System.Crypto.SHA256").unwrap();
+
+        let mut expected = vec![0x41];
+        expected.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
+
+        assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn test_throwifnot_is_canonical_opcode() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler.assemble("THROWIFNOT").unwrap();
+
+        assert_eq!(bytes, vec![0xF1]);
     }
 
     #[test]

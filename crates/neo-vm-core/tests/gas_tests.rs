@@ -2,7 +2,7 @@
 //!
 //! Tests gas metering and limits.
 
-use neo_vm_core::{NeoVM, StackItem, VMState};
+use neo_vm_core::{engine::syscall, NeoVM, StackItem, VMState};
 
 // Helper to run VM until completion
 fn run_vm(vm: &mut NeoVM) {
@@ -115,7 +115,11 @@ fn test_one_less_gas() {
 fn test_hash_ops_cost_more() {
     // Hash operations should cost more than arithmetic
     let mut vm_hash = NeoVM::new(1_000_000);
-    let _ = vm_hash.load_script(vec![0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0xF0, 0x40]); // PUSHDATA1 "hello", SHA256
+    let mut hash_script = vec![0x0C, 0x05, b'h', b'e', b'l', b'l', b'o'];
+    hash_script.push(0x41);
+    hash_script.extend_from_slice(&syscall::SYSTEM_CRYPTO_SHA256.to_le_bytes());
+    hash_script.push(0x40);
+    let _ = vm_hash.load_script(hash_script);
     run_vm(&mut vm_hash);
     let hash_gas = vm_hash.gas_consumed;
 

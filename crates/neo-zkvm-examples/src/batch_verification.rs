@@ -1,5 +1,4 @@
-use neo_vm_core::StackItem;
-use neo_vm_guest::ProofInput;
+use neo_vm_guest::{ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_detailed;
 
@@ -55,11 +54,7 @@ fn prove_jobs(prover: &NeoProver, jobs: &[BatchJob]) -> Vec<NeoProof> {
 }
 
 fn proof_result_integer(proof: &NeoProof) -> Option<i128> {
-    proof
-        .output
-        .result
-        .as_ref()
-        .and_then(|item| item.to_integer())
+    proof.output.result.as_ref().and_then(|item| item.to_i128())
 }
 
 fn verify_jobs(jobs: &[BatchJob], proofs: &[NeoProof]) -> BatchSummary {

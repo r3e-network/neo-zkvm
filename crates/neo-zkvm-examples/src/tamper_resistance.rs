@@ -1,5 +1,4 @@
-use neo_vm_core::StackItem;
-use neo_vm_guest::ProofInput;
+use neo_vm_guest::{ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_detailed;
 

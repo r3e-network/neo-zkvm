@@ -1,4 +1,4 @@
-# Neo zkVM
+﻿# Neo zkVM
 
 [![CI](https://github.com/r3e-network/neo-zkvm/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-zkvm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -7,31 +7,30 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 
 ## Features
 
-- 🔐 **Real ZK Proofs** - SP1 integration for production-grade proving
-- ⚡ **High Performance** - Optimized VM execution (~85ns per arithmetic op)
-- 🔄 **Neo N3 Compatible** - 100+ opcodes, full Neo VM compatibility
-- 💾 **Storage Support** - Merkle-proven key-value storage
-- 🏛️ **Native Contracts** - StdLib, CryptoLib built-in
-- 🛠️ **Developer Tools** - CLI with assembler, disassembler, debugger
+- ðŸ” **Real ZK Proofs** - SP1 integration for production-grade proving
+- Shared VM semantics - proof execution uses the canonical `neo-vm-rs` interpreter shared with Neo RISC-V VM
+- Neo N3 compatible - canonical NeoVM opcodes, stack values, and deterministic zk syscall adapters
+- ðŸ’¾ **Storage Support** - Merkle-proven key-value storage
+- ðŸ›ï¸ **Native Contracts** - StdLib, CryptoLib built-in
+- ðŸ› ï¸ **Developer Tools** - CLI with assembler, disassembler, debugger
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Neo zkVM Stack                        │
-├─────────────────────────────────────────────────────────┤
-│  neo-zkvm-cli     │ CLI tools (run, prove, asm, disasm) │
-├───────────────────┼─────────────────────────────────────┤
-│  neo-zkvm-prover  │ SP1 proof generation (PLONK/Groth16)│
-├───────────────────┼─────────────────────────────────────┤
-│  neo-zkvm-verifier│ Cryptographic proof verification    │
-├───────────────────┼─────────────────────────────────────┤
-│  neo-vm-guest     │ Shared proof types & serialization  │
-├───────────────────┼─────────────────────────────────────┤
-│  neo-zkvm-program │ SP1 guest program (zkVM execution)  │
-├───────────────────┼─────────────────────────────────────┤
-│  neo-vm-core      │ VM engine, storage, native contracts│
-└─────────────────────────────────────────────────────────┘
+```text
+neo-zkvm-cli
+  |-- run / prove / asm / disasm / debug
+  |
+  +--> neo-zkvm-prover -----> SP1 or mock proof generation
+  |          |
+  |          +--> neo-vm-guest -----> neo-vm-rs canonical interpreter
+  |                         |         shared StackValue / ExecutionResult
+  |                         +-------> deterministic zk syscall adapters
+  |
+  +--> neo-zkvm-verifier ---> proof policy and public-input checks
+
+neo-vm-core remains a compatibility/native-utility crate for storage,
+StdLib/CryptoLib helpers, and legacy debugger surfaces. It is not the proof
+execution engine.
 ```
 
 ## Quick Start
@@ -115,7 +114,7 @@ cargo build --release
 
 ```toml
 [dependencies]
-neo-vm-core = "0.2"
+neo-vm-guest = "0.2"
 neo-zkvm-prover = "0.2"
 neo-zkvm-verifier = "0.2"
 ```
@@ -125,16 +124,15 @@ neo-zkvm-verifier = "0.2"
 ### Execute Script
 
 ```rust
-use neo_vm_core::{NeoVM, VMState, StackItem};
+use neo_vm_guest::{execute, ProofInput, StackItem};
 
-let mut vm = NeoVM::new(1_000_000);
-vm.load_script(vec![0x12, 0x13, 0x9E, 0x40]).unwrap(); // 2 + 3
+let output = execute(ProofInput {
+    script: vec![0x12, 0x13, 0x9E, 0x40], // 2 + 3
+    arguments: vec![],
+    gas_limit: 1_000_000,
+});
 
-while !matches!(vm.state, VMState::Halt | VMState::Fault) {
-    vm.execute_next().unwrap();
-}
-
-assert_eq!(vm.eval_stack.pop(), Some(StackItem::Integer(5)));
+assert_eq!(output.result, Some(StackItem::Integer(5)));
 ```
 
 ### Generate & Verify Proof
@@ -192,7 +190,7 @@ let root = storage.merkle_root();
 arithmetic/add      time: [82.3 ns 85.1 ns 88.2 ns]
 arithmetic/mul      time: [84.7 ns 87.3 ns 90.1 ns]
 stack/dup           time: [45.2 ns 46.8 ns 48.5 ns]
-loop/1000           time: [8.2 µs 8.5 µs 8.8 µs]
+loop/1000           time: [8.2 Âµs 8.5 Âµs 8.8 Âµs]
 ```
 
 ## Documentation

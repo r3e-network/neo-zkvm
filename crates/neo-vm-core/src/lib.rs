@@ -64,14 +64,15 @@
 //! ## Example: Hash Computation
 //!
 //! ```rust
-//! use neo_vm_core::{NeoVM, VMState, StackItem};
+//! use neo_vm_core::{engine::syscall, NeoVM, VMState, StackItem};
 //!
 //! // Compute SHA256 of "hello"
-//! let script = vec![
+//! let mut script = vec![
 //!     0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', // PUSHDATA1 "hello"
-//!     0xF0, // SHA256
-//!     0x40, // RET
 //! ];
+//! script.push(0x41); // SYSCALL
+//! script.extend_from_slice(&syscall::SYSTEM_CRYPTO_SHA256.to_le_bytes());
+//! script.push(0x40); // RET
 //!
 //! let mut vm = NeoVM::new(1_000_000);
 //! vm.load_script(script).unwrap();

@@ -388,10 +388,10 @@ Gas prevents denial-of-service attacks and ensures bounded execution:
 │    • Bitwise operations (AND, OR, XOR)                          │
 │    • Comparisons (LT, GT, EQ)                                   │
 │                                                                  │
-│  High Cost (512 gas):                                           │
+│  High Cost (syscall-dependent):                              │
 │    • Hash operations (SHA256, RIPEMD160)                        │
 │                                                                  │
-│  Very High Cost (32768 gas):                                    │
+│  Very High Cost (syscall-dependent):                         │
 │    • Signature verification (CHECKSIG)                          │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘

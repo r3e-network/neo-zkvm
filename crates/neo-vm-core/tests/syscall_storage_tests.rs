@@ -1,10 +1,6 @@
 //! VM syscall-level storage tests.
 
-use neo_vm_core::{NeoVM, StackItem, VMError, VMState};
-
-const SYSTEM_STORAGE_GET: u32 = 0x10;
-const SYSTEM_STORAGE_PUT: u32 = 0x11;
-const SYSTEM_STORAGE_DELETE: u32 = 0x12;
+use neo_vm_core::{engine::syscall, NeoVM, StackItem, VMError, VMState};
 
 fn push_data(bytes: &[u8]) -> Vec<u8> {
     assert!(bytes.len() <= u8::MAX as usize);
@@ -13,7 +9,7 @@ fn push_data(bytes: &[u8]) -> Vec<u8> {
     script
 }
 
-fn syscall(id: u32) -> Vec<u8> {
+fn emit_syscall(id: u32) -> Vec<u8> {
     let mut script = vec![0x41];
     script.extend_from_slice(&id.to_le_bytes());
     script
@@ -35,13 +31,13 @@ fn test_storage_syscall_put_get_delete_roundtrip() {
     let mut script = Vec::new();
     script.extend(push_data(b"k"));
     script.extend(push_data(b"v"));
-    script.extend(syscall(SYSTEM_STORAGE_PUT));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_PUT));
     script.extend(push_data(b"k"));
-    script.extend(syscall(SYSTEM_STORAGE_GET));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_GET));
     script.extend(push_data(b"k"));
-    script.extend(syscall(SYSTEM_STORAGE_DELETE));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_DELETE));
     script.extend(push_data(b"k"));
-    script.extend(syscall(SYSTEM_STORAGE_GET));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_GET));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -60,7 +56,7 @@ fn test_storage_syscall_get_missing_returns_null() {
 
     let mut script = Vec::new();
     script.extend(push_data(b"missing"));
-    script.extend(syscall(SYSTEM_STORAGE_GET));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_GET));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -78,7 +74,7 @@ fn test_storage_syscall_put_respects_read_only_context() {
     let mut script = Vec::new();
     script.extend(push_data(b"k"));
     script.extend(push_data(b"v"));
-    script.extend(syscall(SYSTEM_STORAGE_PUT));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_PUT));
 
     vm.load_script(script).expect("script should load");
     vm.execute_next().expect("push key");
@@ -97,7 +93,7 @@ fn test_storage_syscall_put_rejects_non_bytes_key() {
     let mut script = Vec::new();
     script.push(0x11); // PUSH1 (integer key, invalid)
     script.extend(push_data(b"v"));
-    script.extend(syscall(SYSTEM_STORAGE_PUT));
+    script.extend(emit_syscall(syscall::SYSTEM_STORAGE_PUT));
 
     vm.load_script(script).expect("script should load");
     vm.execute_next().expect("push integer key");
@@ -116,7 +112,7 @@ fn test_storage_context_isolated_by_script_hash() {
     let mut put_script = Vec::new();
     put_script.extend(push_data(b"k"));
     put_script.extend(push_data(b"v"));
-    put_script.extend(syscall(SYSTEM_STORAGE_PUT));
+    put_script.extend(emit_syscall(syscall::SYSTEM_STORAGE_PUT));
     put_script.push(0x40); // RET
     vm.load_script(put_script).expect("put script should load");
     run_vm(&mut vm);
@@ -128,7 +124,7 @@ fn test_storage_context_isolated_by_script_hash() {
 
     let mut get_script = Vec::new();
     get_script.extend(push_data(b"k"));
-    get_script.extend(syscall(SYSTEM_STORAGE_GET));
+    get_script.extend(emit_syscall(syscall::SYSTEM_STORAGE_GET));
     get_script.push(0x40); // RET
     vm.load_script(get_script).expect("get script should load");
     run_vm(&mut vm);

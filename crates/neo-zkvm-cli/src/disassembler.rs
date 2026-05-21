@@ -6,6 +6,8 @@
 //! - Jump target annotations
 //! - Operand decoding
 
+use neo_vm_rs::interop_hash;
+
 pub struct Disassembler<'a> {
     script: &'a [u8],
 }
@@ -419,11 +421,7 @@ impl<'a> Disassembler<'a> {
             0xE0 => ("ABORTMSG".to_string(), 1),
             0xE1 => ("ASSERTMSG".to_string(), 1),
 
-            // Crypto
-            0xF0 => ("SHA256".to_string(), 1),
-            0xF1 => ("RIPEMD160".to_string(), 1),
-            0xF2 => ("HASH160".to_string(), 1),
-            0xF3 => ("CHECKSIG".to_string(), 1),
+            0xF1 => ("THROWIFNOT".to_string(), 1),
 
             _ => (format!("??? (0x{:02X})", op), 1),
         }
@@ -472,12 +470,16 @@ impl<'a> Disassembler<'a> {
 
     fn syscall_name(&self, id: u32) -> &'static str {
         match id {
-            0x01 => "System.Runtime.Log",
-            0x02 => "System.Runtime.Notify",
-            0x03 => "System.Runtime.GetTime",
-            0x10 => "System.Storage.Get",
-            0x11 => "System.Storage.Put",
-            0x12 => "System.Storage.Delete",
+            id if id == interop_hash("System.Runtime.Log") => "System.Runtime.Log",
+            id if id == interop_hash("System.Runtime.Notify") => "System.Runtime.Notify",
+            id if id == interop_hash("System.Runtime.GetTime") => "System.Runtime.GetTime",
+            id if id == interop_hash("System.Storage.Get") => "System.Storage.Get",
+            id if id == interop_hash("System.Storage.Put") => "System.Storage.Put",
+            id if id == interop_hash("System.Storage.Delete") => "System.Storage.Delete",
+            id if id == interop_hash("System.Crypto.SHA256") => "System.Crypto.SHA256",
+            id if id == interop_hash("System.Crypto.RIPEMD160") => "System.Crypto.RIPEMD160",
+            id if id == interop_hash("System.Crypto.Hash160") => "System.Crypto.Hash160",
+            id if id == interop_hash("System.Crypto.CheckSig") => "System.Crypto.CheckSig",
             _ => "Unknown",
         }
     }
@@ -502,6 +504,7 @@ impl<'a> Disassembler<'a> {
 #[cfg(test)]
 mod tests {
     use super::Disassembler;
+    use neo_vm_rs::interop_hash;
 
     #[test]
     fn test_decode_long_flow_control_opcodes() {
@@ -528,5 +531,26 @@ mod tests {
         let (name3, size3) = disasm.decode_instruction(19);
         assert_eq!(size3, 5);
         assert!(name3.starts_with("ENDTRY_L"));
+    }
+
+    #[test]
+    fn test_disassembles_canonical_crypto_syscall() {
+        let mut script = vec![0x41];
+        script.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
+
+        let disasm = Disassembler::new(&script);
+        let (name, size) = disasm.decode_instruction(0);
+
+        assert_eq!(size, 5);
+        assert!(name.contains("System.Crypto.SHA256"));
+    }
+
+    #[test]
+    fn test_disassembles_throwifnot_not_ripemd160() {
+        let disasm = Disassembler::new(&[0xF1]);
+        let (name, size) = disasm.decode_instruction(0);
+
+        assert_eq!(size, 1);
+        assert_eq!(name, "THROWIFNOT");
     }
 }

@@ -428,8 +428,7 @@ fn expected_proof_type(mode: ProofMode) -> ProofType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_core::StackItem;
-    use neo_vm_guest::ProofInput;
+    use neo_vm_guest::{ProofInput, StackItem};
     use neo_zkvm_prover::{NeoProver, ProverConfig};
     #[cfg(feature = "sp1")]
     use sp1_sdk::SP1PublicValues;

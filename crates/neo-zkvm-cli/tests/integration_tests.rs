@@ -1,9 +1,15 @@
 //! Integration tests for Neo zkVM
 
-use neo_vm_core::{NativeContract, StackItem, StdLib};
-use neo_vm_guest::{execute, ProofInput};
+use neo_vm_core::{NativeContract, StackItem as CoreStackItem, StdLib};
+use neo_vm_guest::{execute, interop_hash, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
+
+fn syscall(name: &str) -> Vec<u8> {
+    let mut script = vec![0x41];
+    script.extend_from_slice(&interop_hash(name).to_le_bytes());
+    script
+}
 
 #[test]
 fn test_full_prove_verify_cycle() {
@@ -79,8 +85,8 @@ fn test_comparison_operations() {
 fn test_prove_verify_with_arguments() {
     let script = vec![
         0x57, 0x00, 0x02, // INITSLOT 0 locals, 2 args
-        0x74, // LDARG0
-        0x75, // LDARG1
+        0x78, // LDARG0
+        0x79, // LDARG1
         0x9E, // ADD
         0x40, // RET
     ];
@@ -104,13 +110,15 @@ fn test_prove_verify_with_arguments() {
 
 #[test]
 fn test_prove_verify_hash_operation() {
-    let script = vec![
-        0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0xF0, // SHA256
-        0x40, // RET
+    let script = [
+        0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0x40, // RET
     ];
+    let mut script_with_hash = script[..7].to_vec();
+    script_with_hash.extend(syscall("System.Crypto.SHA256"));
+    script_with_hash.push(0x40);
 
     let input = ProofInput {
-        script,
+        script: script_with_hash,
         arguments: vec![],
         gas_limit: 1_000_000,
     };
@@ -504,10 +512,10 @@ fn test_within_range_check() {
 #[test]
 fn test_native_stdlib_serialize() {
     let stdlib = StdLib::new();
-    let original = StackItem::Array(vec![
-        StackItem::Integer(42),
-        StackItem::Boolean(true),
-        StackItem::ByteString(b"neo".to_vec()),
+    let original = CoreStackItem::Array(vec![
+        CoreStackItem::Integer(42),
+        CoreStackItem::Boolean(true),
+        CoreStackItem::ByteString(b"neo".to_vec()),
     ]);
 
     let serialized = stdlib
@@ -515,12 +523,12 @@ fn test_native_stdlib_serialize() {
         .expect("serialize should succeed");
 
     let bytes = match serialized {
-        StackItem::ByteString(bytes) => bytes,
+        CoreStackItem::ByteString(bytes) => bytes,
         other => panic!("serialize should return ByteString, got {other:?}"),
     };
 
     let deserialized = stdlib
-        .invoke("deserialize", vec![StackItem::ByteString(bytes)])
+        .invoke("deserialize", vec![CoreStackItem::ByteString(bytes)])
         .expect("deserialize should succeed");
 
     assert_eq!(deserialized, original);
@@ -530,10 +538,10 @@ fn test_native_stdlib_serialize() {
 fn test_native_crypto_sha256() {
     let script = vec![
         0x0C, 0x04, b't', b'e', b's', b't', // PUSHDATA1 "test" (4 bytes)
-        0xF0, // SHA256
-        0xCA, // SIZE
-        0x40, // RET
     ];
+    let mut script = script;
+    script.extend(syscall("System.Crypto.SHA256"));
+    script.extend([0xCA, 0x40]); // SIZE, RET
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -545,10 +553,10 @@ fn test_native_crypto_sha256() {
 }
 
 #[test]
-fn test_native_crypto_ripemd160() {
+fn test_throwifnot_uses_canonical_opcode_not_ripemd160() {
     let script = vec![
-        0x0C, 0x03, b'a', b'b', b'c', // PUSHDATA1 "abc"
-        0xF1, // RIPEMD160
+        0x0C, 0x00, // PUSHDATA1 empty bytes, falsey
+        0xF1, // THROWIFNOT
         0x40, // RET
     ];
     let input = ProofInput {
@@ -557,10 +565,10 @@ fn test_native_crypto_ripemd160() {
         gas_limit: 1_000_000,
     };
     let output = execute(input);
-    assert_eq!(output.state, 0);
-    if let Some(StackItem::ByteString(hash)) = &output.result {
-        assert_eq!(hash.len(), 20); // RIPEMD160 produces 20 bytes
-    } else {
-        panic!("Expected ByteString result");
-    }
+    assert_eq!(output.state, 1);
+    assert!(output
+        .error
+        .as_deref()
+        .unwrap_or_default()
+        .contains("THROWIFNOT"));
 }

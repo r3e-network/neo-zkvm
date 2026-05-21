@@ -7,7 +7,6 @@ repository.workspace = true
 description = "SP1-backed proof generation for Neo zkVM"
 
 [dependencies]
-neo-vm-core = { workspace = true }
 neo-vm-guest = { workspace = true }
 sp1-sdk = { workspace = true, optional = true }
 bincode.workspace = true

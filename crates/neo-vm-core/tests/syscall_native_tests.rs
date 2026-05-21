@@ -1,13 +1,6 @@
 //! VM syscall-level native contract tests.
 
-use neo_vm_core::{NeoVM, StackItem, VMState};
-
-const SYSTEM_CRYPTO_SHA256: u32 = 0x20;
-const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x21;
-const SYSTEM_CRYPTO_CHECKSIG: u32 = 0x22;
-const SYSTEM_CRYPTO_MURMUR32: u32 = 0x23;
-const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x30;
-const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0x31;
+use neo_vm_core::{engine::syscall, NeoVM, StackItem, VMState};
 
 fn push_data(bytes: &[u8]) -> Vec<u8> {
     assert!(bytes.len() <= u8::MAX as usize);
@@ -16,7 +9,7 @@ fn push_data(bytes: &[u8]) -> Vec<u8> {
     script
 }
 
-fn syscall(id: u32) -> Vec<u8> {
+fn emit_syscall(id: u32) -> Vec<u8> {
     let mut script = vec![0x41];
     script.extend_from_slice(&id.to_le_bytes());
     script
@@ -35,7 +28,7 @@ fn test_native_syscall_sha256_returns_expected_hash() {
     let mut vm = NeoVM::new(1_000_000);
     let mut script = Vec::new();
     script.extend(push_data(b"abc"));
-    script.extend(syscall(SYSTEM_CRYPTO_SHA256));
+    script.extend(emit_syscall(syscall::SYSTEM_CRYPTO_SHA256));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -57,7 +50,7 @@ fn test_native_syscall_ripemd160_returns_expected_hash() {
     let mut vm = NeoVM::new(1_000_000);
     let mut script = Vec::new();
     script.extend(push_data(b"abc"));
-    script.extend(syscall(SYSTEM_CRYPTO_RIPEMD160));
+    script.extend(emit_syscall(syscall::SYSTEM_CRYPTO_RIPEMD160));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -78,8 +71,8 @@ fn test_native_syscall_base64_roundtrip() {
     let mut vm = NeoVM::new(1_000_000);
     let mut script = Vec::new();
     script.extend(push_data(b"neo-zkvm"));
-    script.extend(syscall(SYSTEM_STDLIB_BASE64_ENCODE));
-    script.extend(syscall(SYSTEM_STDLIB_BASE64_DECODE));
+    script.extend(emit_syscall(syscall::SYSTEM_STDLIB_BASE64_ENCODE));
+    script.extend(emit_syscall(syscall::SYSTEM_STDLIB_BASE64_DECODE));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -97,7 +90,7 @@ fn test_native_syscall_invalid_arg_type_faults() {
     let mut vm = NeoVM::new(1_000_000);
     let mut script = Vec::new();
     script.push(0x11); // PUSH1 (invalid type for sha256)
-    script.extend(syscall(SYSTEM_CRYPTO_SHA256));
+    script.extend(emit_syscall(syscall::SYSTEM_CRYPTO_SHA256));
 
     vm.load_script(script).expect("script should load");
     vm.execute_next().expect("push integer arg");
@@ -113,7 +106,7 @@ fn test_native_syscall_murmur32_returns_four_bytes() {
     let mut script = Vec::new();
     script.extend(push_data(b"abc"));
     script.push(0x10); // PUSH0 seed
-    script.extend(syscall(SYSTEM_CRYPTO_MURMUR32));
+    script.extend(emit_syscall(syscall::SYSTEM_CRYPTO_MURMUR32));
     script.push(0x40); // RET
 
     vm.load_script(script).expect("script should load");
@@ -133,7 +126,7 @@ fn test_native_syscall_checksig_rejects_invalid_message_type() {
     script.push(0x11); // PUSH1 (invalid message type)
     script.extend(push_data(&[1, 2, 3])); // signature bytes
     script.extend(push_data(&[4, 5, 6])); // pubkey bytes
-    script.extend(syscall(SYSTEM_CRYPTO_CHECKSIG));
+    script.extend(emit_syscall(syscall::SYSTEM_CRYPTO_CHECKSIG));
 
     vm.load_script(script).expect("script should load");
     vm.execute_next().expect("push invalid message");

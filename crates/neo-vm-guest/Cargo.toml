@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Shared VM types, serialization helpers, and proof utilities for Neo zkVM"
 
 [dependencies]
-neo-vm-core = { workspace = true }
+neo-vm-rs = { workspace = true }
 serde.workspace = true
 bincode.workspace = true
 sha2.workspace = true

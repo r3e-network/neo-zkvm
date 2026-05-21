@@ -15,8 +15,7 @@
 //! - SP1: Generate real ZK proof (production)
 //! - SP1Plonk: Generate PLONK proof (on-chain verification)
 
-use neo_vm_core::StackItem;
-use neo_vm_guest::ProofInput;
+use neo_vm_guest::{ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::{verify, verify_detailed};
 

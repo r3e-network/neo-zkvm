@@ -13,7 +13,7 @@ This document provides a complete reference for all opcodes supported by Neo zkV
 - [Arithmetic Operations](#arithmetic-operations)
 - [Compound Types](#compound-types)
 - [Type Operations](#type-operations)
-- [Cryptographic Operations](#cryptographic-operations)
+- [Cryptographic System Calls](#cryptographic-system-calls)
 
 ---
 
@@ -538,54 +538,58 @@ Stack: ..., item → ..., converted_item
 
 ---
 
-## Cryptographic Operations
+## Cryptographic System Calls
 
-Hash functions and signature verification.
+Hash functions and signature verification are canonical Neo N3 `SYSCALL`
+operations. The CLI assembler accepts crypto aliases, but each alias emits
+`0x41` followed by the 4-byte interop hash.
 
-| Opcode    | Hex  | Gas   | Description            |
-| --------- | ---- | ----- | ---------------------- |
-| SHA256    | 0xF0 | 512   | SHA-256 hash           |
-| RIPEMD160 | 0xF1 | 512   | RIPEMD-160 hash        |
-| HASH160   | 0xF2 | 512   | SHA-256 + RIPEMD-160   |
-| CHECKSIG  | 0xF3 | 32768 | Verify ECDSA signature |
+| Alias     | Emitted Instruction               | Description            |
+| --------- | --------------------------------- | ---------------------- |
+| SHA256    | `SYSCALL System.Crypto.SHA256`    | SHA-256 hash           |
+| RIPEMD160 | `SYSCALL System.Crypto.RIPEMD160` | RIPEMD-160 hash        |
+| HASH160   | `SYSCALL System.Crypto.Hash160`   | SHA-256 + RIPEMD-160   |
+| CHECKSIG  | `SYSCALL System.Crypto.CheckSig`  | Verify ECDSA signature |
+
+`0xF1` is `THROWIFNOT`. `0xF0`, `0xF2`, and `0xF3` are reserved/unsupported in
+the canonical VM profile rather than private crypto opcodes.
 
 ### Detailed Descriptions
 
-#### SHA256 (0xF0)
+#### SHA256 (`SYSCALL System.Crypto.SHA256`)
 
 Compute SHA-256 hash of the input.
 
 ```
-Stack: ..., data → ..., sha256(data)
+Stack: ..., data -> ..., sha256(data)
 Output: 32 bytes
 ```
 
-#### RIPEMD160 (0xF1)
+#### RIPEMD160 (`SYSCALL System.Crypto.RIPEMD160`)
 
 Compute RIPEMD-160 hash of the input.
 
 ```
-Stack: ..., data → ..., ripemd160(data)
+Stack: ..., data -> ..., ripemd160(data)
 Output: 20 bytes
 ```
 
-#### HASH160 (0xF2)
+#### HASH160 (`SYSCALL System.Crypto.Hash160`)
 
 Compute Hash160 (SHA-256 followed by RIPEMD-160).
 
 ```
-Stack: ..., data → ..., ripemd160(sha256(data))
+Stack: ..., data -> ..., ripemd160(sha256(data))
 Output: 20 bytes
 ```
 
-#### CHECKSIG (0xF3)
+#### CHECKSIG (`SYSCALL System.Crypto.CheckSig`)
 
 Verify an ECDSA secp256k1 signature.
 
 ```
-Stack: ..., message, signature, pubkey → ..., valid
+Stack: ..., message, signature, pubkey -> ..., valid
 ```
-
 ---
 
 ## Gas Consumption Summary
@@ -594,8 +598,8 @@ Stack: ..., message, signature, pubkey → ..., valid
 | ------------- | --------- | ----------------------------------------- |
 | **Low**       | 1-2       | PUSH\*, NOP, JMP, RET, DUP, DROP, SYSCALL |
 | **Medium**    | 8         | ADD, SUB, MUL, AND, OR, LT, GT, PACK      |
-| **Very High** | 512       | SHA256, RIPEMD160, HASH160                |
-| **Extreme**   | 32768     | CHECKSIG                                  |
+| **Very High** | syscall-dependent | SHA256, RIPEMD160, HASH160       |
+| **Extreme**   | syscall-dependent | CHECKSIG                          |
 
 ### Gas Cost Table
 
@@ -613,8 +617,7 @@ Stack: ..., message, signature, pubkey → ..., valid
 │            LT, LE, GT, GE, EQUAL, NUMEQUAL                  │
 │            NOT, BOOLAND, BOOLOR, NZ, WITHIN                 │
 │            PACK, UNPACK, NEWARRAY*, NEWMAP, SIZE, PICKITEM   │
-│  512 gas:  SHA256, RIPEMD160, HASH160                       │
-│  32768 gas: CHECKSIG                                        │
+│  syscall-dependent: crypto SYSCALL operations               │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -635,4 +638,4 @@ Stack: ..., message, signature, pubkey → ..., valid
 | 0x99-0xBB | Arithmetic Operations                           |
 | 0xBE-0xD4 | Compound Types                                  |
 | 0xD8-0xE1 | Type Operations                                 |
-| 0xF0-0xF3 | Cryptographic Operations                        |
+| 0xF1      | THROWIFNOT                                      |

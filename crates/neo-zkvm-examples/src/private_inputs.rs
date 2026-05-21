@@ -1,9 +1,8 @@
-use neo_vm_core::StackItem;
-use neo_vm_guest::ProofInput;
+use neo_vm_guest::{ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 
-fn prove_square_of_secret(secret: i128) -> NeoProof {
+fn prove_square_of_secret(secret: i64) -> NeoProof {
     let prover = NeoProver::new(ProverConfig {
         proof_mode: ProofMode::Mock,
         ..Default::default()
@@ -17,11 +16,7 @@ fn prove_square_of_secret(secret: i128) -> NeoProof {
 }
 
 fn read_integer_result(proof: &NeoProof) -> Option<i128> {
-    proof
-        .output
-        .result
-        .as_ref()
-        .and_then(|item| item.to_integer())
+    proof.output.result.as_ref().and_then(|item| item.to_i128())
 }
 
 fn main() {

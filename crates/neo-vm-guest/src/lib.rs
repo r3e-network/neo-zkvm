@@ -1,6 +1,10 @@
 //! Shared VM types, serialization helpers, and proof utilities for Neo zkVM.
 
-use neo_vm_core::{NeoVM, StackItem, VMState};
+pub use neo_vm_rs::{interop_hash, StackValue as StackItem};
+use neo_vm_rs::{
+    interpret_with_stack_and_syscalls, SyscallProvider, VmState, DEFAULT_MAX_STACK_DEPTH,
+    MAX_SCRIPT_SIZE,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -16,6 +20,9 @@ pub type BincodeDecodeError = bincode::error::DecodeError;
 /// NeoProof serialization format version.
 /// Increment when NeoProof structure or semantics change incompatibly.
 pub const PROOF_FORMAT_VERSION: u16 = 1;
+
+/// Maximum script size accepted by zk proof execution.
+pub const PROOF_MAX_SCRIPT_SIZE: usize = MAX_SCRIPT_SIZE;
 
 const fn default_proof_format_version() -> u16 {
     PROOF_FORMAT_VERSION
@@ -230,58 +237,108 @@ pub fn deserialize_neoproof(bytes: &[u8]) -> Result<NeoProof, BincodeDecodeError
 /// Execute Neo VM and return proof output
 #[must_use]
 pub fn execute(input: ProofInput) -> ProofOutput {
-    let mut vm = NeoVM::new(input.gas_limit);
-    if let Err(e) = vm.load_script(input.script) {
+    let estimated_gas = estimate_gas(&input.script, input.arguments.len());
+    if input.script.len() > PROOF_MAX_SCRIPT_SIZE {
         return ProofOutput {
             state: 1,
-            gas_consumed: vm.gas_consumed,
+            gas_consumed: 0,
             result: Some(StackItem::Boolean(false)),
-            error: Some(e.to_string()),
+            error: Some(format!(
+                "Invalid script: script exceeds maximum size of {PROOF_MAX_SCRIPT_SIZE} bytes"
+            )),
         };
     }
 
-    // Push arguments with VM's configured stack depth limit
-    for arg in input.arguments {
-        if vm.eval_stack.len() >= vm.max_stack_depth {
-            return ProofOutput {
-                state: 1,
-                gas_consumed: vm.gas_consumed,
-                result: Some(StackItem::Boolean(false)),
-                error: Some(format!(
-                    "Stack overflow: depth {} exceeds limit {}",
-                    vm.eval_stack.len(),
-                    vm.max_stack_depth
-                )),
+    if input.arguments.len() > DEFAULT_MAX_STACK_DEPTH {
+        return ProofOutput {
+            state: 1,
+            gas_consumed: 0,
+            result: Some(StackItem::Boolean(false)),
+            error: Some(format!(
+                "Stack overflow: depth {} exceeds limit {}",
+                input.arguments.len(),
+                DEFAULT_MAX_STACK_DEPTH
+            )),
+        };
+    }
+
+    if estimated_gas > input.gas_limit {
+        return ProofOutput {
+            state: 1,
+            gas_consumed: input.gas_limit,
+            result: Some(StackItem::Boolean(false)),
+            error: Some("Out of gas".to_string()),
+        };
+    }
+
+    let mut host = ZkProofSyscalls;
+    match interpret_with_stack_and_syscalls(&input.script, input.arguments, &mut host) {
+        Ok(result) => {
+            let state = match result.state {
+                VmState::Halt => 0,
+                VmState::Fault => 1,
             };
+
+            ProofOutput {
+                state,
+                result: result.stack.into_iter().last(),
+                gas_consumed: estimated_gas,
+                error: if state == 1 {
+                    result
+                        .fault_message
+                        .or_else(|| Some("Execution fault".to_string()))
+                } else {
+                    None
+                },
+            }
         }
-        vm.eval_stack.push(arg);
-    }
-
-    // Execute until halt or fault
-    let mut runtime_error: Option<String> = None;
-    while !matches!(vm.state, VMState::Halt | VMState::Fault) {
-        if let Err(err) = vm.execute_next() {
-            runtime_error = Some(err.to_string());
-            vm.state = VMState::Fault;
-            break;
-        }
-    }
-
-    let state = match vm.state {
-        VMState::Halt => 0,
-        VMState::Fault => 1,
-        _ => 2,
-    };
-
-    ProofOutput {
-        state,
-        result: vm.eval_stack.pop(),
-        gas_consumed: vm.gas_consumed,
-        error: if state == 1 {
-            runtime_error.or_else(|| Some("Execution fault".to_string()))
-        } else {
-            None
+        Err(error) => ProofOutput {
+            state: 1,
+            result: Some(StackItem::Boolean(false)),
+            gas_consumed: estimated_gas.min(input.gas_limit),
+            error: Some(normalize_interpreter_error(error)),
         },
+    }
+}
+
+#[inline]
+fn estimate_gas(script: &[u8], argument_count: usize) -> u64 {
+    // `neo-vm-rs` owns canonical execution semantics. zkVM proof metadata still
+    // needs a deterministic gas-like counter until the shared interpreter grows
+    // full Neo policy gas accounting, so use a monotonic structural estimate.
+    (script.len() as u64).saturating_add(argument_count as u64)
+}
+
+fn normalize_interpreter_error(error: String) -> String {
+    if let Some(hex) = error.strip_prefix("unsupported opcode 0x") {
+        return format!("Invalid opcode: 0x{hex}");
+    }
+    error
+}
+
+struct ZkProofSyscalls;
+
+impl SyscallProvider for ZkProofSyscalls {
+    fn syscall(&mut self, api: u32, _ip: usize, stack: &mut Vec<StackItem>) -> Result<(), String> {
+        if api == interop_hash("System.Crypto.SHA256") {
+            let bytes = pop_byte_arg(stack, "System.Crypto.SHA256")?;
+            stack.push(StackItem::ByteString(Sha256::digest(&bytes).to_vec()));
+            return Ok(());
+        }
+
+        Err(format!(
+            "unsupported zk proof syscall 0x{api:08x}; provide a deterministic zk syscall adapter"
+        ))
+    }
+}
+
+fn pop_byte_arg(stack: &mut Vec<StackItem>, syscall: &str) -> Result<Vec<u8>, String> {
+    match stack.pop() {
+        Some(StackItem::ByteString(bytes)) | Some(StackItem::Buffer(bytes)) => Ok(bytes),
+        Some(other) => Err(format!(
+            "{syscall} expects ByteString or Buffer, got {other:?}"
+        )),
+        None => Err(format!("{syscall} expects one stack argument")),
     }
 }
 

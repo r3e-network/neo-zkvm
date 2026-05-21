@@ -30,7 +30,7 @@ mod elf_markers;
 use neo_vm_guest::{
     bincode_deserialize, bincode_serialize, compute_commitment, execute, hash_data,
     output_matches_public_inputs, public_inputs_equal, try_hash_proof_output, BincodeEncodeError,
-    ProofInput, ProofOutput,
+    ProofInput, ProofOutput, StackItem, PROOF_MAX_SCRIPT_SIZE,
 };
 #[cfg(feature = "sp1")]
 use sp1_sdk::{
@@ -116,8 +116,8 @@ impl NeoProver {
         Self { config }
     }
 
-    /// Maximum allowed script size — imported from `neo_vm_core`.
-    const MAX_SCRIPT_SIZE: usize = neo_vm_core::MAX_SCRIPT_SIZE;
+    /// Maximum allowed script size for canonical shared-VM proof execution.
+    const MAX_SCRIPT_SIZE: usize = PROOF_MAX_SCRIPT_SIZE;
     /// Keep failed-proof error payloads small and deterministic.
     const MAX_FAILED_PROOF_ERROR_BYTES: usize = 8 * 1024;
 
@@ -155,7 +155,7 @@ impl NeoProver {
         let sanitized_error = Self::sanitize_failed_proof_error(error);
         let output = ProofOutput {
             state: 1,
-            result: Some(neo_vm_core::StackItem::Boolean(false)),
+            result: Some(StackItem::Boolean(false)),
             gas_consumed: 0,
             error: Some(sanitized_error),
         };
@@ -569,7 +569,7 @@ fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, DynErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_core::StackItem;
+    use neo_vm_guest::StackItem;
 
     #[test]
     fn test_mock_proof() {

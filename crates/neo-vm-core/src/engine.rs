@@ -5,9 +5,7 @@ use crate::{
     stack_item::StackItem,
     storage::{MemoryStorage, StorageBackend, StorageContext, StorageError},
 };
-use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-use ripemd::Ripemd160;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -92,29 +90,29 @@ pub struct ExecutionContext {
 /// Built-in syscall IDs (Neo N3 compatible).
 pub mod syscall {
     /// Log a message to the VM log buffer.
-    pub const SYSTEM_RUNTIME_LOG: u32 = 0x01;
+    pub const SYSTEM_RUNTIME_LOG: u32 = 0x9647_e7cf;
     /// Emit a notification event.
-    pub const SYSTEM_RUNTIME_NOTIFY: u32 = 0x02;
+    pub const SYSTEM_RUNTIME_NOTIFY: u32 = 0x616f_0195;
     /// Return the current block timestamp.
-    pub const SYSTEM_RUNTIME_GETTIME: u32 = 0x03;
+    pub const SYSTEM_RUNTIME_GETTIME: u32 = 0x0388_c3b7;
     /// Read a value from persistent storage.
-    pub const SYSTEM_STORAGE_GET: u32 = 0x10;
+    pub const SYSTEM_STORAGE_GET: u32 = 0x31e8_5d92;
     /// Write a value to persistent storage.
-    pub const SYSTEM_STORAGE_PUT: u32 = 0x11;
+    pub const SYSTEM_STORAGE_PUT: u32 = 0x8418_3fe6;
     /// Delete a key from persistent storage.
-    pub const SYSTEM_STORAGE_DELETE: u32 = 0x12;
+    pub const SYSTEM_STORAGE_DELETE: u32 = 0xedc5_582f;
     /// Compute SHA-256 hash.
-    pub const SYSTEM_CRYPTO_SHA256: u32 = 0x20;
+    pub const SYSTEM_CRYPTO_SHA256: u32 = 0xbabf_5630;
     /// Compute RIPEMD-160 hash.
-    pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x21;
+    pub const SYSTEM_CRYPTO_RIPEMD160: u32 = 0x4b50_9598;
     /// Verify an ECDSA secp256k1 signature.
-    pub const SYSTEM_CRYPTO_CHECKSIG: u32 = 0x22;
+    pub const SYSTEM_CRYPTO_CHECKSIG: u32 = 0x27b3_e756;
     /// Compute Murmur3-32 hash.
-    pub const SYSTEM_CRYPTO_MURMUR32: u32 = 0x23;
+    pub const SYSTEM_CRYPTO_MURMUR32: u32 = 0xd345_70e9;
     /// Encode bytes as Base64 string.
-    pub const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x30;
+    pub const SYSTEM_STDLIB_BASE64_ENCODE: u32 = 0x3511_fc4d;
     /// Decode a Base64 string to bytes.
-    pub const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0x31;
+    pub const SYSTEM_STDLIB_BASE64_DECODE: u32 = 0xe6b7_bd58;
 }
 
 /// Gas cost lookup table for O(1) opcode cost retrieval
@@ -137,8 +135,8 @@ const GAS_COSTS: [u16; 256] = [
     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, // 0xD0-0xDF (compound types)
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // 0xE0-0xEF (reserved)
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    // 0xF0-0xFF (crypto: SHA256, RIPEMD160, CHECKSIG)
-    512, 512, 512, 32768, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    // 0xF0-0xFF (0xF1 THROWIFNOT, others reserved)
+    1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
 
 #[inline]
@@ -1434,69 +1432,12 @@ impl NeoVM {
                 let _token = Self::read_u16_le(ctx_mut!(self))?;
                 return Err(VMError::InvalidOperation);
             }
-            // SHA256
-            0xF0 => {
-                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let bytes = match data {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
-                    _ => return Err(VMError::InvalidType),
-                };
-                let mut hasher = Sha256::new();
-                hasher.update(&bytes);
-                let result = hasher.finalize().to_vec();
-                self.push(StackItem::ByteString(result))?;
-            }
-            // RIPEMD160
+            // THROWIFNOT
             0xF1 => {
-                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let bytes = match data {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
-                    _ => return Err(VMError::InvalidType),
-                };
-                let mut hasher = Ripemd160::new();
-                hasher.update(&bytes);
-                let result = hasher.finalize().to_vec();
-                self.push(StackItem::ByteString(result))?;
-            }
-            // SHA256 + RIPEMD160 (Hash160)
-            0xF2 => {
-                let data = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let bytes = match data {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    StackItem::Integer(i) => i.to_le_bytes().to_vec(),
-                    _ => return Err(VMError::InvalidType),
-                };
-                let sha_result = Sha256::digest(&bytes);
-                let result = Ripemd160::digest(sha_result).to_vec();
-                self.push(StackItem::ByteString(result))?;
-            }
-            // CHECKSIG (ECDSA secp256k1)
-            0xF3 => {
-                let pubkey = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let sig = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-                let msg = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
-
-                let pubkey_bytes = match pubkey {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    _ => return Err(VMError::InvalidType),
-                };
-                let sig_bytes = match sig {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    _ => return Err(VMError::InvalidType),
-                };
-                let msg_bytes = match msg {
-                    StackItem::ByteString(b) | StackItem::Buffer(b) => b,
-                    _ => return Err(VMError::InvalidType),
-                };
-
-                let verifying_key = VerifyingKey::from_sec1_bytes(&pubkey_bytes)
-                    .map_err(|_| VMError::InvalidPublicKey)?;
-                let signature =
-                    Signature::from_slice(&sig_bytes).map_err(|_| VMError::InvalidSignature)?;
-                let verified = verifying_key.verify(&msg_bytes, &signature).is_ok();
-                self.push(StackItem::Boolean(verified))?;
+                let condition = self.eval_stack.pop().ok_or(VMError::StackUnderflow)?;
+                if !condition.to_bool() {
+                    return Err(VMError::InvalidOperation);
+                }
             }
             // SYSCALL
             0x41 => {
@@ -2498,7 +2439,7 @@ impl NeoVM {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use k256::ecdsa::{signature::Signer, SigningKey};
+    use k256::ecdsa::{signature::Signer, Signature, SigningKey};
 
     #[test]
     fn test_execution_context_is_send_sync() {
@@ -2603,11 +2544,12 @@ mod tests {
     }
 
     #[test]
-    fn test_sha256_opcode() {
+    fn test_sha256_syscall() {
         let mut vm = NeoVM::new(1_000_000);
         let mut script = vec![0x0C, 5];
         script.extend_from_slice(b"hello");
-        script.push(0xF0);
+        script.push(0x41);
+        script.extend_from_slice(&syscall::SYSTEM_CRYPTO_SHA256.to_le_bytes());
         script.push(0x40);
         let _ = vm.load_script(script);
         vm.run();
@@ -2618,6 +2560,22 @@ mod tests {
         } else {
             panic!("Expected ByteString");
         }
+    }
+
+    #[test]
+    fn test_throwifnot_opcode_faults_on_false() {
+        let mut vm = NeoVM::new(1_000_000);
+        let _ = vm.load_script(vec![0x10, 0xF1, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Fault));
+    }
+
+    #[test]
+    fn test_crypto_pseudo_opcodes_are_not_supported() {
+        let mut vm = NeoVM::new(1_000_000);
+        let _ = vm.load_script(vec![0x0C, 3, b'a', b'b', b'c', 0xF0, 0x40]);
+        vm.run();
+        assert!(matches!(vm.state, VMState::Fault));
     }
 
     #[test]
@@ -2647,7 +2605,8 @@ mod tests {
         let mut vm = NeoVM::new(1_000_000);
         let mut script = vec![0x0C, 4];
         script.extend_from_slice(b"test");
-        script.extend_from_slice(&[0x41, 0x01, 0x00, 0x00, 0x00]);
+        script.push(0x41);
+        script.extend_from_slice(&syscall::SYSTEM_RUNTIME_LOG.to_le_bytes());
         script.push(0x40);
         let _ = vm.load_script(script);
         vm.run();
@@ -2678,7 +2637,8 @@ mod tests {
         script.push(pubkey_bytes.as_bytes().len() as u8);
         script.extend_from_slice(pubkey_bytes.as_bytes());
 
-        script.push(0xF3); // CHECKSIG
+        script.push(0x41);
+        script.extend_from_slice(&syscall::SYSTEM_CRYPTO_CHECKSIG.to_le_bytes());
         script.push(0x40); // RET
 
         let mut vm = NeoVM::new(1_000_000);

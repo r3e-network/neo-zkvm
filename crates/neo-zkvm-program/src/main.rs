@@ -69,7 +69,7 @@ pub fn zkvm_main() {
 #[cfg(not(target_os = "zkvm"))]
 fn main() {
     eprintln!("Error: This program must be run in the SP1 zkVM environment.");
-    eprintln!("For local testing, use the neo-vm-core crate directly.");
+    eprintln!("For local testing, use neo_vm_guest::execute or the neo-zkvm CLI.");
     std::process::exit(1);
 }
 
@@ -89,7 +89,7 @@ mod tests {
 
         assert_eq!(output.state, 0);
         assert_eq!(
-            output.result.as_ref().and_then(|item| item.to_integer()),
+            output.result.as_ref().and_then(|item| item.to_i128()),
             Some(5)
         );
     }
@@ -104,7 +104,7 @@ mod tests {
 
         assert_eq!(output.state, 0);
         assert_eq!(
-            output.result.as_ref().and_then(|item| item.to_integer()),
+            output.result.as_ref().and_then(|item| item.to_i128()),
             Some(3)
         );
     }

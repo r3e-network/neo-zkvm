@@ -15,6 +15,3 @@ bincode.workspace = true
 [features]
 default = []
 sp1 = ["dep:sp1-sdk", "neo-zkvm-prover/sp1"]
-
-[dev-dependencies]
-neo-vm-core = { workspace = true }

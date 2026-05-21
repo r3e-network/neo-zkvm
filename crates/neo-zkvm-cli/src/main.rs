@@ -3,8 +3,9 @@
 //! A comprehensive command-line interface for Neo zkVM development,
 //! including execution, debugging, assembly, and proof generation.
 
-use neo_vm_core::{NeoVM, OpCode, VMState, MAX_SCRIPT_SIZE};
-use neo_vm_guest::ProofInput;
+use neo_vm_core::{NeoVM, VMState};
+use neo_vm_guest::{execute, ProofInput};
+use neo_vm_rs::{OpCode, MAX_SCRIPT_SIZE};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 use std::collections::HashMap;
@@ -124,48 +125,30 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     let script = parse_script(&args[0])?;
     let gas_limit = parse_gas_limit(args)?;
 
-    let mut vm = NeoVM::new(gas_limit);
-    vm.load_script(script)
-        .map_err(|e| format!("Failed to load script: {}", e))?;
+    println!("Executing script with shared neo-vm-rs semantics...\n");
 
-    println!("Executing script...\n");
+    let output = execute(ProofInput {
+        script,
+        arguments: vec![],
+        gas_limit,
+    });
 
-    while !matches!(vm.state, VMState::Halt | VMState::Fault) {
-        if let Err(e) = vm.execute_next() {
-            return Err(format!("Execution failed: {}", e));
-        }
-    }
-
-    println!("═══════════════════════════════════════");
+    println!("=======================================");
     println!("  EXECUTION RESULT");
-    println!("═══════════════════════════════════════");
-    println!("  State:        {:?}", vm.state);
-    println!("  Gas consumed: {}", vm.gas_consumed);
-    println!("  Stack depth:  {}", vm.eval_stack.len());
-    println!("───────────────────────────────────────");
-
-    if !vm.eval_stack.is_empty() {
-        println!("  Stack (top → bottom):");
-        for (i, item) in vm.eval_stack.iter().rev().enumerate() {
-            println!("    [{}] {:?}", i, item);
-        }
-    } else {
-        println!("  Stack: (empty)");
+    println!("=======================================");
+    println!(
+        "  State:        {}",
+        if output.state == 0 { "Halt" } else { "Fault" }
+    );
+    println!("  Gas consumed: {}", output.gas_consumed);
+    println!("  Result:       {:?}", output.result);
+    if let Some(error) = output.error {
+        println!("  Error:        {}", error);
     }
-
-    if !vm.logs.is_empty() {
-        println!("───────────────────────────────────────");
-        println!("  Logs:");
-        for log in &vm.logs {
-            println!("    {}", log);
-        }
-    }
-
-    println!("═══════════════════════════════════════");
+    println!("=======================================");
 
     Ok(())
 }
-
 fn cmd_prove(args: &[String]) -> Result<(), String> {
     if args.is_empty() {
         return Err(
@@ -895,13 +878,13 @@ impl<'a> Inspector<'a> {
         while ip < self.script.len() {
             let op = self.script[ip];
             let cost = match op {
-                0x00..=0x20 => 1,   // push constants
-                0x21..=0x41 => 2,   // flow control, NOP, RET, SYSCALL base
-                0x42..=0x9F => 2,   // stack, slot, splice, buffer, bitwise, INC/DEC, ADD/SUB
-                0xA0..=0xDF => 8,   // arithmetic (MUL+), comparison, compound types
-                0xE0..=0xEF => 2,   // ABORTMSG, ASSERTMSG, reserved
-                0xF0..=0xF2 => 512, // SHA256, RIPEMD160, HASH160
-                0xF3 => 32768,      // CHECKSIG
+                0x00..=0x20 => 1, // push constants
+                0x21..=0x40 => 2, // flow control, NOP, RET
+                0x41 => 512,      // SYSCALL, host cost depends on target API
+                0x42..=0x9F => 2, // stack, slot, splice, buffer, bitwise, INC/DEC, ADD/SUB
+                0xA0..=0xDF => 8, // arithmetic (MUL+), comparison, compound types
+                0xE0..=0xEF => 2, // ABORTMSG, ASSERTMSG, reserved
+                0xF1 => 2,        // THROWIFNOT
                 _ => 1,
             };
             min_gas += cost;

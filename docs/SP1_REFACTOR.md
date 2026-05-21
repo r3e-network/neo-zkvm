@@ -66,12 +66,12 @@ pub const NEO_ZKVM_ELF: &[u8] =
 
 ### 3. Guest Program Optimization
 
-Use SP1 precompiles for cryptographic operations:
+Use SP1 precompiles behind canonical crypto syscalls:
 
 ```rust
 #[cfg(target_os = "zkvm")]
-0xF0 => {
-    // SHA256 - use SP1 precompile (much faster!)
+api if api == neo_vm_rs::interop_hash("System.Crypto.SHA256") => {
+    // SHA256 syscall - use SP1 precompile (much faster!)
     let data = self.eval_stack.pop().ok_or("Stack underflow")?;
     let result = sp1_zkvm::precompiles::sha256::sha256(&data.to_bytes());
     self.eval_stack.push(StackItem::ByteString(result.to_vec()));
