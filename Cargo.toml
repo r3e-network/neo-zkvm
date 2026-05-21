@@ -18,7 +18,7 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 # Shared NeoVM semantics
-neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "b56db3ec5bbe69bd4831e789adb98eaa4df2c232" }
+neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "3317b9a9a016ba01cc4311f0829968454825044a" }
 neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
 neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
 neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.2.2" }
