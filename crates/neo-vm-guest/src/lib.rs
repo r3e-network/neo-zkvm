@@ -1,6 +1,6 @@
 //! Shared VM types, serialization helpers, and proof utilities for Neo zkVM.
 
-pub use neo_vm_rs::{interop_hash, StackValue as StackItem};
+pub use neo_vm_rs::{interop_hash, pop_byte_arg, StackValue as StackItem};
 use neo_vm_rs::{
     interpret_with_stack_and_syscalls, SyscallProvider, VmState, DEFAULT_MAX_STACK_DEPTH,
     MAX_SCRIPT_SIZE,
@@ -329,16 +329,6 @@ impl SyscallProvider for ZkProofSyscalls {
         Err(format!(
             "unsupported zk proof syscall 0x{api:08x}; provide a deterministic zk syscall adapter"
         ))
-    }
-}
-
-fn pop_byte_arg(stack: &mut Vec<StackItem>, syscall: &str) -> Result<Vec<u8>, String> {
-    match stack.pop() {
-        Some(StackItem::ByteString(bytes)) | Some(StackItem::Buffer(bytes)) => Ok(bytes),
-        Some(other) => Err(format!(
-            "{syscall} expects ByteString or Buffer, got {other:?}"
-        )),
-        None => Err(format!("{syscall} expects one stack argument")),
     }
 }
 

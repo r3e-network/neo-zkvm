@@ -24,6 +24,14 @@ fn proof_guest_does_not_depend_on_legacy_neo_vm_core() {
 }
 
 #[test]
+fn proof_guest_uses_shared_byte_arg_helper() {
+    let lib = include_str!("../src/lib.rs");
+
+    assert!(lib.contains("pop_byte_arg"));
+    assert!(!lib.contains("fn pop_byte_arg"));
+}
+
+#[test]
 fn proof_execution_rejects_non_canonical_throwifnot_byte() {
     let output = execute(ProofInput {
         script: vec![0xf1, 0x40],

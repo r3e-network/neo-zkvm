@@ -526,6 +526,14 @@ fn test_shared_stack_value_serialization_roundtrip() {
 }
 
 #[test]
+fn test_cli_uses_shared_byte_arg_helper() {
+    let main_rs = include_str!("../src/main.rs");
+
+    assert!(main_rs.contains("pop_byte_arg"));
+    assert!(!main_rs.contains("fn pop_byte_arg"));
+}
+
+#[test]
 fn test_native_crypto_sha256() {
     let script = vec![
         0x0C, 0x04, b't', b'e', b's', b't', // PUSHDATA1 "test" (4 bytes)

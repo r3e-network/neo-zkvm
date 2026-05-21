@@ -5,8 +5,8 @@
 
 use neo_vm_guest::{execute, ProofInput};
 use neo_vm_rs::{
-    interop_hash, interpret_with_stack_and_syscalls, last_interpreter_ip, OpCode, StackValue,
-    SyscallProvider, MAX_SCRIPT_SIZE,
+    interop_hash, interpret_with_stack_and_syscalls, last_interpreter_ip, pop_byte_arg, OpCode,
+    StackValue, SyscallProvider, MAX_SCRIPT_SIZE,
 };
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
@@ -473,15 +473,6 @@ impl SyscallProvider for TraceHost {
     }
 }
 
-fn pop_byte_arg(stack: &mut Vec<StackValue>, syscall: &str) -> Result<Vec<u8>, String> {
-    match stack.pop() {
-        Some(StackValue::ByteString(bytes)) | Some(StackValue::Buffer(bytes)) => Ok(bytes),
-        Some(other) => Err(format!(
-            "{syscall} expects ByteString or Buffer, got {other:?}"
-        )),
-        None => Err(format!("{syscall} expects one stack argument")),
-    }
-}
 // ============================================================================
 // Inspector
 // ============================================================================
