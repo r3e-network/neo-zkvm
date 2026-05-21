@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 #[path = "src/elf_markers.rs"]
 mod elf_markers;
 
@@ -19,6 +20,7 @@ fn enable_mock_elf() {
     println!("cargo:rustc-cfg=feature=\"mock-elf\"");
 }
 
+#[cfg(feature = "sp1")]
 fn resolve_program_dir(manifest_dir: &Path) -> Option<PathBuf> {
     if let Ok(from_env) = std::env::var("NEO_ZKVM_PROGRAM_DIR") {
         let path = PathBuf::from(&from_env);
@@ -39,6 +41,7 @@ fn resolve_program_dir(manifest_dir: &Path) -> Option<PathBuf> {
     }
 }
 
+#[cfg(feature = "sp1")]
 fn env_flag(name: &str) -> Option<bool> {
     std::env::var(name).ok().map(|v| {
         matches!(
@@ -48,6 +51,7 @@ fn env_flag(name: &str) -> Option<bool> {
     })
 }
 
+#[cfg(feature = "sp1")]
 fn has_sp1_toolchain() -> bool {
     if env_flag("SP1_FORCE_DUMMY") == Some(true) {
         return false;
@@ -80,13 +84,23 @@ fn main() {
     let _ = std::fs::create_dir_all(&elf_dir);
 
     let elf_path = elf_dir.join("riscv32im-succinct-zkvm-elf");
+    #[cfg(feature = "sp1")]
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
+    #[cfg(feature = "sp1")]
     let has_sp1 = has_sp1_toolchain();
     println!("cargo:rerun-if-env-changed=SP1_FORCE_DUMMY");
     println!("cargo:rerun-if-env-changed=SP1_TOOLCHAIN_AVAILABLE");
     println!("cargo:rerun-if-env-changed=NEO_ZKVM_PROGRAM_DIR");
 
+    #[cfg(not(feature = "sp1"))]
+    {
+        println!("cargo:warning=neo-zkvm-prover built without the 'sp1' feature; using dummy ELF");
+        write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_NOT_FOR_PRODUCTION);
+        enable_mock_elf();
+    }
+
+    #[cfg(feature = "sp1")]
     if has_sp1 {
         let is_clippy_invocation = std::env::var("RUSTC_WORKSPACE_WRAPPER")
             .map(|val| val.contains("clippy-driver"))

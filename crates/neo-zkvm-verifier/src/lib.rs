@@ -23,13 +23,19 @@
 //! assert!(verify(&proof));
 //! ```
 
-use bincode::Options;
 use neo_vm_guest::{
-    bincode_options, compute_commitment, hash_data, output_matches_public_inputs,
-    public_inputs_equal, MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION,
+    bincode_deserialize, compute_commitment, output_matches_public_inputs, public_inputs_equal,
+    MockProof, NeoProof, ProofMode, PROOF_FORMAT_VERSION,
 };
+#[cfg(feature = "sp1")]
+use neo_vm_guest::{bincode_serialize, hash_data, PublicInputs};
+#[cfg(feature = "sp1")]
 use neo_zkvm_prover::{NeoProver, NEO_ZKVM_ELF};
-use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1PublicValues};
+#[cfg(feature = "sp1")]
+use sp1_sdk::{
+    blocking::{Elf, Prover, ProverClient, SP1PublicValues},
+    ProvingKey, SP1ProofWithPublicValues,
+};
 
 /// Verification result returned by detailed verification functions.
 #[derive(Debug, Clone)]
@@ -193,6 +199,7 @@ pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> V
 }
 
 /// Verify a proof with explicit vkey
+#[cfg(feature = "sp1")]
 #[must_use]
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
@@ -211,7 +218,7 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
         return false;
     }
 
-    match bincode_options().deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
+    match bincode_deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
         Ok(sp1_proof) => {
             let pi = match decode_public_inputs(&sp1_proof.public_values) {
                 Ok(inputs) => inputs,
@@ -221,13 +228,14 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
                 return false;
             }
             let prover = ProverClient::from_env();
-            prover.verify(&sp1_proof, vkey).is_ok()
+            prover.verify(&sp1_proof, vkey, None).is_ok()
         }
         Err(_) => false,
     }
 }
 
 /// Verify a proof with explicit vkey and require an expected proof mode.
+#[cfg(feature = "sp1")]
 #[must_use]
 pub fn verify_with_vkey_for_mode(
     proof: &NeoProof,
@@ -241,19 +249,23 @@ pub fn verify_with_vkey_for_mode(
 }
 
 /// Setup the ELF and return verification key
+#[cfg(feature = "sp1")]
 pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
     let prover = ProverClient::from_env();
-    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
-    vk
+    let pk = prover
+        .setup(Elf::Static(NEO_ZKVM_ELF))
+        .expect("SP1 setup should succeed");
+    pk.verifying_key().clone()
 }
 
+#[cfg(feature = "sp1")]
 fn compute_vkey_hash(vkey: &sp1_sdk::SP1VerifyingKey) -> Result<[u8; 32], String> {
-    let bytes = bincode_options()
-        .serialize(vkey)
-        .map_err(|e| format!("Failed to serialize verifying key: {e}"))?;
+    let bytes =
+        bincode_serialize(vkey).map_err(|e| format!("Failed to serialize verifying key: {e}"))?;
     Ok(hash_data(&bytes))
 }
 
+#[cfg(feature = "sp1")]
 fn verify_claimed_vkey_hash(
     claimed: &[u8; 32],
     vkey: &sp1_sdk::SP1VerifyingKey,
@@ -268,7 +280,7 @@ fn verify_claimed_vkey_hash(
 }
 
 fn verify_mock_proof(proof: &NeoProof) -> bool {
-    let mock: MockProof = match bincode_options().deserialize(&proof.proof_bytes) {
+    let mock: MockProof = match bincode_deserialize(&proof.proof_bytes) {
         Ok(m) => m,
         Err(_) => return false,
     };
@@ -281,6 +293,7 @@ fn verify_mock_proof(proof: &NeoProof) -> bool {
     public_inputs_equal(&mock.public_inputs, &proof.public_inputs)
 }
 
+#[cfg(feature = "sp1")]
 fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
     if !NeoProver::is_elf_available() {
         return VerificationResult {
@@ -290,7 +303,17 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         };
     }
     let prover = ProverClient::from_env();
-    let (_, vk) = prover.setup(NEO_ZKVM_ELF);
+    let pk = match prover.setup(Elf::Static(NEO_ZKVM_ELF)) {
+        Ok(pk) => pk,
+        Err(err) => {
+            return VerificationResult {
+                valid: false,
+                error: Some(format!("SP1 setup failed: {err}")),
+                proof_type: expected_proof_type(proof.proof_mode),
+            }
+        }
+    };
+    let vk = pk.verifying_key().clone();
     if let Err(err) = verify_claimed_vkey_hash(&proof.vkey_hash, &vk) {
         return VerificationResult {
             valid: false,
@@ -307,21 +330,20 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         };
     }
 
-    let sp1_proof: SP1ProofWithPublicValues =
-        match bincode_options().deserialize(&proof.proof_bytes) {
-            Ok(p) => p,
-            Err(e) => {
-                return VerificationResult {
-                    valid: false,
-                    error: Some(format!(
-                        "Failed to deserialize SP1 proof ({} bytes): {}",
-                        proof.proof_bytes.len(),
-                        e
-                    )),
-                    proof_type: ProofType::Unknown,
-                };
-            }
-        };
+    let sp1_proof: SP1ProofWithPublicValues = match bincode_deserialize(&proof.proof_bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            return VerificationResult {
+                valid: false,
+                error: Some(format!(
+                    "Failed to deserialize SP1 proof ({} bytes): {}",
+                    proof.proof_bytes.len(),
+                    e
+                )),
+                proof_type: ProofType::Unknown,
+            };
+        }
+    };
 
     let proof_type = detect_sp1_proof_type(&sp1_proof);
 
@@ -351,7 +373,7 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         };
     }
 
-    match prover.verify(&sp1_proof, &vk) {
+    match prover.verify(&sp1_proof, &vk, None) {
         Ok(_) => VerificationResult {
             valid: true,
             error: None,
@@ -368,6 +390,16 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
     }
 }
 
+#[cfg(not(feature = "sp1"))]
+fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
+    VerificationResult {
+        valid: false,
+        error: Some("SP1 feature is not enabled; cannot verify SP1 proof".to_string()),
+        proof_type: expected_proof_type(proof.proof_mode),
+    }
+}
+
+#[cfg(feature = "sp1")]
 fn detect_sp1_proof_type(proof: &SP1ProofWithPublicValues) -> ProofType {
     use sp1_sdk::SP1Proof;
     match &proof.proof {
@@ -377,9 +409,9 @@ fn detect_sp1_proof_type(proof: &SP1ProofWithPublicValues) -> ProofType {
     }
 }
 
+#[cfg(feature = "sp1")]
 fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, String> {
-    bincode_options()
-        .deserialize(values.as_slice())
+    bincode_deserialize(values.as_slice())
         .map_err(|e| format!("Failed to decode public values: {e}"))
 }
 
@@ -399,6 +431,7 @@ mod tests {
     use neo_vm_core::StackItem;
     use neo_vm_guest::ProofInput;
     use neo_zkvm_prover::{NeoProver, ProverConfig};
+    #[cfg(feature = "sp1")]
     use sp1_sdk::SP1PublicValues;
 
     #[test]
@@ -450,6 +483,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "sp1")]
     fn test_decode_public_inputs_roundtrip() {
         let inputs = PublicInputs {
             script_hash: [1u8; 32],

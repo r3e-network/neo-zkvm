@@ -107,7 +107,7 @@ EXAMPLES:
     # Allow explicit SP1 fallback to mock when setup is unavailable
     neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 
-For more information, visit: https://github.com/neo-project/neo-zkvm"#,
+For more information, visit: https://github.com/r3e-network/neo-zkvm"#,
         VERSION
     );
 }

@@ -16,3 +16,7 @@ neo-vm-guest = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 neo-zkvm-verifier = { workspace = true }
 hex.workspace = true
+
+[features]
+default = []
+sp1 = ["neo-zkvm-prover/sp1", "neo-zkvm-verifier/sp1"]

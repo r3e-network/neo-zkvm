@@ -111,7 +111,7 @@ neo-zkvm asm "PUSH2 PUSH3 ADD RET"
 ### From Source
 
 ```bash
-git clone https://github.com/neo-project/neo-zkvm
+git clone https://github.com/r3e-network/neo-zkvm
 cd neo-zkvm
 cargo build --release
 ```
@@ -219,10 +219,10 @@ Thank you to all contributors who helped make this release possible!
 
 ## 🔗 Links
 
-- **Repository**: https://github.com/neo-project/neo-zkvm
-- **Documentation**: https://github.com/neo-project/neo-zkvm/tree/main/docs
-- **Issues**: https://github.com/neo-project/neo-zkvm/issues
-- **Changelog**: https://github.com/neo-project/neo-zkvm/blob/main/CHANGELOG.md
+- **Repository**: https://github.com/r3e-network/neo-zkvm
+- **Documentation**: https://github.com/r3e-network/neo-zkvm/tree/master/docs
+- **Issues**: https://github.com/r3e-network/neo-zkvm/issues
+- **Changelog**: https://github.com/r3e-network/neo-zkvm/blob/master/CHANGELOG.md
 
 ---
 
@@ -236,4 +236,4 @@ MIT License - see [LICENSE](LICENSE) for details
 
 Thank you for using Neo zkVM! We look forward to your feedback and contributions.
 
-**Full Changelog**: https://github.com/neo-project/neo-zkvm/blob/main/CHANGELOG.md
+**Full Changelog**: https://github.com/r3e-network/neo-zkvm/blob/master/CHANGELOG.md

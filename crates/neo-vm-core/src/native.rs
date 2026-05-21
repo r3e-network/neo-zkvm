@@ -88,13 +88,28 @@ impl StdLib {
         if args.is_empty() {
             return Err("serialize requires 1 argument".to_string());
         }
-        let bytes = bincode::serialize(&args[0]).map_err(|e| e.to_string())?;
+        let bytes = bincode::serde::encode_to_vec(
+            &args[0],
+            bincode::config::legacy().with_limit::<MAX_INPUT_SIZE>(),
+        )
+        .map_err(|e| e.to_string())?;
         Ok(StackItem::ByteString(bytes))
     }
 
     fn deserialize(&self, args: Vec<StackItem>) -> Result<StackItem, String> {
         let bytes = extract_bytes(&args, 0, "deserialize")?;
-        bincode::deserialize(bytes).map_err(|e| format!("deserialize failed: {}", e))
+        let (item, read): (StackItem, usize) = bincode::serde::decode_from_slice(
+            bytes,
+            bincode::config::legacy().with_limit::<MAX_INPUT_SIZE>(),
+        )
+        .map_err(|e| format!("deserialize failed: {}", e))?;
+        if read != bytes.len() {
+            return Err(format!(
+                "deserialize failed: trailing bytes after payload (read {read}, total {})",
+                bytes.len()
+            ));
+        }
+        Ok(item)
     }
 
     #[inline]

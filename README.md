@@ -1,6 +1,6 @@
 # Neo zkVM
 
-[![CI](https://github.com/neo-project/neo-zkvm/actions/workflows/ci.yml/badge.svg)](https://github.com/neo-project/neo-zkvm/actions)
+[![CI](https://github.com/r3e-network/neo-zkvm/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-zkvm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verifiable computation with cryptographic proofs.
@@ -56,14 +56,33 @@ neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 # Valid modes: execute | mock | sp1 | plonk | groth16
 ```
 
-> For production SP1 proofs from a crates.io install, build from source, or reinstall with `NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program` so the SP1 guest ELF is compiled at install time.
+> For production SP1 proofs from a crates.io install, build from source with `--features sp1`, or reinstall with `NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program` so the SP1 guest ELF is compiled at install time.
 >
 > Explicit `-m sp1/plonk/groth16` now fails if it downgrades to `mock` unless you pass `--allow-fallback`.
+
+## Feature Model
+
+Neo zkVM separates deterministic local development from production SP1 proving:
+
+| Feature set | Purpose | External prerequisites |
+| --- | --- | --- |
+| default | Neo VM execution, mock proofs, CLI, verifier policy, tests | Rust toolchain only |
+| `sp1` | SP1 6.2.1 host prover/verifier integration | `protoc`, Succinct/SP1 toolchain, real guest ELF for production proofs |
+| `SP1_FORCE_DUMMY=true` | CI/API compile check for SP1 feature | `protoc`; not valid for production proofs |
+
+Recommended local gates:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
+```
 
 ```bash
 # Run full production-readiness gates locally
 # Requires: cargo install cargo-deny
-# Requires SP1 toolchain/guest build support for the release proof step
+# Requires protoc and the Succinct/SP1 toolchain for the release proof smoke
 ./scripts/verify-production.sh
 
 # Validate release notes/version metadata only
@@ -87,7 +106,7 @@ with `plan` or `verify` mode for remote operator runs.
 ### From Source
 
 ```bash
-git clone https://github.com/neo-project/neo-zkvm
+git clone https://github.com/r3e-network/neo-zkvm
 cd neo-zkvm
 cargo build --release
 ```

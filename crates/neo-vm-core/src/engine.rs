@@ -362,7 +362,10 @@ impl NeoVM {
         use sha2::Digest;
         let mut hasher = Sha256::new();
         for item in &self.eval_stack {
-            if let Ok(bytes) = bincode::serialize(item) {
+            if let Ok(bytes) = bincode::serde::encode_to_vec(
+                item,
+                bincode::config::legacy().with_limit::<MAX_ITEM_SIZE>(),
+            ) {
                 hasher.update(&bytes);
             }
         }

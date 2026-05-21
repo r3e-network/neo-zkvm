@@ -9,12 +9,13 @@ description = "SP1-backed proof generation for Neo zkVM"
 [dependencies]
 neo-vm-core = { workspace = true }
 neo-vm-guest = { workspace = true }
-sp1-sdk = { workspace = true }
+sp1-sdk = { workspace = true, optional = true }
 bincode.workspace = true
 
 [features]
 default = []
+sp1 = ["dep:sp1-sdk", "dep:sp1-build"]
 mock-elf = []  # Use empty ELF for testing without SP1 toolchain
 
 [build-dependencies]
-sp1-build = "5.2"
+sp1-build = { version = "6.2.1", optional = true }

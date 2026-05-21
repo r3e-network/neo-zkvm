@@ -1,7 +1,8 @@
 //! Comprehensive Neo VM Benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_vm_core::{NeoVM, VMState};
+use std::hint::black_box;
 
 fn bench_arithmetic(c: &mut Criterion) {
     let mut group = c.benchmark_group("arithmetic");

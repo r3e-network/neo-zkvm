@@ -1,6 +1,6 @@
 [book]
 title = "Neo zkVM Documentation"
-authors = ["Neo Project"]
+authors = ["R3E Network"]
 description = "Zero-knowledge virtual machine for Neo N3"
 src = "docs"
 language = "en"
@@ -11,5 +11,5 @@ build-dir = "book"
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/neo-project/neo-zkvm"
-edit-url-template = "https://github.com/neo-project/neo-zkvm/edit/main/{path}"
+git-repository-url = "https://github.com/r3e-network/neo-zkvm"
+edit-url-template = "https://github.com/r3e-network/neo-zkvm/edit/master/{path}"

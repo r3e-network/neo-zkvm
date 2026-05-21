@@ -7,7 +7,6 @@
 #![cfg_attr(target_os = "zkvm", no_main)]
 #![allow(dead_code)]
 
-use bincode::Options;
 use serde::Serialize;
 #[cfg(target_os = "zkvm")]
 sp1_zkvm::entrypoint!(zkvm_main);
@@ -26,7 +25,7 @@ fn sha256_hash(data: &[u8]) -> [u8; 32] {
 }
 
 fn hash_with_bincode_limit<T: Serialize>(value: &T) -> [u8; 32] {
-    match neo_vm_guest::bincode_options().serialize(value) {
+    match neo_vm_guest::bincode_serialize(value) {
         Ok(bytes) => sha256_hash(&bytes),
         Err(err) => {
             let mut marker = b"neo-zkvm-program:serialize-error:v1:".to_vec();
@@ -77,8 +76,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bincode::Options;
-    use neo_vm_guest::bincode_options;
+    use neo_vm_guest::bincode_serialize;
     use neo_vm_guest::execute;
 
     #[test]
@@ -118,11 +116,7 @@ mod tests {
             arguments: vec![],
             gas_limit: 123,
         };
-        let expected = sha256_hash(
-            &bincode_options()
-                .serialize(&input)
-                .expect("serialize input"),
-        );
+        let expected = sha256_hash(&bincode_serialize(&input).expect("serialize input"));
         assert_eq!(hash_with_bincode_limit(&input), expected);
     }
 

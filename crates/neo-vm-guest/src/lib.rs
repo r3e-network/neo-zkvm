@@ -1,12 +1,17 @@
 //! Shared VM types, serialization helpers, and proof utilities for Neo zkVM.
 
-use bincode::Options;
 use neo_vm_core::{NeoVM, StackItem, VMState};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Bincode size limit (10 MB).
-const BINCODE_LIMIT: u64 = 10 * 1024 * 1024;
+const BINCODE_LIMIT: usize = 10 * 1024 * 1024;
+
+/// Serialization error returned by the workspace bincode codec.
+pub type BincodeEncodeError = bincode::error::EncodeError;
+
+/// Deserialization error returned by the workspace bincode codec.
+pub type BincodeDecodeError = bincode::error::DecodeError;
 
 /// NeoProof serialization format version.
 /// Increment when NeoProof structure or semantics change incompatibly.
@@ -18,10 +23,33 @@ const fn default_proof_format_version() -> u16 {
 
 /// Configured bincode options shared by prover and verifier.
 #[must_use]
-pub fn bincode_options() -> impl Options {
-    bincode::DefaultOptions::new()
-        .with_limit(BINCODE_LIMIT)
-        .with_fixint_encoding()
+pub fn bincode_options() -> impl bincode::config::Config {
+    bincode::config::legacy().with_limit::<BINCODE_LIMIT>()
+}
+
+/// Serialize with the canonical Neo zkVM bincode configuration.
+pub fn bincode_serialize<T: Serialize>(value: &T) -> Result<Vec<u8>, BincodeEncodeError> {
+    let bytes = bincode::serde::encode_to_vec(value, bincode_options())?;
+    if bytes.len() > BINCODE_LIMIT {
+        return Err(BincodeEncodeError::OtherString(format!(
+            "Encoded bincode payload exceeds limit: {} > {BINCODE_LIMIT}",
+            bytes.len()
+        )));
+    }
+    Ok(bytes)
+}
+
+/// Deserialize with the canonical Neo zkVM bincode configuration.
+pub fn bincode_deserialize<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, BincodeDecodeError> {
+    let (value, read) = bincode::serde::decode_from_slice(bytes, bincode_options())?;
+    if read == bytes.len() {
+        Ok(value)
+    } else {
+        Err(BincodeDecodeError::OtherString(format!(
+            "Trailing bytes after bincode payload: read {read}, total {}",
+            bytes.len()
+        )))
+    }
 }
 
 /// Input for zkVM proving.
@@ -118,8 +146,8 @@ pub fn hash_data(data: &[u8]) -> [u8; 32] {
 }
 
 /// SHA-256 hash of a serialized `ProofOutput`.
-pub fn try_hash_proof_output(output: &ProofOutput) -> Result<[u8; 32], bincode::Error> {
-    let bytes = bincode_options().serialize(output)?;
+pub fn try_hash_proof_output(output: &ProofOutput) -> Result<[u8; 32], BincodeEncodeError> {
+    let bytes = bincode_serialize(output)?;
     Ok(hash_data(&bytes))
 }
 
@@ -178,10 +206,10 @@ struct LegacyNeoProof {
 
 /// Deserialize a `NeoProof`, with compatibility fallback for legacy proofs that
 /// predate `proof_format_version`.
-pub fn deserialize_neoproof(bytes: &[u8]) -> Result<NeoProof, bincode::Error> {
-    match bincode_options().deserialize::<NeoProof>(bytes) {
+pub fn deserialize_neoproof(bytes: &[u8]) -> Result<NeoProof, BincodeDecodeError> {
+    match bincode_deserialize::<NeoProof>(bytes) {
         Ok(proof) => Ok(proof),
-        Err(primary_err) => match bincode_options().deserialize::<LegacyNeoProof>(bytes) {
+        Err(primary_err) => match bincode_deserialize::<LegacyNeoProof>(bytes) {
             Ok(legacy) => Ok(NeoProof {
                 output: legacy.output,
                 proof_bytes: legacy.proof_bytes,
@@ -421,9 +449,7 @@ mod tests {
             proof_mode: ProofMode::Mock,
         };
 
-        let bytes = bincode_options()
-            .serialize(&legacy)
-            .expect("legacy serialize");
+        let bytes = bincode_serialize(&legacy).expect("legacy serialize");
         let decoded = deserialize_neoproof(&bytes).expect("legacy deserialize should succeed");
 
         assert_eq!(decoded.proof_format_version, PROOF_FORMAT_VERSION);

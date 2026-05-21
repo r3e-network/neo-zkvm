@@ -20,25 +20,37 @@ retry() {
   done
 }
 
-echo "[1/10] cargo fmt"
+cargo_deny_advisories() {
+  if cargo deny --all-features --locked check advisories --show-stats; then
+    return 0
+  fi
+
+  echo "Online advisory check failed; retrying with the existing local advisory database."
+  cargo deny --all-features --locked --offline check advisories --show-stats
+}
+
+echo "[1/12] cargo fmt"
 cargo fmt --all -- --check
 
-echo "[2/10] cargo clippy"
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+echo "[2/12] cargo clippy"
+cargo clippy --workspace --all-targets --locked -- -D warnings
 
-echo "[3/10] cargo test"
+echo "[3/12] SP1 feature clippy"
+SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
+
+echo "[4/12] cargo test"
 retry 3 cargo test --workspace --all-targets --locked -q
 
-echo "[4/10] cargo build --release"
+echo "[5/12] cargo build --release"
 retry 3 cargo build --release --workspace --locked
 
-echo "[5/10] cargo doc"
+echo "[6/12] cargo doc"
 retry 3 cargo doc --workspace --locked --no-deps
 
-echo "[6/10] cargo test --doc"
+echo "[7/12] cargo test --doc"
 retry 3 cargo test --doc --workspace --locked
 
-echo "[7/10] run examples"
+echo "[8/12] run examples"
 retry 3 cargo run --locked --bin basic
 retry 3 cargo run --locked --bin storage_example
 retry 3 cargo run --locked --bin native_contracts
@@ -47,13 +59,16 @@ retry 3 cargo run --locked --bin batch_verification
 retry 3 cargo run --locked --bin private_inputs
 retry 3 cargo run --locked --bin tamper_resistance
 
-echo "[8/10] cargo deny advisories"
-cargo deny --locked check advisories --show-stats
+echo "[9/12] release SP1 proof smoke"
+retry 3 cargo run --release -p neo-zkvm-cli --features sp1 -- prove 12139E40 -m sp1
 
-echo "[9/10] cargo deny dependency policy"
-cargo deny --locked -L error check bans sources --hide-inclusion-graph --show-stats
+echo "[10/12] cargo deny advisories"
+cargo_deny_advisories
 
-echo "[10/10] cargo deny licenses"
-cargo deny --locked check licenses --show-stats
+echo "[11/12] cargo deny dependency policy"
+cargo deny --all-features --locked -L error check bans sources --hide-inclusion-graph --show-stats
+
+echo "[12/12] cargo deny licenses"
+cargo deny --all-features --locked check licenses --show-stats
 
 echo "Production readiness checks passed"

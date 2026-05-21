@@ -25,14 +25,18 @@
 //! let proof = prover.prove(input);
 //! ```
 
-use bincode::Options;
 mod elf_markers;
 
 use neo_vm_guest::{
-    bincode_options, compute_commitment, execute, hash_data, output_matches_public_inputs,
-    public_inputs_equal, try_hash_proof_output, ProofInput, ProofOutput,
+    bincode_deserialize, bincode_serialize, compute_commitment, execute, hash_data,
+    output_matches_public_inputs, public_inputs_equal, try_hash_proof_output, BincodeEncodeError,
+    ProofInput, ProofOutput,
 };
-use sp1_sdk::{ProverClient, SP1ProofMode, SP1PublicValues, SP1Stdin};
+#[cfg(feature = "sp1")]
+use sp1_sdk::{
+    blocking::{Elf, ProveRequest, Prover, ProverClient, SP1ProofMode, SP1PublicValues, SP1Stdin},
+    ProvingKey, SP1ProofWithPublicValues,
+};
 
 // Re-export shared types so downstream crates (CLI, examples) keep compiling.
 pub use neo_vm_guest::{MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION};
@@ -43,6 +47,7 @@ pub const NEO_ZKVM_ELF: &[u8] =
 
 type DynError = Box<dyn std::error::Error>;
 type Sp1ProofArtifacts = (Vec<u8>, [u8; 32], PublicInputs);
+#[cfg(feature = "sp1")]
 type Sp1FallbackResult = (Vec<u8>, [u8; 32], ProofMode, Option<PublicInputs>);
 
 /// Prover configuration
@@ -79,10 +84,16 @@ pub struct NeoProver {
 impl NeoProver {
     /// Check if the SP1 ELF is available and valid
     pub fn is_elf_available() -> bool {
-        !NEO_ZKVM_ELF.is_empty() && NEO_ZKVM_ELF.len() > 100 && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
+        cfg!(feature = "sp1")
+            && !NEO_ZKVM_ELF.is_empty()
+            && NEO_ZKVM_ELF.len() > 100
+            && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
     }
 
     fn sp1_unavailable_reason() -> &'static str {
+        if !cfg!(feature = "sp1") {
+            return "SP1 feature is not enabled";
+        }
         Self::sp1_unavailable_reason_for_elf(NEO_ZKVM_ELF)
     }
 
@@ -177,6 +188,7 @@ impl NeoProver {
 
     /// Try generating an SP1 proof in the given mode, falling back to mock or
     /// returning a failed proof depending on `allow_mock_fallback`.
+    #[cfg(feature = "sp1")]
     fn try_sp1_proof_or_fallback(
         &self,
         input: &ProofInput,
@@ -212,8 +224,8 @@ impl NeoProver {
     }
 
     /// Hash a serialized `ProofInput` for public input commitment.
-    pub fn hash_proof_input(input: &ProofInput) -> Result<[u8; 32], bincode::Error> {
-        let bytes = bincode_options().serialize(input)?;
+    pub fn hash_proof_input(input: &ProofInput) -> Result<[u8; 32], BincodeEncodeError> {
+        let bytes = bincode_serialize(input)?;
         Ok(hash_data(&bytes))
     }
 
@@ -283,42 +295,75 @@ impl NeoProver {
                 None,
             ),
             ProofMode::Sp1 if sp1_available => {
-                match self.try_sp1_proof_or_fallback(
-                    &input,
-                    SP1ProofMode::Compressed,
-                    ProofMode::Sp1,
-                    script_hash,
-                    input_hash,
-                    &public_inputs,
-                ) {
-                    Ok(result) => result,
-                    Err(failed) => return *failed,
+                #[cfg(feature = "sp1")]
+                {
+                    match self.try_sp1_proof_or_fallback(
+                        &input,
+                        SP1ProofMode::Compressed,
+                        ProofMode::Sp1,
+                        script_hash,
+                        input_hash,
+                        &public_inputs,
+                    ) {
+                        Ok(result) => result,
+                        Err(failed) => return *failed,
+                    }
+                }
+                #[cfg(not(feature = "sp1"))]
+                {
+                    return self.failed_proof(
+                        script_hash,
+                        input_hash,
+                        "SP1 feature is not enabled".to_string(),
+                    );
                 }
             }
             ProofMode::Plonk if sp1_available => {
-                match self.try_sp1_proof_or_fallback(
-                    &input,
-                    SP1ProofMode::Plonk,
-                    ProofMode::Plonk,
-                    script_hash,
-                    input_hash,
-                    &public_inputs,
-                ) {
-                    Ok(result) => result,
-                    Err(failed) => return *failed,
+                #[cfg(feature = "sp1")]
+                {
+                    match self.try_sp1_proof_or_fallback(
+                        &input,
+                        SP1ProofMode::Plonk,
+                        ProofMode::Plonk,
+                        script_hash,
+                        input_hash,
+                        &public_inputs,
+                    ) {
+                        Ok(result) => result,
+                        Err(failed) => return *failed,
+                    }
+                }
+                #[cfg(not(feature = "sp1"))]
+                {
+                    return self.failed_proof(
+                        script_hash,
+                        input_hash,
+                        "SP1 feature is not enabled".to_string(),
+                    );
                 }
             }
             ProofMode::Groth16 if sp1_available => {
-                match self.try_sp1_proof_or_fallback(
-                    &input,
-                    SP1ProofMode::Groth16,
-                    ProofMode::Groth16,
-                    script_hash,
-                    input_hash,
-                    &public_inputs,
-                ) {
-                    Ok(result) => result,
-                    Err(failed) => return *failed,
+                #[cfg(feature = "sp1")]
+                {
+                    match self.try_sp1_proof_or_fallback(
+                        &input,
+                        SP1ProofMode::Groth16,
+                        ProofMode::Groth16,
+                        script_hash,
+                        input_hash,
+                        &public_inputs,
+                    ) {
+                        Ok(result) => result,
+                        Err(failed) => return *failed,
+                    }
+                }
+                #[cfg(not(feature = "sp1"))]
+                {
+                    return self.failed_proof(
+                        script_hash,
+                        input_hash,
+                        "SP1 feature is not enabled".to_string(),
+                    );
                 }
             }
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16 => {
@@ -432,13 +477,11 @@ impl NeoProver {
             commitment: compute_commitment(inputs),
             timestamp,
         };
-        bincode_options()
-            .serialize(&mock)
-            .expect("MockProof serialization must not fail")
+        bincode_serialize(&mock).expect("MockProof serialization must not fail")
     }
 
     fn verify_mock_proof(&self, proof: &NeoProof) -> bool {
-        match bincode_options().deserialize::<MockProof>(&proof.proof_bytes) {
+        match bincode_deserialize::<MockProof>(&proof.proof_bytes) {
             Ok(mock) => {
                 let expected = compute_commitment(&proof.public_inputs);
                 mock.commitment == expected
@@ -448,6 +491,7 @@ impl NeoProver {
         }
     }
 
+    #[cfg(feature = "sp1")]
     fn generate_sp1_proof(
         &self,
         input: &ProofInput,
@@ -461,47 +505,55 @@ impl NeoProver {
         }
 
         let prover = ProverClient::from_env();
-        let (pk, vk) = prover.setup(NEO_ZKVM_ELF);
+        let pk = prover.setup(Elf::Static(NEO_ZKVM_ELF))?;
         let stdin = self.prepare_stdin(input);
 
         let proof = match mode {
-            SP1ProofMode::Core => prover.prove(&pk, &stdin).core().run(),
-            SP1ProofMode::Compressed => prover.prove(&pk, &stdin).compressed().run(),
-            SP1ProofMode::Plonk => prover.prove(&pk, &stdin).plonk().run(),
-            SP1ProofMode::Groth16 => prover.prove(&pk, &stdin).groth16().run(),
+            SP1ProofMode::Core => prover.prove(&pk, stdin).core().run(),
+            SP1ProofMode::Compressed => prover.prove(&pk, stdin).compressed().run(),
+            SP1ProofMode::Plonk => prover.prove(&pk, stdin).plonk().run(),
+            SP1ProofMode::Groth16 => prover.prove(&pk, stdin).groth16().run(),
         }?;
 
-        prover.verify(&proof, &vk)?;
+        let vk = pk.verifying_key().clone();
+        prover.verify(&proof, &vk, None)?;
 
         let public_inputs = decode_public_inputs(&proof.public_values)?;
-        let proof_bytes = bincode_options().serialize(&proof)?;
-        let vkey_hash = hash_data(&bincode_options().serialize(&vk)?);
+        let proof_bytes = bincode_serialize(&proof)?;
+        let vkey_hash = hash_data(&bincode_serialize(&vk)?);
 
         Ok((proof_bytes, vkey_hash, public_inputs))
     }
 
+    #[cfg(feature = "sp1")]
     fn verify_sp1_proof(&self, proof: &NeoProof) -> Result<bool, DynError> {
         if !Self::is_elf_available() {
             return Ok(false);
         }
 
         let prover = ProverClient::from_env();
-        let (_, vk) = prover.setup(NEO_ZKVM_ELF);
-        let expected_vkey_hash = hash_data(&bincode_options().serialize(&vk)?);
+        let pk = prover.setup(Elf::Static(NEO_ZKVM_ELF))?;
+        let vk = pk.verifying_key().clone();
+        let expected_vkey_hash = hash_data(&bincode_serialize(&vk)?);
         if expected_vkey_hash != proof.vkey_hash {
             return Ok(false);
         }
 
-        let sp1_proof: sp1_sdk::SP1ProofWithPublicValues =
-            bincode_options().deserialize(&proof.proof_bytes)?;
+        let sp1_proof: SP1ProofWithPublicValues = bincode_deserialize(&proof.proof_bytes)?;
         let pi = decode_public_inputs(&sp1_proof.public_values)?;
         if !public_inputs_equal(&pi, &proof.public_inputs) {
             return Ok(false);
         }
 
-        Ok(prover.verify(&sp1_proof, &vk).is_ok())
+        Ok(prover.verify(&sp1_proof, &vk, None).is_ok())
     }
 
+    #[cfg(not(feature = "sp1"))]
+    fn verify_sp1_proof(&self, _proof: &NeoProof) -> Result<bool, DynError> {
+        Ok(false)
+    }
+
+    #[cfg(feature = "sp1")]
     fn prepare_stdin(&self, input: &ProofInput) -> SP1Stdin {
         let mut stdin = SP1Stdin::new();
         stdin.write(input);
@@ -509,8 +561,9 @@ impl NeoProver {
     }
 }
 
+#[cfg(feature = "sp1")]
 fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, DynError> {
-    Ok(bincode_options().deserialize(values.as_slice())?)
+    Ok(bincode_deserialize(values.as_slice())?)
 }
 
 #[cfg(test)]
@@ -643,7 +696,7 @@ mod tests {
             gas_limit: 123,
         };
 
-        let bytes = bincode_options().serialize(&input).expect("serialize");
+        let bytes = bincode_serialize(&input).expect("serialize");
         let hash = hash_data(&bytes);
 
         assert_eq!(

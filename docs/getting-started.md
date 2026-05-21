@@ -6,17 +6,18 @@ This guide will help you get up and running with Neo zkVM quickly.
 
 Before you begin, ensure you have the following installed:
 
-- **Rust** (1.75 or later) - [Install Rust](https://rustup.rs/)
+- **Rust** (1.88 or later) - [Install Rust](https://rustup.rs/)
 - **Git** - For cloning the repository
 - **cargo-deny** - Required for `./scripts/verify-production.sh`
-- **SP1** - Required for real proof generation and the full `./scripts/verify-production.sh` gate
+- **protoc** - Required for the SP1 feature compile/lint gate
+- **SP1/Succinct toolchain** - Required for real production proof generation and the full `./scripts/verify-production.sh` gate
 
 ### Check Your Environment
 
 ```bash
 # Check Rust version
 rustc --version
-# Should be 1.75.0 or later
+# Should be 1.88.0 or later
 
 # Check Cargo
 cargo --version
@@ -28,7 +29,7 @@ cargo --version
 
 ```bash
 # Clone the repository
-git clone https://github.com/neo-project/neo-zkvm.git
+git clone https://github.com/r3e-network/neo-zkvm.git
 cd neo-zkvm
 
 # Build all crates
@@ -44,9 +45,9 @@ Add Neo zkVM to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-neo-vm-core = { git = "https://github.com/neo-project/neo-zkvm" }
-neo-zkvm-prover = { git = "https://github.com/neo-project/neo-zkvm" }
-neo-zkvm-verifier = { git = "https://github.com/neo-project/neo-zkvm" }
+neo-vm-core = { git = "https://github.com/r3e-network/neo-zkvm" }
+neo-zkvm-prover = { git = "https://github.com/r3e-network/neo-zkvm" }
+neo-zkvm-verifier = { git = "https://github.com/r3e-network/neo-zkvm" }
 ```
 
 ### Installing the CLI
@@ -432,5 +433,5 @@ let mut vm = NeoVM::new(10_000_000);
 
 ## Getting Help
 
-- **GitHub Issues**: [neo-project/neo-zkvm](https://github.com/neo-project/neo-zkvm/issues)
+- **GitHub Issues**: [r3e-network/neo-zkvm](https://github.com/r3e-network/neo-zkvm/issues)
 - **Neo Documentation**: [docs.neo.org](https://docs.neo.org)

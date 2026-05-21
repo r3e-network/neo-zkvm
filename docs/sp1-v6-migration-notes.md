@@ -1,113 +1,122 @@
 # SP1 v6 Migration Notes
 
-Date: 2026-02-12
+Date: 2026-05-21
 
-## Purpose
+## Status
 
-This note captures the concrete findings from an SP1 `6.0.0-rc.1` compatibility attempt, why the workspace remains on SP1 `5.2.4`, and what must be true before retrying.
+The workspace has been migrated from SP1 `5.2.x` to stable SP1 `6.2.1`.
 
-## Current Stable Baseline
+Current SP1 dependencies:
 
-- Workspace SP1 deps: `5.2.x`
-  - `sp1-sdk = { version = "5.2", default-features = false }`
-  - `sp1-zkvm = "5.2"`
-  - `sp1-build = "5.2"`
-- Prover/verifier hardening from review remains in place:
-  - Output/public-input consistency checks
-  - Full `ProofInput` hashing (non-lossy)
-  - SP1 public-input parity fallback to mock
-  - Faulted proof rejection semantics
-- Validation status on this baseline:
-  - `cargo fmt --all -- --check` passes
-  - `cargo clippy --all --all-targets -- -D warnings` passes
-  - `cargo test --all -q` passes
-  - `cargo deny check advisories --show-stats` => `0 errors, 0 warnings`
-  - Real CLI proof run in SP1 mode verifies successfully
+- `sp1-sdk = { version = "6.2.1", default-features = false, features = ["blocking"] }`
+- `sp1-zkvm = "6.2.1"`
+- `sp1-build = "6.2.1"`
 
-## SP1 v6 (`6.0.0-rc.1`) Attempt Summary
+The host-side prover/verifier integration is optional behind the `sp1` feature. The default workspace build still supports execute and mock proofs without compiling the full SP1 proving stack or downloading SP1 proving artifacts.
 
-### What compiled and worked
+## Design Decisions
 
-- Dependency resolution succeeded after bumping SP1 crates to `6.0.0-rc.1`.
-- Code compiled after adapting to SP1 v6 API shifts.
-- Tests and clippy were green once API/toolchain prerequisites were handled.
+### Default build
 
-### Blocking/added operational requirements discovered
+Default checks intentionally do not enable `sp1`.
 
-1. **`protoc` requirement surfaced immediately**
-   - `sp1-prover-types` build script requires protobuf codegen.
-   - Without `protoc`, build fails during dependency compilation.
-   - Workaround used during investigation: local `protoc` binary via `PROTOC=$HOME/.local/protoc/bin/protoc`.
+Reasons:
 
-2. **Succinct toolchain/target compatibility sensitivity**
-   - SP1 v6 `sp1-build` defaults to `riscv64im-succinct-zkvm-elf`.
-   - Older succinct toolchain instances only had `riscv32im-succinct-zkvm-elf` and failed guest build.
-   - Requires up-to-date toolchain where `rustc +succinct --print target-list` includes both (or at least required) target triples.
+- Unit tests, mock proofs, CLI smoke tests, VM execution, serialization, and verifier policy should be deterministic and offline-friendly.
+- Ordinary `cargo test --workspace --locked` must not depend on a live SP1 artifact download.
+- CI should catch core regressions quickly without requiring a Succinct toolchain.
 
-3. **SDK surface changes compared with v5**
-   - Async/non-blocking API is default; existing code pattern needs blocking API or async refactor.
-   - Blocking API path requires `sp1-sdk` feature `blocking`.
-   - `setup` signature changed to accept `Elf` wrapper (`sp1_sdk::Elf::Static(...)`) in v6 paths.
-   - `verify` signature includes explicit optional status parameter in blocking path.
+### SP1 build
 
-### Security/advisory outcome on v6 RC
+The SP1 integration is still linted and compiled in CI with:
 
-- `cargo deny check advisories` introduced a **new error** on the tested graph:
-  - `RUSTSEC-2025-0134` (`rustls-pemfile` unmaintained)
-  - transitively via `tonic` in `sp1-prover-types`.
-- Net result: advisory posture became worse than current `5.2.4` baseline.
+```bash
+SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
+```
 
-## Decision
+This verifies the SP1 6.2.1 host API boundary while allowing CI to use a dummy ELF when the Succinct toolchain is not installed. Real production proving still requires a real guest ELF.
 
-Keep the production branch on SP1 `5.2.4` for now.
+### Production proving
 
-Reasoning:
-- Lower environment friction (no mandatory `protoc` setup in current workflow).
-- No new advisory error introduced.
-- Existing hardening + full validation remains green.
+Real SP1 proofs require:
 
-## Retry Criteria for SP1 v6+
+- `protoc`
+- an installed Succinct/SP1 toolchain
+- a built `neo-zkvm-program` guest ELF
+- a release build for proving paths
 
-Only reattempt when all are true:
+For local production proving:
 
-1. **Version maturity**
-   - Prefer stable SP1 v6 release (not RC), unless a specific RC is required and accepted.
+```bash
+curl -L https://sp1.succinct.xyz | bash
+sp1up
+cargo build --release --features sp1
+cargo run --release -p neo-zkvm-cli --features sp1 -- prove 12139E40 -m sp1
+```
 
-2. **Dependency risk check**
-   - `cargo deny check advisories` must not introduce new errors compared to baseline.
-   - If unavoidable advisories remain, they require explicit risk acceptance and documented rationale.
+## API Changes Applied
 
-3. **Toolchain readiness**
-   - `rustc +succinct --print target-list` includes required target(s) for that SP1 version.
-   - `cargo prove` / `sp1up` version pinned and reproducible in CI/dev docs.
+- Switched host proof generation and verification to the SP1 6.2.1 blocking API.
+- Imported the SP1 `ProveRequest` trait explicitly for `.core()`, `.compressed()`, `.plonk()`, and `.groth16()`.
+- Retrieved verification keys via the SP1 `ProvingKey::verifying_key()` trait instead of relying on old public fields.
+- Kept SP1 proof verification bound to:
+  - proof mode
+  - public input commitment
+  - proof output hash
+  - gas consumed
+  - execution success flag
+  - verification key hash
 
-4. **Build environment readiness**
-   - `protoc` availability standardized in CI + local setup docs (or removed upstream dependency).
+## Serialization Migration
 
-5. **API compatibility completed**
-   - Blocking vs async client choice made explicitly:
-     - Option A: keep sync call sites with `sp1-sdk` `blocking` feature.
-     - Option B: migrate prover/verifier integration to async end-to-end.
+The workspace direct dependency moved from `bincode` 1.x to `bincode` 2.0.1.
 
-## Suggested Migration Procedure (next attempt)
+The shared codec wrapper in `neo-vm-guest` now provides:
 
-1. Create a dedicated branch (e.g. `chore/sp1-v6-migration`).
-2. Update SP1 crate versions in workspace and dependent crates.
-3. Ensure environment prerequisites first (`sp1up` target support + `protoc`).
-4. Apply SDK API migration edits (client setup/prove/verify signatures).
-5. Run full gates:
-   - `cargo fmt --all -- --check`
-   - `cargo clippy --all --all-targets -- -D warnings`
-   - `cargo test --all -q`
-   - `cargo deny check advisories --show-stats`
-   - `cargo run -p neo-zkvm-cli --release -- prove 12139E40 -m sp1 --allow-fallback`
-6. Compare against baseline and decide go/no-go.
+- deterministic legacy-compatible bincode configuration
+- explicit serialized output size checks
+- trailing-byte rejection on decode
 
-## Rollback Plan
+`bincode` 3.0.0 was checked during the dependency audit, but it is currently a compile-error placeholder and is not usable for this workspace.
 
-If migration regresses advisories/stability:
+## Security Advisory Posture
 
-- Revert SP1 versions back to `5.2.x`.
-- Regenerate lockfile (`cargo update`).
-- Re-run full validation gates to confirm baseline health.
+The all-feature dependency graph is accepted by `cargo deny` with explicit documented ignores for upstream advisories that cannot be fixed inside this workspace.
 
+Known accepted advisories:
+
+- `RUSTSEC-2021-0139`: `ansi_term`, transitive through the optional SP1 tracing stack
+- `RUSTSEC-2024-0436`: `paste`, transitive through the optional SP1 proving stack
+- `RUSTSEC-2025-0119`: `number_prefix`, transitive through `indicatif` in SP1
+- `RUSTSEC-2025-0134`: `rustls-pemfile`, transitive through `tonic` in SP1
+- `RUSTSEC-2025-0141`: `bincode`, direct 2.0.1 plus SP1 transitive 1.3.3
+- `RUSTSEC-2026-0002`: `lru`, transitive through SP1
+
+Risk boundary:
+
+- Direct bincode usage is guarded by the workspace codec wrapper.
+- SP1 advisories are confined to the optional `sp1` proving/verifying feature.
+- Replacement of SP1 transitive crates must come from upstream SP1 releases.
+
+## Validation Commands
+
+The migration was validated with:
+
+```bash
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
+cargo deny --all-features --locked --offline check advisories --show-stats
+cargo deny --all-features --locked --offline check bans sources --hide-inclusion-graph --show-stats
+cargo deny --all-features --locked --offline check licenses --show-stats
+cargo build -p neo-zkvm-prover --features sp1 --locked
+cargo run --release -p neo-zkvm-cli --features sp1 -- prove 12139E40 -m sp1
+```
+
+## Operational Notes
+
+- CI installs `protobuf-compiler` before the SP1 feature check because SP1 6.2.1 compiles protobuf-backed prover types.
+- `SP1_FORCE_DUMMY=true` is for API compilation only. It must not be used as evidence of a real production proof.
+- Release proof generation was validated with a real SP1 proof smoke command and should remain part of local production-readiness validation.
