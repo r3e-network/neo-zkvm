@@ -15,6 +15,8 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 
 ## Architecture
 
+![Neo zkVM Architecture](docs/figures/neo-zkvm-architecture.svg)
+
 ```text
 neo-zkvm-cli
   |-- run / prove / asm / disasm / debug
@@ -181,6 +183,8 @@ loop/1000           time: [8.2 Âµs 8.5 Âµs 8.8 Âµs]
 
 - [Getting Started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
+- [Visual Figures](docs/figures/README.md)
+- [中文图表](docs/zh/figures/README.md)
 - [Opcodes Reference](docs/opcodes.md)
 - [CLI Reference](docs/cli.md)
 - [Formal Verification](docs/formal-verification.md)

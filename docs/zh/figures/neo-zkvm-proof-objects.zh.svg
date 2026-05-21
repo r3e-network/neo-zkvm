@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+<title id="title">Neo zkVM 证明对象</title>
+<desc id="desc">定义证明 ABI 与验证契约的数据结构。</desc>
+
+<defs>
+  <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+  </filter>
+  <marker id="arrow-slate" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#d97706"/>
+  </marker>
+  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+  </marker>
+  <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+  </marker>
+  <style>
+    .bg { fill: #f8fafc; }
+    .title { font: 700 30px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 16px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .section { font: 700 14px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; letter-spacing: 0.08em; }
+    .box-title { font: 700 19px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .box-subtitle { font: 500 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .item { font: 400 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .small { font: 400 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+    .label { font: 600 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .formula { font: 500 16px "Cascadia Code", Consolas, monospace; fill: #111827; }
+    .mono { font: 500 13px "Cascadia Code", Consolas, monospace; fill: #334155; }
+  </style>
+</defs>
+
+<rect class="bg" x="0" y="0" width="1500" height="950"/>
+<text x="48.0" y="56.0" class="title" text-anchor="start">Neo zkVM 证明对象</text>
+<text x="48.0" y="84.0" class="subtitle" text-anchor="start">定义证明 ABI 与验证契约的数据结构。</text>
+<rect x="70" y="150" width="310" height="225" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="88.0" y="182.0" class="box-title" text-anchor="start">ProofInput</text>
+<text x="88.0" y="205.0" class="box-subtitle" text-anchor="start">执行请求</text>
+<circle cx="95" cy="226" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="231.0" class="item" text-anchor="start">script: Vec&lt;u8&gt;</text>
+<circle cx="95" cy="249" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="254.0" class="item" text-anchor="start">arguments: Vec&lt;StackItem&gt;</text>
+<circle cx="95" cy="272" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="277.0" class="item" text-anchor="start">gas_limit: u64</text>
+<rect x="445" y="150" width="310" height="225" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="463.0" y="182.0" class="box-title" text-anchor="start">ProofOutput</text>
+<text x="463.0" y="205.0" class="box-subtitle" text-anchor="start">执行结果</text>
+<circle cx="470" cy="226" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="483.0" y="231.0" class="item" text-anchor="start">state: u8</text>
+<circle cx="470" cy="249" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="483.0" y="254.0" class="item" text-anchor="start">result: Option&lt;StackItem&gt;</text>
+<circle cx="470" cy="272" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="483.0" y="277.0" class="item" text-anchor="start">gas_consumed: u64</text>
+<circle cx="470" cy="295" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="483.0" y="300.0" class="item" text-anchor="start">error: Option&lt;String&gt;</text>
+<rect x="820" y="150" width="310" height="225" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+<text x="838.0" y="182.0" class="box-title" text-anchor="start">PublicInputs</text>
+<text x="838.0" y="205.0" class="box-subtitle" text-anchor="start">公开验证语句</text>
+<circle cx="845" cy="226" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="858.0" y="231.0" class="item" text-anchor="start">script_hash: [u8; 32]</text>
+<circle cx="845" cy="249" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="858.0" y="254.0" class="item" text-anchor="start">input_hash: [u8; 32]</text>
+<circle cx="845" cy="272" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="858.0" y="277.0" class="item" text-anchor="start">output_hash: [u8; 32]</text>
+<circle cx="845" cy="295" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="858.0" y="300.0" class="item" text-anchor="start">gas_consumed + success</text>
+<rect x="1175" y="150" width="270" height="225" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="1193.0" y="182.0" class="box-title" text-anchor="start">NeoProof</text>
+<text x="1193.0" y="205.0" class="box-subtitle" text-anchor="start">可携带封装</text>
+<circle cx="1200" cy="226" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="231.0" class="item" text-anchor="start">output</text>
+<circle cx="1200" cy="249" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="254.0" class="item" text-anchor="start">proof_bytes</text>
+<circle cx="1200" cy="272" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="277.0" class="item" text-anchor="start">public_inputs</text>
+<circle cx="1200" cy="295" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="300.0" class="item" text-anchor="start">vkey_hash</text>
+<circle cx="1200" cy="318" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="323.0" class="item" text-anchor="start">proof_mode</text>
+<circle cx="1200" cy="341" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1213.0" y="346.0" class="item" text-anchor="start">format_version</text>
+<line x1="380" y1="262" x2="445" y2="262" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="412.5" y="254.0" class="label" text-anchor="middle">execute</text>
+<line x1="755" y1="262" x2="820" y2="262" stroke="#7c3aed" stroke-width="2.2" marker-end="url(#arrow-purple)"/>
+<text x="787.5" y="254.0" class="label" text-anchor="middle">hash</text>
+<line x1="1130" y1="262" x2="1175" y2="262" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="1152.5" y="254.0" class="label" text-anchor="middle">pack</text>
+<rect x="215" y="500" width="430" height="215" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" filter="url(#shadow)"/>
+<text x="233.0" y="526.0" class="section" text-anchor="start">共享类型</text>
+<text x="233.0" y="554.0" class="box-title" text-anchor="start">StackItem</text>
+<text x="233.0" y="577.0" class="box-subtitle" text-anchor="start">重新导出的规范值类型</text>
+<circle cx="240" cy="598" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="253.0" y="603.0" class="item" text-anchor="start">StackItem = neo_vm_rs::StackValue</text>
+<circle cx="240" cy="621" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="253.0" y="626.0" class="item" text-anchor="start">语义与共享 VM 核心一致</text>
+<circle cx="240" cy="644" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="253.0" y="649.0" class="item" text-anchor="start">neo-zkvm 不复制栈模型</text>
+<rect x="855" y="500" width="430" height="215" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="873.0" y="526.0" class="section" text-anchor="start">MOCK 模式</text>
+<text x="873.0" y="554.0" class="box-title" text-anchor="start">MockProof</text>
+<text x="873.0" y="577.0" class="box-subtitle" text-anchor="start">仅测试用证明封装</text>
+<circle cx="880" cy="598" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="893.0" y="603.0" class="item" text-anchor="start">public_inputs</text>
+<circle cx="880" cy="621" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="893.0" y="626.0" class="item" text-anchor="start">commitment</text>
+<circle cx="880" cy="644" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="893.0" y="649.0" class="item" text-anchor="start">timestamp</text>
+<polyline points="225.0,375.0 225.0,500.0" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-teal)"/>
+<text x="225.0" y="492.0" class="label" text-anchor="middle">arguments</text>
+<polyline points="600.0,375.0 600.0,500.0 430.0,500.0" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-teal)"/>
+<text x="600.0" y="492.0" class="label" text-anchor="middle">result</text>
+<polyline points="975.0,375.0 975.0,500.0" fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-amber)"/>
+<text x="975.0" y="492.0" class="label" text-anchor="middle">commitment input</text>
+<rect x="70" y="785" width="1375" height="90" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="88.0" y="817.0" class="box-title" text-anchor="start">ABI 约束</text>
+<text x="88.0" y="844.0" class="item" text-anchor="start">当前证明格式版本为 1；过大的输入在执行前被拒绝。</text>
+<text x="88.0" y="864.0" class="item" text-anchor="start">序列化使用 guest、prover、verifier 共享的规范 bincode 配置。</text>
+</svg>

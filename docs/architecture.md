@@ -4,6 +4,8 @@ Neo zkVM provides zero-knowledge proof tooling for Neo VM execution. The project
 
 ## System Flow
 
+![Neo zkVM Dataflow](figures/neo-zkvm-dataflow.svg)
+
 ```text
 script + arguments + gas limit
         |

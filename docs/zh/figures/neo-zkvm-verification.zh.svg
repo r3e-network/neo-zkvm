@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="1000" viewBox="0 0 1520 1000" role="img" aria-labelledby="title desc">
+<title id="title">Neo zkVM 验证逻辑</title>
+<desc id="desc">对证明格式、输出绑定、模式策略与密码学证明有效性进行失败即拒绝的校验。</desc>
+
+<defs>
+  <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+  </filter>
+  <marker id="arrow-slate" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#d97706"/>
+  </marker>
+  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+  </marker>
+  <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+  </marker>
+  <style>
+    .bg { fill: #f8fafc; }
+    .title { font: 700 30px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 16px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .section { font: 700 14px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; letter-spacing: 0.08em; }
+    .box-title { font: 700 19px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .box-subtitle { font: 500 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .item { font: 400 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .small { font: 400 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+    .label { font: 600 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .formula { font: 500 16px "Cascadia Code", Consolas, monospace; fill: #111827; }
+    .mono { font: 500 13px "Cascadia Code", Consolas, monospace; fill: #334155; }
+  </style>
+</defs>
+
+<rect class="bg" x="0" y="0" width="1520" height="1000"/>
+<text x="48.0" y="56.0" class="title" text-anchor="start">Neo zkVM 验证逻辑</text>
+<text x="48.0" y="84.0" class="subtitle" text-anchor="start">对证明格式、输出绑定、模式策略与密码学证明有效性进行失败即拒绝的校验。</text>
+<rect x="70" y="145" width="220" height="105" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="88.0" y="177.0" class="box-title" text-anchor="start">NeoProof</text>
+<text x="88.0" y="200.0" class="box-subtitle" text-anchor="start">输入产物</text>
+<circle cx="95" cy="221" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="226.0" class="item" text-anchor="start">mode</text>
+<circle cx="95" cy="244" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="249.0" class="item" text-anchor="start">version</text>
+<circle cx="95" cy="267" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="272.0" class="item" text-anchor="start">output</text>
+<circle cx="95" cy="290" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="108.0" y="295.0" class="item" text-anchor="start">public inputs</text>
+<polygon points="420.0,138.0 540.0,198.0 420.0,258.0 300.0,198.0" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="420.0" y="203.0" class="label" text-anchor="middle">version == 1?</text>
+<polygon points="740.0,138.0 870.0,198.0 740.0,258.0 610.0,198.0" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+<text x="740.0" y="203.0" class="label" text-anchor="middle">输出匹配 PI?</text>
+<polygon points="1070.0,138.0 1180.0,198.0 1070.0,258.0 960.0,198.0" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="1070.0" y="203.0" class="label" text-anchor="middle">state == HALT?</text>
+<rect x="1295" y="145" width="165" height="105" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="1313.0" y="177.0" class="box-title" text-anchor="start">Reject</text>
+<text x="1313.0" y="200.0" class="box-subtitle" text-anchor="start">任一失败</text>
+<circle cx="1320" cy="221" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1333.0" y="226.0" class="item" text-anchor="start">false</text>
+<line x1="290" y1="198" x2="300" y2="198" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrow-blue)"/>
+<line x1="540" y1="198" x2="610" y2="198" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="575.0" y="190.0" class="label" text-anchor="middle">yes</text>
+<line x1="870" y1="198" x2="960" y2="198" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="915.0" y="190.0" class="label" text-anchor="middle">yes</text>
+<line x1="1180" y1="198" x2="1295" y2="198" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="1237.5" y="190.0" class="label" text-anchor="middle">no</text>
+<polyline points="420.0,258.0 420.0,300.0 1375.0,300.0 1375.0,250.0" fill="none" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="1375.0" y="292.0" class="label" text-anchor="middle">no</text>
+<polyline points="740.0,258.0 740.0,300.0 1375.0,300.0 1375.0,250.0" fill="none" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="1375.0" y="292.0" class="label" text-anchor="middle">no</text>
+<polyline points="1070.0,258.0 1070.0,300.0 1375.0,300.0 1375.0,250.0" fill="none" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="1375.0" y="292.0" class="label" text-anchor="middle">no</text>
+<rect x="115" y="430" width="330" height="210" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" filter="url(#shadow)"/>
+<text x="133.0" y="462.0" class="box-title" text-anchor="start">Execute 模式</text>
+<text x="133.0" y="485.0" class="box-subtitle" text-anchor="start">仅确定性执行</text>
+<circle cx="140" cy="506" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="153.0" y="511.0" class="item" text-anchor="start">不要求证明字节</text>
+<circle cx="140" cy="529" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="153.0" y="534.0" class="item" text-anchor="start">绑定检查通过后才接受</text>
+<rect x="585" y="430" width="330" height="210" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="603.0" y="462.0" class="box-title" text-anchor="start">Mock 模式</text>
+<text x="603.0" y="485.0" class="box-subtitle" text-anchor="start">开发与测试</text>
+<circle cx="610" cy="506" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="623.0" y="511.0" class="item" text-anchor="start">解码 MockProof</text>
+<circle cx="610" cy="529" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="623.0" y="534.0" class="item" text-anchor="start">公开输入必须相等</text>
+<circle cx="610" cy="552" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="623.0" y="557.0" class="item" text-anchor="start">承诺必须可重算</text>
+<rect x="1055" y="430" width="330" height="210" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="1073.0" y="462.0" class="box-title" text-anchor="start">SP1 / PLONK / Groth16</text>
+<text x="1073.0" y="485.0" class="box-subtitle" text-anchor="start">生产密码学模式</text>
+<circle cx="1080" cy="506" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1093.0" y="511.0" class="item" text-anchor="start">证明类型匹配模式</text>
+<circle cx="1080" cy="529" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1093.0" y="534.0" class="item" text-anchor="start">vkey hash 匹配</text>
+<circle cx="1080" cy="552" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1093.0" y="557.0" class="item" text-anchor="start">SP1 验证器成功</text>
+<circle cx="1080" cy="575" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="1093.0" y="580.0" class="item" text-anchor="start">公开值等于 PI</text>
+<polyline points="1070.0,258.0 1070.0,345.0 280.0,345.0 280.0,430.0" fill="none" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<text x="280.0" y="337.0" class="label" text-anchor="middle">mode branch</text>
+<polyline points="1070.0,345.0 750.0,345.0 750.0,430.0" fill="none" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<polyline points="1070.0,345.0 1220.0,345.0 1220.0,430.0" fill="none" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="615" y="770" width="290" height="100" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="633.0" y="802.0" class="box-title" text-anchor="start">Valid</text>
+<text x="633.0" y="825.0" class="box-subtitle" text-anchor="start">所选检查全部通过</text>
+<circle cx="640" cy="846" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="653.0" y="851.0" class="item" text-anchor="start">true</text>
+<line x1="280" y1="640" x2="615" y2="820" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="447.5" y="722.0" class="label" text-anchor="middle">pass</text>
+<line x1="750" y1="640" x2="750" y2="770" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="750.0" y="697.0" class="label" text-anchor="middle">pass</text>
+<line x1="1220" y1="640" x2="905" y2="820" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="1062.5" y="722.0" class="label" text-anchor="middle">pass</text>
+<polyline points="445.0,535.0 1295.0,535.0" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-red)"/>
+<text x="1295.0" y="527.0" class="label" text-anchor="middle">fail</text>
+<polyline points="915.0,535.0 1295.0,535.0" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-red)"/>
+<text x="1295.0" y="527.0" class="label" text-anchor="middle">fail</text>
+<polyline points="1385.0,535.0 1455.0,535.0 1455.0,250.0" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-red)"/>
+<text x="1455.0" y="527.0" class="label" text-anchor="middle">fail</text>
+</svg>

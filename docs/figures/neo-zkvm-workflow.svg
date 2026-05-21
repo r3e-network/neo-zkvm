@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980" role="img" aria-labelledby="title desc">
+<title id="title">Neo zkVM Workflow</title>
+<desc id="desc">Operational paths for local execution, proof generation, and verification.</desc>
+
+<defs>
+  <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+  </filter>
+  <marker id="arrow-slate" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#d97706"/>
+  </marker>
+  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+  </marker>
+  <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+  </marker>
+  <style>
+    .bg { fill: #f8fafc; }
+    .title { font: 700 30px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 16px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .section { font: 700 14px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; letter-spacing: 0.08em; }
+    .box-title { font: 700 19px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .box-subtitle { font: 500 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .item { font: 400 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .small { font: 400 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+    .label { font: 600 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .formula { font: 500 16px "Cascadia Code", Consolas, monospace; fill: #111827; }
+    .mono { font: 500 13px "Cascadia Code", Consolas, monospace; fill: #334155; }
+  </style>
+</defs>
+
+<rect class="bg" x="0" y="0" width="1500" height="980"/>
+<text x="48.0" y="56.0" class="title" text-anchor="start">Neo zkVM Workflow</text>
+<text x="48.0" y="84.0" class="subtitle" text-anchor="start">Operational paths for local execution, proof generation, and verification.</text>
+<text x="62.0" y="142.0" class="section" text-anchor="start">RUN PATH</text>
+<text x="62.0" y="405.0" class="section" text-anchor="start">PROVE PATH</text>
+<text x="62.0" y="725.0" class="section" text-anchor="start">VERIFY PATH</text>
+<rect x="62" y="165" width="270" height="170" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="80.0" y="197.0" class="box-title" text-anchor="start">1. Parse command</text>
+<circle cx="87" cy="215" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="220.0" class="item" text-anchor="start">script</text>
+<circle cx="87" cy="238" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="243.0" class="item" text-anchor="start">arguments</text>
+<circle cx="87" cy="261" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="266.0" class="item" text-anchor="start">gas limit</text>
+<line x1="332" y1="250" x2="392" y2="250" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="422" y="165" width="270" height="170" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="440.0" y="197.0" class="box-title" text-anchor="start">2. Build ProofInput</text>
+<circle cx="447" cy="215" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="460.0" y="220.0" class="item" text-anchor="start">canonical stack values</text>
+<circle cx="447" cy="238" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="460.0" y="243.0" class="item" text-anchor="start">bounded script size</text>
+<line x1="692" y1="250" x2="752" y2="250" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="782" y="165" width="270" height="170" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="800.0" y="197.0" class="box-title" text-anchor="start">3. Execute VM</text>
+<circle cx="807" cy="215" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="820.0" y="220.0" class="item" text-anchor="start">neo-vm-guest</text>
+<circle cx="807" cy="238" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="820.0" y="243.0" class="item" text-anchor="start">neo-vm-rs</text>
+<line x1="1052" y1="250" x2="1112" y2="250" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="1142" y="165" width="270" height="170" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" filter="url(#shadow)"/>
+<text x="1160.0" y="197.0" class="box-title" text-anchor="start">4. Print ProofOutput</text>
+<circle cx="1167" cy="215" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="1180.0" y="220.0" class="item" text-anchor="start">state</text>
+<circle cx="1167" cy="238" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="1180.0" y="243.0" class="item" text-anchor="start">result</text>
+<circle cx="1167" cy="261" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="1180.0" y="266.0" class="item" text-anchor="start">gas</text>
+<circle cx="1167" cy="284" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="1180.0" y="289.0" class="item" text-anchor="start">error</text>
+<rect x="62" y="430" width="270" height="170" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="80.0" y="462.0" class="box-title" text-anchor="start">1. Select mode</text>
+<circle cx="87" cy="480" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="485.0" class="item" text-anchor="start">Execute</text>
+<circle cx="87" cy="503" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="508.0" class="item" text-anchor="start">Mock</text>
+<circle cx="87" cy="526" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="531.0" class="item" text-anchor="start">SP1 / PLONK / Groth16</text>
+<line x1="332" y1="515" x2="392" y2="515" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="422" y="430" width="270" height="170" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="440.0" y="462.0" class="box-title" text-anchor="start">2. Execute host copy</text>
+<circle cx="447" cy="480" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="460.0" y="485.0" class="item" text-anchor="start">derive output</text>
+<circle cx="447" cy="503" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="460.0" y="508.0" class="item" text-anchor="start">build public inputs</text>
+<line x1="692" y1="515" x2="752" y2="515" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="782" y="430" width="270" height="170" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="800.0" y="462.0" class="box-title" text-anchor="start">3. Generate proof</text>
+<circle cx="807" cy="480" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="820.0" y="485.0" class="item" text-anchor="start">mock commitment</text>
+<circle cx="807" cy="503" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="820.0" y="508.0" class="item" text-anchor="start">or SP1 guest proof</text>
+<line x1="1052" y1="515" x2="1112" y2="515" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="1142" y="430" width="270" height="170" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+<text x="1160.0" y="462.0" class="box-title" text-anchor="start">4. Assemble NeoProof</text>
+<circle cx="1167" cy="480" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="1180.0" y="485.0" class="item" text-anchor="start">output</text>
+<circle cx="1167" cy="503" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="1180.0" y="508.0" class="item" text-anchor="start">proof bytes</text>
+<circle cx="1167" cy="526" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="1180.0" y="531.0" class="item" text-anchor="start">mode + vkey</text>
+<rect x="62" y="750" width="270" height="170" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="80.0" y="782.0" class="box-title" text-anchor="start">1. Load NeoProof</text>
+<circle cx="87" cy="800" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="805.0" class="item" text-anchor="start">format version</text>
+<circle cx="87" cy="823" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="100.0" y="828.0" class="item" text-anchor="start">proof mode</text>
+<line x1="332" y1="835" x2="392" y2="835" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="422" y="750" width="270" height="170" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="440.0" y="782.0" class="box-title" text-anchor="start">2. Check bindings</text>
+<circle cx="447" cy="800" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="460.0" y="805.0" class="item" text-anchor="start">output hash</text>
+<circle cx="447" cy="823" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="460.0" y="828.0" class="item" text-anchor="start">gas</text>
+<circle cx="447" cy="846" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="460.0" y="851.0" class="item" text-anchor="start">success flag</text>
+<line x1="692" y1="835" x2="752" y2="835" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="782" y="750" width="270" height="170" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="800.0" y="782.0" class="box-title" text-anchor="start">3. Check proof</text>
+<circle cx="807" cy="800" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="820.0" y="805.0" class="item" text-anchor="start">mock commitment</text>
+<circle cx="807" cy="823" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="820.0" y="828.0" class="item" text-anchor="start">or SP1 verifier</text>
+<line x1="1052" y1="835" x2="1112" y2="835" stroke="#475569" stroke-width="2.2" marker-end="url(#arrow-slate)"/>
+<rect x="1142" y="750" width="270" height="170" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="1160.0" y="782.0" class="box-title" text-anchor="start">4. Accept / Reject</text>
+<circle cx="1167" cy="800" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="1180.0" y="805.0" class="item" text-anchor="start">fail closed on mismatch</text>
+<rect x="782" y="630" width="610" height="80" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="800.0" y="662.0" class="box-title" text-anchor="start">Fallback rule</text>
+<text x="800.0" y="689.0" class="item" text-anchor="start">Production proof modes never downgrade to mock unless fallback is explicitly allowed.</text>
+<polyline points="1142.0,600.0 1142.0,630.0" fill="none" stroke="#d97706" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-amber)"/>
+</svg>

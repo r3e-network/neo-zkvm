@@ -6,6 +6,7 @@
 
 - [Getting Started](getting-started.md)
 - [Architecture](architecture.md)
+- [Visual Figures](figures/README.md)
 - [Opcodes Reference](opcodes.md)
 
 # Reference
@@ -19,3 +20,8 @@
 - [Formal Verification](formal-verification.md)
 - [Completeness Proofs](completeness-proof.md)
 - [SP1 v6 Migration Notes](sp1-v6-migration-notes.md)
+
+# 中文
+
+- [中文文档](zh/README.md)
+- [Neo zkVM 图表](zh/figures/README.md)

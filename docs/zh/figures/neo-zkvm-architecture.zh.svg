@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+<title id="title">Neo zkVM 架构</title>
+<desc id="desc">围绕唯一规范 Neo VM 执行核心构建的生产级证明工具链。</desc>
+
+<defs>
+  <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+    <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10"/>
+  </filter>
+  <marker id="arrow-slate" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+  </marker>
+  <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#16a34a"/>
+  </marker>
+  <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+  </marker>
+  <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#d97706"/>
+  </marker>
+  <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+  </marker>
+  <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#dc2626"/>
+  </marker>
+  <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+    <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+  </marker>
+  <style>
+    .bg { fill: #f8fafc; }
+    .title { font: 700 30px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .subtitle { font: 400 16px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .section { font: 700 14px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; letter-spacing: 0.08em; }
+    .box-title { font: 700 19px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #0f172a; }
+    .box-subtitle { font: 500 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #475569; }
+    .item { font: 400 13px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .small { font: 400 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #64748b; }
+    .label { font: 600 12px "Segoe UI", "Microsoft YaHei", Arial, sans-serif; fill: #334155; }
+    .formula { font: 500 16px "Cascadia Code", Consolas, monospace; fill: #111827; }
+    .mono { font: 500 13px "Cascadia Code", Consolas, monospace; fill: #334155; }
+  </style>
+</defs>
+
+<rect class="bg" x="0" y="0" width="1440" height="900"/>
+<text x="48.0" y="56.0" class="title" text-anchor="start">Neo zkVM 架构</text>
+<text x="48.0" y="84.0" class="subtitle" text-anchor="start">围绕唯一规范 Neo VM 执行核心构建的生产级证明工具链。</text>
+<rect x="56" y="150" width="270" height="230" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+<text x="74.0" y="176.0" class="section" text-anchor="start">入口</text>
+<text x="74.0" y="204.0" class="box-title" text-anchor="start">开发者与 CLI</text>
+<text x="74.0" y="227.0" class="box-subtitle" text-anchor="start">neo-zkvm-cli</text>
+<circle cx="81" cy="248" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="94.0" y="253.0" class="item" text-anchor="start">run / prove</text>
+<circle cx="81" cy="271" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="94.0" y="276.0" class="item" text-anchor="start">asm / disasm / debug</text>
+<circle cx="81" cy="294" r="4" fill="none" stroke="#2563eb" stroke-width="1.8"/>
+<text x="94.0" y="299.0" class="item" text-anchor="start">脚本检查与执行轨迹</text>
+<rect x="400" y="115" width="300" height="245" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="418.0" y="141.0" class="section" text-anchor="start">主机侧</text>
+<text x="418.0" y="169.0" class="box-title" text-anchor="start">证明编排器</text>
+<text x="418.0" y="192.0" class="box-subtitle" text-anchor="start">neo-zkvm-prover</text>
+<circle cx="425" cy="213" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="438.0" y="218.0" class="item" text-anchor="start">选择 Execute / Mock / SP1</text>
+<circle cx="425" cy="236" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="438.0" y="241.0" class="item" text-anchor="start">用 max_cycles 限制 gas</text>
+<circle cx="425" cy="259" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="438.0" y="264.0" class="item" text-anchor="start">构造 PublicInputs</text>
+<rect x="400" y="420" width="300" height="220" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="418.0" y="446.0" class="section" text-anchor="start">共享 ABI</text>
+<text x="418.0" y="474.0" class="box-title" text-anchor="start">Guest 边界</text>
+<text x="418.0" y="497.0" class="box-subtitle" text-anchor="start">neo-vm-guest</text>
+<circle cx="425" cy="518" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="438.0" y="523.0" class="item" text-anchor="start">ProofInput / ProofOutput ABI</text>
+<circle cx="425" cy="541" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="438.0" y="546.0" class="item" text-anchor="start">规范 bincode 编码</text>
+<circle cx="425" cy="564" r="4" fill="none" stroke="#d97706" stroke-width="1.8"/>
+<text x="438.0" y="569.0" class="item" text-anchor="start">确定性 zk syscall</text>
+<rect x="400" y="705" width="300" height="135" rx="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+<text x="418.0" y="737.0" class="box-title" text-anchor="start">共享执行核心</text>
+<text x="418.0" y="760.0" class="box-subtitle" text-anchor="start">neo-vm-rs</text>
+<circle cx="425" cy="781" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="438.0" y="786.0" class="item" text-anchor="start">规范 StackValue</text>
+<circle cx="425" cy="804" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="438.0" y="809.0" class="item" text-anchor="start">Opcode 语义</text>
+<circle cx="425" cy="827" r="4" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+<text x="438.0" y="832.0" class="item" text-anchor="start">解释器回调</text>
+<rect x="790" y="115" width="290" height="245" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+<text x="808.0" y="141.0" class="section" text-anchor="start">密码学</text>
+<text x="808.0" y="169.0" class="box-title" text-anchor="start">SP1 证明栈</text>
+<text x="808.0" y="192.0" class="box-subtitle" text-anchor="start">SP1 SDK + guest ELF</text>
+<circle cx="815" cy="213" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="828.0" y="218.0" class="item" text-anchor="start">压缩证明</text>
+<circle cx="815" cy="236" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="828.0" y="241.0" class="item" text-anchor="start">PLONK 证明</text>
+<circle cx="815" cy="259" r="4" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+<text x="828.0" y="264.0" class="item" text-anchor="start">Groth16 证明</text>
+<rect x="790" y="420" width="290" height="220" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="2" filter="url(#shadow)"/>
+<text x="808.0" y="452.0" class="box-title" text-anchor="start">证明产物</text>
+<text x="808.0" y="475.0" class="box-subtitle" text-anchor="start">NeoProof</text>
+<circle cx="815" cy="496" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="828.0" y="501.0" class="item" text-anchor="start">ProofOutput</text>
+<circle cx="815" cy="519" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="828.0" y="524.0" class="item" text-anchor="start">证明字节</text>
+<circle cx="815" cy="542" r="4" fill="none" stroke="#0f766e" stroke-width="1.8"/>
+<text x="828.0" y="547.0" class="item" text-anchor="start">PublicInputs + vkey hash + mode</text>
+<rect x="1135" y="350" width="250" height="290" rx="8" fill="#ecfdf3" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+<text x="1153.0" y="376.0" class="section" text-anchor="start">验证</text>
+<text x="1153.0" y="404.0" class="box-title" text-anchor="start">验证器策略</text>
+<text x="1153.0" y="427.0" class="box-subtitle" text-anchor="start">neo-zkvm-verifier</text>
+<circle cx="1160" cy="448" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="1173.0" y="453.0" class="item" text-anchor="start">格式版本</text>
+<circle cx="1160" cy="471" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="1173.0" y="476.0" class="item" text-anchor="start">输出与公开输入绑定</text>
+<circle cx="1160" cy="494" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="1173.0" y="499.0" class="item" text-anchor="start">SP1 或 mock 校验</text>
+<circle cx="1160" cy="517" r="4" fill="none" stroke="#16a34a" stroke-width="1.8"/>
+<text x="1173.0" y="522.0" class="item" text-anchor="start">失败即拒绝</text>
+<rect x="790" y="705" width="595" height="115" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2" filter="url(#shadow)"/>
+<text x="808.0" y="737.0" class="box-title" text-anchor="start">设计不变量</text>
+<text x="808.0" y="764.0" class="item" text-anchor="start">Neo zkVM 不维护第二套 NeoVM 实现。</text>
+<text x="808.0" y="784.0" class="item" text-anchor="start">执行语义属于 neo-vm-rs，zkVM 只负责证明封装。</text>
+<line x1="326" y1="265" x2="400" y2="238" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrow-blue)"/>
+<text x="363.0" y="243.5" class="label" text-anchor="middle">prove</text>
+<line x1="326" y1="292" x2="400" y2="515" stroke="#2563eb" stroke-width="2.2" marker-end="url(#arrow-blue)"/>
+<text x="363.0" y="395.5" class="label" text-anchor="middle">run</text>
+<line x1="550" y1="360" x2="550" y2="420" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="550.0" y="382.0" class="label" text-anchor="middle">ProofInput</text>
+<line x1="550" y1="640" x2="550" y2="705" stroke="#d97706" stroke-width="2.2" marker-end="url(#arrow-amber)"/>
+<text x="550.0" y="664.5" class="label" text-anchor="middle">execute</text>
+<line x1="700" y1="238" x2="790" y2="238" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="745.0" y="230.0" class="label" text-anchor="middle">SP1 mode</text>
+<line x1="700" y1="515" x2="790" y2="515" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arrow-teal)"/>
+<text x="745.0" y="507.0" class="label" text-anchor="middle">output</text>
+<line x1="935" y1="360" x2="935" y2="420" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-red)"/>
+<text x="935.0" y="382.0" class="label" text-anchor="middle">proof bytes</text>
+<line x1="1080" y1="530" x2="1135" y2="500" stroke="#16a34a" stroke-width="2.2" marker-end="url(#arrow-green)"/>
+<text x="1107.5" y="507.0" class="label" text-anchor="middle">verify</text>
+<polyline points="1260.0,350.0 1260.0,238.0 1080.0,238.0" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="7 6" marker-end="url(#arrow-red)"/>
+<text x="1260.0" y="230.0" class="label" text-anchor="middle">vkey / proof</text>
+</svg>

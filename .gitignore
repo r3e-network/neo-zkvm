@@ -7,3 +7,5 @@ cobertura.xml
 /fuzz/corpus
 /fuzz/artifacts
 /fuzz/Cargo.lock
+__pycache__/
+*.pyc
