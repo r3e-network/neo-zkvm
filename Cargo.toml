@@ -19,7 +19,7 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 # Neo VM Core
-neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "f6a8abb" }
+neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "9a93950" }
 neo-vm-core = { path = "crates/neo-vm-core", version = "0.2.2" }
 neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
 neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
