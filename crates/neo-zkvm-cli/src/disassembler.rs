@@ -413,15 +413,12 @@ impl<'a> Disassembler<'a> {
                 let t = self.read_u8(ip + 1);
                 (format!("ISTYPE {}", self.type_name(t)), 2)
             }
-            0xDA => ("TYPE".to_string(), 1),
             0xDB => {
                 let t = self.read_u8(ip + 1);
                 (format!("CONVERT {}", self.type_name(t)), 2)
             }
             0xE0 => ("ABORTMSG".to_string(), 1),
             0xE1 => ("ASSERTMSG".to_string(), 1),
-
-            0xF1 => ("THROWIFNOT".to_string(), 1),
 
             _ => (format!("??? (0x{:02X})", op), 1),
         }
@@ -546,11 +543,14 @@ mod tests {
     }
 
     #[test]
-    fn test_disassembles_throwifnot_not_ripemd160() {
-        let disasm = Disassembler::new(&[0xF1]);
-        let (name, size) = disasm.decode_instruction(0);
+    fn test_disassembles_reserved_opcode_bytes_as_unknown() {
+        for (byte, expected) in [(0xDA, "??? (0xDA)"), (0xF1, "??? (0xF1)")] {
+            let script = [byte];
+            let disasm = Disassembler::new(&script);
+            let (name, size) = disasm.decode_instruction(0);
 
-        assert_eq!(size, 1);
-        assert_eq!(name, "THROWIFNOT");
+            assert_eq!(size, 1);
+            assert_eq!(name, expected);
+        }
     }
 }

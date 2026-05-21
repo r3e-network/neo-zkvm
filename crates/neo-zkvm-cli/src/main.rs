@@ -653,7 +653,6 @@ impl<'a> Inspector<'a> {
                 0x42..=0x9F => 2, // stack, slot, splice, buffer, bitwise, INC/DEC, ADD/SUB
                 0xA0..=0xDF => 8, // arithmetic (MUL+), comparison, compound types
                 0xE0..=0xEF => 2, // ABORTMSG, ASSERTMSG, reserved
-                0xF1 => 2,        // THROWIFNOT
                 _ => 1,
             };
             min_gas += cost;

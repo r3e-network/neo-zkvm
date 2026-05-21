@@ -544,10 +544,9 @@ fn test_native_crypto_sha256() {
 }
 
 #[test]
-fn test_throwifnot_uses_canonical_opcode_not_ripemd160() {
+fn test_throwifnot_byte_is_rejected_as_non_canonical() {
     let script = vec![
-        0x0C, 0x00, // PUSHDATA1 empty bytes, falsey
-        0xF1, // THROWIFNOT
+        0xF1, // reserved in NeoVM 3.9.x
         0x40, // RET
     ];
     let input = ProofInput {
@@ -561,5 +560,5 @@ fn test_throwifnot_uses_canonical_opcode_not_ripemd160() {
         .error
         .as_deref()
         .unwrap_or_default()
-        .contains("THROWIFNOT"));
+        .contains("Invalid opcode: 0xf1"));
 }

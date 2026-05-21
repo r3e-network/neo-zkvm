@@ -24,14 +24,9 @@ fn proof_guest_does_not_depend_on_legacy_neo_vm_core() {
 }
 
 #[test]
-fn proof_execution_uses_canonical_throwifnot_opcode() {
+fn proof_execution_rejects_non_canonical_throwifnot_byte() {
     let output = execute(ProofInput {
-        // PUSHDATA1 empty bytes, THROWIFNOT, RET.
-        //
-        // 0xF1 is canonical NeoVM THROWIFNOT. The previous zkVM-local engine
-        // treated it as a RIPEMD160 pseudo opcode, which silently produced a
-        // hash and halted instead of faulting on a falsey condition.
-        script: vec![0x0c, 0x00, 0xf1, 0x40],
+        script: vec![0xf1, 0x40],
         arguments: vec![],
         gas_limit: 1_000_000,
     });
@@ -41,7 +36,7 @@ fn proof_execution_uses_canonical_throwifnot_opcode() {
         .error
         .as_deref()
         .unwrap_or_default()
-        .contains("THROWIFNOT"));
+        .contains("Invalid opcode: 0xf1"));
 }
 
 #[test]

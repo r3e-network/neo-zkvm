@@ -328,7 +328,6 @@ impl Assembler {
                 | "ABORT"
                 | "ASSERT"
                 | "THROW"
-                | "THROWIFNOT"
                 | "DEPTH"
                 | "DROP"
                 | "NIP"
@@ -937,7 +936,6 @@ impl Assembler {
                 let type_id = self.parse_u8(operands, line_num)?;
                 bytecode.push(type_id);
             }
-            "TYPE" => bytecode.push(0xDA),
             "CONVERT" => {
                 bytecode.push(0xDB);
                 let type_id = self.parse_u8(operands, line_num)?;
@@ -945,7 +943,6 @@ impl Assembler {
             }
             "ABORTMSG" => bytecode.push(0xE0),
             "ASSERTMSG" => bytecode.push(0xE1),
-            "THROWIFNOT" => bytecode.push(0xF1),
 
             // Convenience syscall aliases. These are emitted as canonical
             // SYSCALL instructions instead of private crypto opcodes.
@@ -1398,11 +1395,14 @@ mod tests {
     }
 
     #[test]
-    fn test_throwifnot_is_canonical_opcode() {
+    fn test_reserved_opcode_names_are_rejected() {
         let mut assembler = Assembler::new();
-        let bytes = assembler.assemble("THROWIFNOT").unwrap();
 
-        assert_eq!(bytes, vec![0xF1]);
+        for name in ["THROWIFNOT", "TYPE"] {
+            assembler
+                .assemble(name)
+                .expect_err("opcode name is reserved");
+        }
     }
 
     #[test]
