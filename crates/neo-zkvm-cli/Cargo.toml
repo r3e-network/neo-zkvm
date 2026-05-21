@@ -11,12 +11,12 @@ name = "neo-zkvm"
 path = "src/main.rs"
 
 [dependencies]
-neo-vm-core = { workspace = true }
 neo-vm-guest = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 neo-zkvm-verifier = { workspace = true }
 hex.workspace = true
+sha2.workspace = true
 
 [features]
 default = []

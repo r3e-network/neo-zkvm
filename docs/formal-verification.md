@@ -264,7 +264,7 @@ then σ' ⊨ Q
 ```
 
 **Proof:**
-By exhaustive verification of each opcode implementation against its specification. The implementation in `neo-vm-core` directly corresponds to the formal semantics.
+By exhaustive verification of each opcode implementation against its specification. The implementation in `neo-vm-rs` is the shared execution core consumed by Neo zkVM and related VM profiles.
 
 ---
 

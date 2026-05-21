@@ -1,47 +1,34 @@
 # Security Policy
 
+## Scope
+
+Security-sensitive code includes:
+
+- `neo-vm-guest` proof input/output serialization and execution wrapper
+- `neo-zkvm-prover` proof mode selection and public input construction
+- `neo-zkvm-verifier` proof/public-input verification policy
+- `neo-zkvm-cli` file parsing and operator-facing proof commands
+- Shared execution semantics consumed from `neo-vm-rs`
+
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
-| < 0.2   | :x:                |
+Security updates are handled on the default branch in `r3e-network/neo-zkvm`.
 
-## Reporting a Vulnerability
+## Reporting
 
-If you discover a security vulnerability in Neo zkVM, please report it responsibly.
-
-**Do NOT open a public GitHub issue for security vulnerabilities.**
-
-Instead, please email security reports to: **security@neo.org**
+Please report vulnerabilities privately to the project maintainers before public disclosure.
 
 Include:
 
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact assessment
-- Suggested fix (if any)
+- Affected commit or release
+- Reproduction steps
+- Expected and observed behavior
+- Impact assessment
 
-We aim to acknowledge reports within 48 hours and provide a fix timeline within 7 days.
+## Security Requirements
 
-## Scope
-
-The following components are in scope for security reports:
-
-- VM execution engine (`neo-vm-core`)
-- Proof generation and verification (`neo-zkvm-prover`, `neo-zkvm-verifier`)
-- Cryptographic operations (`CryptoLib`, hashing, Merkle proofs)
-- Storage integrity (`TrackedStorage`, Merkle roots)
-- Gas metering correctness
-
-## Out of Scope
-
-- SP1 framework internals (report to [Succinct](https://github.com/succinctlabs/sp1))
-- Denial of service via gas exhaustion (by design, gas limits prevent this)
-
-## Security Measures
-
-- All dependencies audited via `cargo-deny` in CI
-- Fuzz testing for VM execution and script parsing
-- Stack and invocation depth limits to prevent resource exhaustion
-- Deterministic execution for proof reproducibility
+- Production proof modes must not silently downgrade to mock proofs.
+- Public input hashes must bind script, input, output, gas, success state, and verification key.
+- Proof execution must use `neo-vm-rs` shared semantics, not a local forked VM engine.
+- Host-dependent syscalls must be represented through explicit inputs or deterministic adapters.
+- Test fixtures must not contain private keys, production secrets, or live credentials.

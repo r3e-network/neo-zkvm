@@ -1,7 +1,8 @@
 //! Integration tests for Neo zkVM
 
-use neo_vm_core::{NativeContract, StackItem as CoreStackItem, StdLib};
-use neo_vm_guest::{execute, interop_hash, ProofInput, StackItem};
+use neo_vm_guest::{
+    bincode_deserialize, bincode_serialize, execute, interop_hash, ProofInput, StackItem,
+};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 
@@ -506,30 +507,20 @@ fn test_within_range_check() {
 }
 
 // ============================================================================
-// Native Contract Tests
+// Shared VM ABI Tests
 // ============================================================================
 
 #[test]
-fn test_native_stdlib_serialize() {
-    let stdlib = StdLib::new();
-    let original = CoreStackItem::Array(vec![
-        CoreStackItem::Integer(42),
-        CoreStackItem::Boolean(true),
-        CoreStackItem::ByteString(b"neo".to_vec()),
+fn test_shared_stack_value_serialization_roundtrip() {
+    let original = StackItem::Array(vec![
+        StackItem::Integer(42),
+        StackItem::Boolean(true),
+        StackItem::ByteString(b"neo".to_vec()),
     ]);
 
-    let serialized = stdlib
-        .invoke("serialize", vec![original.clone()])
-        .expect("serialize should succeed");
-
-    let bytes = match serialized {
-        CoreStackItem::ByteString(bytes) => bytes,
-        other => panic!("serialize should return ByteString, got {other:?}"),
-    };
-
-    let deserialized = stdlib
-        .invoke("deserialize", vec![CoreStackItem::ByteString(bytes)])
-        .expect("deserialize should succeed");
+    let bytes = bincode_serialize(&original).expect("StackItem should serialize");
+    let deserialized: StackItem =
+        bincode_deserialize(&bytes).expect("StackItem should deserialize");
 
     assert_eq!(deserialized, original);
 }

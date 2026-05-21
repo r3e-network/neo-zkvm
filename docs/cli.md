@@ -190,44 +190,27 @@ neo-zkvm disasm script.bin
 
 ### debug
 
-Interactive step-by-step debugger.
+Trace script execution with the shared `neo-vm-rs` interpreter semantics.
 
 ```bash
 neo-zkvm debug <script>
 ```
 
-**Debugger Commands:**
-
-| Command            | Alias    | Description                       |
-| ------------------ | -------- | --------------------------------- |
-| `step`             | `s`, `n` | Execute next instruction          |
-| `continue`         | `c`      | Continue until breakpoint or halt |
-| `run`              | `r`      | Run to completion                 |
-| `break <addr>`     | `b`      | Set breakpoint at address (hex)   |
-| `delete <addr>`    | `d`      | Delete breakpoint                 |
-| `info breakpoints` |          | List all breakpoints              |
-| `info registers`   |          | Show VM state                     |
-| `print [n]`        | `p`      | Print stack item at index n       |
-| `stack`            |          | Show full stack                   |
-| `disasm`           |          | Disassemble current script        |
-| `reset`            |          | Reset VM to initial state         |
-| `quit`             | `q`      | Exit debugger                     |
-
-**Example Session:**
+**Example Output:**
 
 ```
 $ neo-zkvm debug 12139E40
-Neo zkVM Debugger v0.2.2
-Type 'help' for available commands.
+Tracing script with shared neo-vm-rs semantics...
 
-→ 0x0000: 12  PUSH2    [gas: 0]
-(neodbg) s
-→ 0x0001: 13  PUSH3    [gas: 1]
-(neodbg) stack
-Stack (top → bottom):
-  [0] Integer(2)
-(neodbg) c
-Program halted. Gas consumed: 12
+Executed instructions:
+  0x0000: 12  PUSH2
+  0x0001: 13  PUSH3
+  0x0002: 9E  ADD
+  0x0003: 40  RET
+
+Execution result:
+  State: Halt
+  Stack: [Integer(5)]
 ```
 
 ### inspect

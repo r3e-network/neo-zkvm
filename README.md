@@ -10,9 +10,8 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 - ðŸ” **Real ZK Proofs** - SP1 integration for production-grade proving
 - Shared VM semantics - proof execution uses the canonical `neo-vm-rs` interpreter shared with Neo RISC-V VM
 - Neo N3 compatible - canonical NeoVM opcodes, stack values, and deterministic zk syscall adapters
-- ðŸ’¾ **Storage Support** - Merkle-proven key-value storage
-- ðŸ›ï¸ **Native Contracts** - StdLib, CryptoLib built-in
-- ðŸ› ï¸ **Developer Tools** - CLI with assembler, disassembler, debugger
+- Deterministic zk syscalls - hash/syscall adapters are constrained through the shared guest boundary
+- Developer tools - CLI with assembler, disassembler, execution trace, inspection, proving, and verification
 
 ## Architecture
 
@@ -28,9 +27,9 @@ neo-zkvm-cli
   |
   +--> neo-zkvm-verifier ---> proof policy and public-input checks
 
-neo-vm-core remains a compatibility/native-utility crate for storage,
-StdLib/CryptoLib helpers, and legacy debugger surfaces. It is not the proof
-execution engine.
+The repository intentionally does not carry a second NeoVM implementation.
+Execution semantics live in `neo-vm-rs`; zkVM crates wrap that shared engine for
+proof input/output, SP1 proving, verifier policy, and developer tooling.
 ```
 
 ## Quick Start
@@ -157,21 +156,6 @@ let proof = prover.prove(input);
 assert!(verify_for_mode(&proof, ProofMode::Mock));
 ```
 
-### Use Storage
-
-```rust
-use neo_vm_core::{TrackedStorage, StorageContext, StorageBackend};
-
-let mut storage = TrackedStorage::new();
-let ctx = StorageContext::default();
-
-storage.put(&ctx, b"key", b"value").unwrap();
-assert_eq!(storage.get(&ctx, b"key"), Some(b"value".to_vec()));
-
-// Get Merkle root for ZK proof
-let root = storage.merkle_root();
-```
-
 ## Supported Opcodes
 
 | Category     | Count | Examples                         |
@@ -201,7 +185,6 @@ loop/1000           time: [8.2 Âµs 8.5 Âµs 8.8 Âµs]
 - [CLI Reference](docs/cli.md)
 - [Formal Verification](docs/formal-verification.md)
 - [Completeness Proofs](docs/completeness-proof.md)
-- [Production Readiness Report](PRODUCTION_READINESS_REPORT.md)
 - [SP1 v6 Migration Notes](docs/sp1-v6-migration-notes.md)
 - [Examples](examples/)
 

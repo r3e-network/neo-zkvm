@@ -386,7 +386,11 @@ The proof construction process:
 **Step 1: Execution**
 
 ```rust
-let mut vm = NeoVM::new(gas_limit);
+let output = neo_vm_guest::execute(ProofInput {
+    script,
+    arguments,
+    gas_limit,
+});
 vm.load_script(program).unwrap();
 let trace = vm.execute_with_trace();
 ```

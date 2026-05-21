@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/neo-vm-core",
     "crates/neo-vm-guest",
     "crates/neo-zkvm-prover",
     "crates/neo-zkvm-verifier",
@@ -18,9 +17,8 @@ repository = "https://github.com/r3e-network/neo-zkvm"
 rust-version = "1.88"
 
 [workspace.dependencies]
-# Neo VM Core
+# Shared NeoVM semantics
 neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "025d986" }
-neo-vm-core = { path = "crates/neo-vm-core", version = "0.2.2" }
 neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
 neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
 neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.2.2" }

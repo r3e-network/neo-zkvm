@@ -148,8 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Control flow (jumps, calls, conditionals)
 - Arithmetic with overflow checking
 - Bitwise operations
-- Native contracts (StdLib, CryptoLib)
-- Key-value storage with Merkle proofs
+- Shared VM semantics through `neo-vm-rs`
+- Deterministic proof input/output binding
 - ZK proof generation via SP1 integration
 - Proof verification
 - CLI tools (run, prove, asm, disasm, debug, inspect)
@@ -180,18 +180,16 @@ let config = ProverConfig {
 };
 ```
 
-#### Stack Depth Limits
+#### Shared Execution
 
 ```rust
-// Default limits (recommended)
-let vm = NeoVM::new(1_000_000);
+use neo_vm_guest::{execute, ProofInput};
 
-// Custom limits (advanced)
-let vm = NeoVM::with_limits(
-    1_000_000,     // gas_limit
-    2048,          // max_stack_depth
-    1024           // max_invocation_depth
-);
+let output = execute(ProofInput {
+    script: vec![0x12, 0x13, 0x9E, 0x40],
+    arguments: vec![],
+    gas_limit: 1_000_000,
+});
 ```
 
 ### Known Issues

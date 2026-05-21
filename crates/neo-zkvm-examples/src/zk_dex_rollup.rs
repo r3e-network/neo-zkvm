@@ -1,5 +1,4 @@
-use neo_vm_core::{NeoVM, VMState};
-use neo_vm_guest::{ProofInput, StackItem};
+use neo_vm_guest::{execute, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
 
@@ -25,18 +24,18 @@ fn main() {
     let script_hex = "006401c8009e00329e40";
     let script = hex_decode(script_hex);
 
-    // Let's see how much gas it costs to run on a normal Neo VM node
-    let mut normal_vm = NeoVM::new(1_000_000);
-    normal_vm.load_script(script.clone()).unwrap();
-    while !matches!(normal_vm.state, VMState::Halt | VMState::Fault) {
-        normal_vm.execute_next().unwrap();
-    }
-    let l1_gas_cost = normal_vm.gas_consumed;
+    // Run locally with the same shared VM semantics used by the zkVM guest.
+    let local_output = execute(ProofInput {
+        script: script.clone(),
+        arguments: vec![],
+        gas_limit: 1_000_000,
+    });
+    let l2_execution_units = local_output.gas_consumed;
 
-    println!("[L1 Node] Traditional Execution Gas Cost: {}", l1_gas_cost);
+    println!("[L2 VM] Shared execution units: {}", l2_execution_units);
     println!(
-        "[L1 Node] Imagine running this for 10,000 trades... Gas: {}\n",
-        l1_gas_cost * 10000
+        "[L2 VM] Imagine batching 10,000 trades... Units: {}\n",
+        l2_execution_units * 10000
     );
 
     println!("--- Using the zkVM Sequencer ---");

@@ -3,15 +3,17 @@
 //! A comprehensive command-line interface for Neo zkVM development,
 //! including execution, debugging, assembly, and proof generation.
 
-use neo_vm_core::{NeoVM, VMState};
 use neo_vm_guest::{execute, ProofInput};
-use neo_vm_rs::{OpCode, MAX_SCRIPT_SIZE};
+use neo_vm_rs::{
+    interop_hash, interpret_with_stack_and_syscalls, last_interpreter_ip, OpCode, StackValue,
+    SyscallProvider, MAX_SCRIPT_SIZE,
+};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
 
 mod assembler;
 mod disassembler;
@@ -71,7 +73,7 @@ COMMANDS:
     prove <script>      Generate ZK proof for script execution
     asm <source>        Assemble source code to bytecode
     disasm <hex>        Disassemble bytecode to readable format
-    debug <script>      Interactive step-by-step debugger
+    debug <script>      Trace execution with shared neo-vm-rs semantics
     inspect <script>    Analyze and display script information
     version             Show version information
     help                Show this help message
@@ -92,7 +94,7 @@ EXAMPLES:
     # Disassemble bytecode
     neo-zkvm disasm 12139E40
 
-    # Debug interactively
+    # Trace execution
     neo-zkvm debug 12139E40
 
     # Inspect script structure
@@ -275,12 +277,24 @@ fn cmd_debug(args: &[String]) -> Result<(), String> {
     }
 
     let script = parse_script(&args[0])?;
-    let gas_limit = parse_gas_limit(args)?;
+    let mut trace_host = TraceHost::new(script.clone());
 
-    let mut debugger = Debugger::new(script, gas_limit)?;
-    debugger.run()?;
+    println!("Tracing script with shared neo-vm-rs semantics...\n");
+    let result = interpret_with_stack_and_syscalls(&script, Vec::new(), &mut trace_host);
+    trace_host.print_trace();
 
-    Ok(())
+    match result {
+        Ok(result) => {
+            println!("\nExecution result:");
+            println!("  State: {:?}", result.state);
+            println!("  Stack: {:?}", result.stack);
+            if let Some(error) = result.fault_message {
+                println!("  Fault: {}", error);
+            }
+            Ok(())
+        }
+        Err(error) => Err(format!("Trace execution failed: {error}")),
+    }
 }
 
 fn cmd_inspect(args: &[String]) -> Result<(), String> {
@@ -393,326 +407,81 @@ fn should_error_on_fallback(
 }
 
 // ============================================================================
-// Debugger
+// Shared execution trace
 // ============================================================================
 
-struct Debugger {
-    vm: NeoVM,
-    script: Vec<u8>,
-    breakpoints: Vec<usize>,
-    history: Vec<String>,
+struct TraceStep {
+    ip: usize,
+    opcode: u8,
+    instruction: String,
 }
 
-impl Debugger {
-    fn new(script: Vec<u8>, gas_limit: u64) -> Result<Self, String> {
-        let mut vm = NeoVM::new(gas_limit);
-        vm.load_script(script.clone())
-            .map_err(|e| format!("Failed to load script in debugger: {}", e))?;
-        Ok(Self {
-            vm,
+struct TraceHost {
+    script: Vec<u8>,
+    steps: Vec<TraceStep>,
+}
+
+impl TraceHost {
+    fn new(script: Vec<u8>) -> Self {
+        Self {
             script,
-            breakpoints: Vec::new(),
-            history: Vec::new(),
-        })
-    }
-
-    fn run(&mut self) -> Result<(), String> {
-        println!("Neo zkVM Debugger v{}", VERSION);
-        println!("Type 'help' for available commands.\n");
-
-        self.print_current_state();
-
-        let stdin = io::stdin();
-        let mut stdout = io::stdout();
-
-        loop {
-            print!("(neodbg) ");
-            stdout
-                .flush()
-                .map_err(|e| format!("Failed to flush stdout: {}", e))?;
-
-            let mut line = String::new();
-            if stdin.lock().read_line(&mut line).is_err() {
-                break;
-            }
-
-            let line = line.trim();
-            if line.is_empty() {
-                // Repeat last command
-                if let Some(last) = self.history.last().cloned() {
-                    self.execute_command(&last)?;
-                }
-                continue;
-            }
-
-            self.history.push(line.to_string());
-
-            if self.execute_command(line)? {
-                break;
-            }
+            steps: Vec::new(),
         }
-
-        Ok(())
     }
 
-    fn execute_command(&mut self, cmd: &str) -> Result<bool, String> {
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        if parts.is_empty() {
-            return Ok(false);
-        }
-
-        match parts[0] {
-            "help" | "h" => self.cmd_help(),
-            "step" | "s" | "n" => self.cmd_step(),
-            "continue" | "c" => self.cmd_continue(),
-            "run" | "r" => self.cmd_run_to_end(),
-            "break" | "b" => self.cmd_breakpoint(&parts[1..]),
-            "delete" | "d" => self.cmd_delete_breakpoint(&parts[1..]),
-            "info" | "i" => self.cmd_info(&parts[1..]),
-            "print" | "p" => self.cmd_print(&parts[1..]),
-            "stack" => self.cmd_stack(),
-            "disasm" => self.cmd_disasm(),
-            "reset" => self.cmd_reset()?,
-            "quit" | "q" | "exit" => return Ok(true),
-            _ => {
-                println!(
-                    "Unknown command: '{}'. Type 'help' for available commands.",
-                    parts[0]
-                );
-            }
-        }
-
-        Ok(false)
-    }
-
-    fn cmd_help(&self) {
-        println!(
-            r#"
-Available commands:
-  step, s, n          Execute next instruction
-  continue, c         Continue until breakpoint or halt
-  run, r              Run to completion
-  break <addr>, b     Set breakpoint at address (hex)
-  delete <addr>, d    Delete breakpoint
-  info breakpoints    List all breakpoints
-  info registers      Show VM state
-  print <n>, p        Print stack item at index n
-  stack               Show full stack
-  disasm              Disassemble current script
-  reset               Reset VM to initial state
-  quit, q, exit       Exit debugger
-"#
-        );
-    }
-
-    fn cmd_step(&mut self) {
-        if matches!(self.vm.state, VMState::Halt | VMState::Fault) {
-            println!("Program has terminated. Use 'reset' to restart.");
+    fn print_trace(&self) {
+        println!("Executed instructions:");
+        if self.steps.is_empty() {
+            println!("  <none>");
             return;
         }
 
-        if let Err(e) = self.vm.execute_next() {
-            println!("Error: {}", e);
-        }
-
-        self.print_current_state();
-    }
-
-    fn cmd_continue(&mut self) {
-        while !matches!(self.vm.state, VMState::Halt | VMState::Fault) {
-            let ip = self.get_current_ip();
-            if self.breakpoints.contains(&ip)
-                && !self
-                    .history
-                    .last()
-                    .map(|s| {
-                        let cmd = s.split_whitespace().next().unwrap_or("");
-                        cmd == "continue" || cmd == "c"
-                    })
-                    .unwrap_or(false)
-            {
-                println!("Breakpoint hit at 0x{:04X}", ip);
-                break;
-            }
-
-            if let Err(e) = self.vm.execute_next() {
-                println!("Error: {}", e);
-                break;
-            }
-
-            // Check breakpoint after execution
-            let new_ip = self.get_current_ip();
-            if self.breakpoints.contains(&new_ip) {
-                println!("Breakpoint hit at 0x{:04X}", new_ip);
-                self.print_current_state();
-                return;
-            }
-        }
-
-        self.print_current_state();
-    }
-
-    fn cmd_run_to_end(&mut self) {
-        while !matches!(self.vm.state, VMState::Halt | VMState::Fault) {
-            if let Err(e) = self.vm.execute_next() {
-                println!("Error: {}", e);
-                break;
-            }
-        }
-
-        self.print_current_state();
-    }
-
-    fn cmd_breakpoint(&mut self, args: &[&str]) {
-        if args.is_empty() {
-            println!("Usage: break <address>");
-            return;
-        }
-
-        let addr_str = args[0].trim_start_matches("0x");
-        match usize::from_str_radix(addr_str, 16) {
-            Ok(addr) => {
-                if !self.breakpoints.contains(&addr) {
-                    self.breakpoints.push(addr);
-                    println!("Breakpoint set at 0x{:04X}", addr);
-                } else {
-                    println!("Breakpoint already exists at 0x{:04X}", addr);
-                }
-            }
-            Err(_) => println!("Invalid address: {}", args[0]),
-        }
-    }
-
-    fn cmd_delete_breakpoint(&mut self, args: &[&str]) {
-        if args.is_empty() {
-            println!("Usage: delete <address>");
-            return;
-        }
-
-        let addr_str = args[0].trim_start_matches("0x");
-        match usize::from_str_radix(addr_str, 16) {
-            Ok(addr) => {
-                if let Some(pos) = self.breakpoints.iter().position(|&x| x == addr) {
-                    self.breakpoints.remove(pos);
-                    println!("Breakpoint removed at 0x{:04X}", addr);
-                } else {
-                    println!("No breakpoint at 0x{:04X}", addr);
-                }
-            }
-            Err(_) => println!("Invalid address: {}", args[0]),
-        }
-    }
-
-    fn cmd_info(&self, args: &[&str]) {
-        if args.is_empty() {
-            println!("Usage: info <breakpoints|registers>");
-            return;
-        }
-
-        match args[0] {
-            "breakpoints" | "b" => {
-                if self.breakpoints.is_empty() {
-                    println!("No breakpoints set.");
-                } else {
-                    println!("Breakpoints:");
-                    for (i, bp) in self.breakpoints.iter().enumerate() {
-                        println!("  {}: 0x{:04X}", i + 1, bp);
-                    }
-                }
-            }
-            "registers" | "r" => {
-                println!("VM State:");
-                println!("  State:        {:?}", self.vm.state);
-                println!("  IP:           0x{:04X}", self.get_current_ip());
-                println!("  Gas consumed: {}", self.vm.gas_consumed);
-                println!("  Gas limit:    {}", self.vm.gas_limit);
-                println!("  Stack depth:  {}", self.vm.eval_stack.len());
-            }
-            _ => println!("Unknown info type: {}", args[0]),
-        }
-    }
-
-    fn cmd_print(&self, args: &[&str]) {
-        if args.is_empty() {
-            if let Some(top) = self.vm.eval_stack.last() {
-                println!("Top: {:?}", top);
-            } else {
-                println!("Stack is empty.");
-            }
-            return;
-        }
-
-        match args[0].parse::<usize>() {
-            Ok(idx) => {
-                let len = self.vm.eval_stack.len();
-                if idx < len {
-                    println!("[{}]: {:?}", idx, self.vm.eval_stack[len - 1 - idx]);
-                } else {
-                    println!("Index out of range (stack depth: {})", len);
-                }
-            }
-            Err(_) => println!("Invalid index: {}", args[0]),
-        }
-    }
-
-    fn cmd_stack(&self) {
-        if self.vm.eval_stack.is_empty() {
-            println!("Stack is empty.");
-        } else {
-            println!("Stack (top → bottom):");
-            for (i, item) in self.vm.eval_stack.iter().rev().enumerate() {
-                println!("  [{}] {:?}", i, item);
-            }
-        }
-    }
-
-    fn cmd_disasm(&self) {
-        let disasm = Disassembler::new(&self.script);
-        println!("{}", disasm.disassemble());
-    }
-
-    fn cmd_reset(&mut self) -> Result<(), String> {
-        self.vm = NeoVM::new(self.vm.gas_limit);
-        self.vm
-            .load_script(self.script.clone())
-            .map_err(|e| format!("Failed to reload script: {}", e))?;
-        println!("VM reset to initial state.");
-        self.print_current_state();
-        Ok(())
-    }
-
-    fn get_current_ip(&self) -> usize {
-        self.vm
-            .invocation_stack
-            .last()
-            .map(|ctx| ctx.ip)
-            .unwrap_or(0)
-    }
-
-    fn print_current_state(&self) {
-        if matches!(self.vm.state, VMState::Halt) {
-            println!("Program halted. Gas consumed: {}", self.vm.gas_consumed);
-            return;
-        }
-
-        if matches!(self.vm.state, VMState::Fault) {
-            println!("Program faulted!");
-            return;
-        }
-
-        let ip = self.get_current_ip();
-        if ip < self.script.len() {
-            let op = self.script[ip];
-            let disasm = Disassembler::new(&self.script);
-            let (name, _) = disasm.decode_instruction(ip);
+        for step in &self.steps {
             println!(
-                "→ 0x{:04X}: {:02X}  {}    [gas: {}]",
-                ip, op, name, self.vm.gas_consumed
+                "  0x{:04X}: {:02X}  {}",
+                step.ip, step.opcode, step.instruction
             );
         }
     }
 }
 
+impl SyscallProvider for TraceHost {
+    fn on_instruction(&mut self, opcode: u8) -> Result<(), String> {
+        let ip = last_interpreter_ip() as usize;
+        let instruction = if ip < self.script.len() {
+            Disassembler::new(&self.script).decode_instruction(ip).0
+        } else {
+            format!("??? (0x{opcode:02X})")
+        };
+
+        self.steps.push(TraceStep {
+            ip,
+            opcode,
+            instruction,
+        });
+        Ok(())
+    }
+
+    fn syscall(&mut self, api: u32, _ip: usize, stack: &mut Vec<StackValue>) -> Result<(), String> {
+        if api == interop_hash("System.Crypto.SHA256") {
+            let bytes = pop_byte_arg(stack, "System.Crypto.SHA256")?;
+            stack.push(StackValue::ByteString(Sha256::digest(&bytes).to_vec()));
+            return Ok(());
+        }
+
+        Err(format!("unsupported trace syscall 0x{api:08x}"))
+    }
+}
+
+fn pop_byte_arg(stack: &mut Vec<StackValue>, syscall: &str) -> Result<Vec<u8>, String> {
+    match stack.pop() {
+        Some(StackValue::ByteString(bytes)) | Some(StackValue::Buffer(bytes)) => Ok(bytes),
+        Some(other) => Err(format!(
+            "{syscall} expects ByteString or Buffer, got {other:?}"
+        )),
+        None => Err(format!("{syscall} expects one stack argument")),
+    }
+}
 // ============================================================================
 // Inspector
 // ============================================================================

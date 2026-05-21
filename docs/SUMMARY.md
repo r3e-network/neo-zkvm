@@ -18,6 +18,4 @@
 
 - [Formal Verification](formal-verification.md)
 - [Completeness Proofs](completeness-proof.md)
-- [SP1 Integration](SP1_REFACTOR.md)
 - [SP1 v6 Migration Notes](sp1-v6-migration-notes.md)
-- [Migration Guide](MIGRATION.md)

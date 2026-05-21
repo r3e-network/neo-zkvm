@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
-neo-vm-core = { path = "../crates/neo-vm-core" }
+neo-vm-guest = { path = "../crates/neo-vm-guest" }
 
 [[bin]]
 name = "fuzz_vm_execution"
