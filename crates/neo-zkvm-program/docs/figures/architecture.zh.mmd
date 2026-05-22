@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Project layer: Neo zkVM 栈"]
+    N2["Inputs: SP1 stdin | Neo 证明输入 | guest 外观层"]
+    N3["neo-zkvm-program: SP1 guest 二进制入口，将证明输入绑定到确定性 NeoVM 执行。"]
+    N4["Responsibilities: 反序列化 stdin | 执行脚本 | 提交公开值"]
+    N5["Outputs: SP1 公开值 | 执行输出 | fault 状态"]
+    N6["Consumers: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

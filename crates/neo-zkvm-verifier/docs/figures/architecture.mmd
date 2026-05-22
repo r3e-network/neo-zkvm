@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Project layer: Neo zkVM stack"]
+    N2["Inputs: proof envelope | verification key | expected public output"]
+    N3["neo-zkvm-verifier: Verifier library that checks proof envelopes, public outputs, and mode compatibility."]
+    N4["Responsibilities: Check proof format | Verify public values | Report validity"]
+    N5["Outputs: verification result | error reason | audit evidence"]
+    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

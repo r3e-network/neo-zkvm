@@ -1,0 +1,10 @@
+flowchart LR
+    N1["Step 1: Receive guest input"]
+    N2["Step 2: Invoke shared VM"]
+    N3["Step 3: Collect output"]
+    N4["Step 4: Commit result"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N2 crate

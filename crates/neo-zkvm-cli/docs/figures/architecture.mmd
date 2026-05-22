@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Project layer: Neo zkVM stack"]
+    N2["Inputs: CLI command | script/proof files | prover options"]
+    N3["neo-zkvm-cli: CLI and developer tooling for assembling, inspecting, proving, and verifying Neo zkVM programs."]
+    N4["Responsibilities: Parse commands | Use shared opcode metadata | Run prove/verify workflows"]
+    N5["Outputs: assembled script | proof report | inspection output"]
+    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

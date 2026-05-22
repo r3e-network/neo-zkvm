@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Project layer: Neo zkVM 栈"]
+    N2["Inputs: 证明封装 | 验证键 | 期望公开输出"]
+    N3["neo-zkvm-verifier: 校验证明封装、公开输出和模式兼容性的 verifier 库。"]
+    N4["Responsibilities: 检查证明格式 | 验证公开值 | 报告有效性"]
+    N5["Outputs: 验证结果 | 错误原因 | 审计证据"]
+    N6["Consumers: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate
