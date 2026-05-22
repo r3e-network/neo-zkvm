@@ -6,7 +6,12 @@
 //! - Jump target annotations
 //! - Operand decoding
 
-use neo_vm_rs::interop_hash;
+use neo_vm_rs::{
+    interop_hash, OpCode, NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY,
+    NEOVM_STACK_ITEM_TYPE_BOOLEAN, NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING,
+    NEOVM_STACK_ITEM_TYPE_INTEGER, NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE,
+    NEOVM_STACK_ITEM_TYPE_MAP, NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT,
+};
 
 pub struct Disassembler<'a> {
     script: &'a [u8],
@@ -43,40 +48,43 @@ impl<'a> Disassembler<'a> {
             return ("???".to_string(), 1);
         }
 
-        let op = self.script[ip];
+        let raw_opcode = self.script[ip];
+        let opcode = match OpCode::try_from(raw_opcode) {
+            Ok(opcode) => opcode,
+            Err(_) => return (format!("??? (0x{raw_opcode:02X})"), 1),
+        };
 
-        match op {
-            // Constants with operands
-            0x00 => {
+        match opcode {
+            OpCode::PUSHINT8 => {
                 let val = self.read_i8(ip + 1);
                 (format!("PUSHINT8 {}", val), 2)
             }
-            0x01 => {
+            OpCode::PUSHINT16 => {
                 let val = self.read_i16(ip + 1);
                 (format!("PUSHINT16 {}", val), 3)
             }
-            0x02 => {
+            OpCode::PUSHINT32 => {
                 let val = self.read_i32(ip + 1);
                 (format!("PUSHINT32 {}", val), 5)
             }
-            0x03 => {
+            OpCode::PUSHINT64 => {
                 let val = self.read_i64(ip + 1);
                 (format!("PUSHINT64 {}", val), 9)
             }
-            0x04 => ("PUSHINT128".to_string(), 17),
-            0x05 => ("PUSHINT256".to_string(), 33),
-            0x0A => {
+            OpCode::PUSHINT128 | OpCode::PUSHINT256 => {
+                (opcode.name().to_string(), 1 + opcode.operand_size())
+            }
+            OpCode::PUSHA => {
                 let offset = self.read_i32(ip + 1);
                 (format!("PUSHA {:+}", offset), 5)
             }
-            0x0B => ("PUSHNULL".to_string(), 1),
-            0x0C => {
+            OpCode::PUSHDATA1 => {
                 let len = self.read_u8(ip + 1) as usize;
                 let data = self.read_bytes(ip + 2, len);
                 let size = 2usize.saturating_add(len).min(self.script.len() - ip);
                 (format!("PUSHDATA1 0x{}", hex::encode(&data)), size)
             }
-            0x0D => {
+            OpCode::PUSHDATA2 => {
                 let len = self.read_u16(ip + 1) as usize;
                 let data = self.read_bytes(ip + 3, len.min(32));
                 let suffix = if len > 32 { "..." } else { "" };
@@ -86,341 +94,169 @@ impl<'a> Disassembler<'a> {
                     size,
                 )
             }
-            0x0E => {
+            OpCode::PUSHDATA4 => {
                 let len = self.read_u32(ip + 1) as usize;
                 let size = 5usize.saturating_add(len).min(self.script.len() - ip);
                 (format!("PUSHDATA4 [{}B]", len), size)
             }
-            0x0F => ("PUSHM1".to_string(), 1),
-            0x10 => ("PUSH0".to_string(), 1),
-            0x11 => ("PUSH1".to_string(), 1),
-            0x12 => ("PUSH2".to_string(), 1),
-            0x13 => ("PUSH3".to_string(), 1),
-            0x14 => ("PUSH4".to_string(), 1),
-            0x15 => ("PUSH5".to_string(), 1),
-            0x16 => ("PUSH6".to_string(), 1),
-            0x17 => ("PUSH7".to_string(), 1),
-            0x18 => ("PUSH8".to_string(), 1),
-            0x19 => ("PUSH9".to_string(), 1),
-            0x1A => ("PUSH10".to_string(), 1),
-            0x1B => ("PUSH11".to_string(), 1),
-            0x1C => ("PUSH12".to_string(), 1),
-            0x1D => ("PUSH13".to_string(), 1),
-            0x1E => ("PUSH14".to_string(), 1),
-            0x1F => ("PUSH15".to_string(), 1),
-            0x20 => ("PUSH16".to_string(), 1),
-
-            // Flow control
-            0x21 => ("NOP".to_string(), 1),
-            0x22 => {
+            OpCode::JMP => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMP {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x23 => {
+            OpCode::JMP_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMP_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x24 => {
+            OpCode::JMPIF => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPIF {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x25 => {
+            OpCode::JMPIF_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPIF_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x26 => {
+            OpCode::JMPIFNOT => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPIFNOT {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x27 => {
+            OpCode::JMPIFNOT_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPIFNOT_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x28 => {
+            OpCode::JMPEQ => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPEQ {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x29 => {
+            OpCode::JMPEQ_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPEQ_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x2A => {
+            OpCode::JMPNE => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPNE {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x2B => {
+            OpCode::JMPNE_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPNE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x2C => {
+            OpCode::JMPGT => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGT {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x2D => {
+            OpCode::JMPGT_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGT_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x2E => {
+            OpCode::JMPGE => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGE {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x2F => {
+            OpCode::JMPGE_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPGE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x30 => {
+            OpCode::JMPLT => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLT {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x31 => {
+            OpCode::JMPLT_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLT_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x32 => {
+            OpCode::JMPLE => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLE {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x33 => {
+            OpCode::JMPLE_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("JMPLE_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x34 => {
+            OpCode::CALL => {
                 let offset = self.read_i8(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("CALL {:+} -> 0x{:04X}", offset, target), 2)
             }
-            0x35 => {
+            OpCode::CALL_L => {
                 let offset = self.read_i32(ip + 1);
                 let target = (ip as isize + offset as isize) as usize;
                 (format!("CALL_L {:+} -> 0x{:04X}", offset, target), 5)
             }
-            0x36 => ("CALLA".to_string(), 1),
-            0x37 => {
+            OpCode::CALLT => {
                 let token = self.read_u16(ip + 1);
                 (format!("CALLT {}", token), 3)
             }
-            0x38 => ("ABORT".to_string(), 1),
-            0x39 => ("ASSERT".to_string(), 1),
-            0x3A => ("THROW".to_string(), 1),
-            0x3B => {
+            OpCode::TRY => {
                 let catch = self.read_i8(ip + 1);
                 let finally = self.read_i8(ip + 2);
                 (format!("TRY catch:{:+} finally:{:+}", catch, finally), 3)
             }
-            0x3C => {
+            OpCode::TRY_L => {
                 let catch = self.read_i32(ip + 1);
                 let finally = self.read_i32(ip + 5);
                 (format!("TRY_L catch:{:+} finally:{:+}", catch, finally), 9)
             }
-            0x3D => {
+            OpCode::ENDTRY => {
                 let offset = self.read_i8(ip + 1);
                 (format!("ENDTRY {:+}", offset), 2)
             }
-            0x3E => {
+            OpCode::ENDTRY_L => {
                 let offset = self.read_i32(ip + 1);
                 (format!("ENDTRY_L {:+}", offset), 5)
             }
-            0x3F => ("ENDFINALLY".to_string(), 1),
-            0x40 => ("RET".to_string(), 1),
-            0x41 => {
+            OpCode::SYSCALL => {
                 let id = self.read_u32(ip + 1);
                 let name = self.syscall_name(id);
                 (format!("SYSCALL {} (0x{:08X})", name, id), 5)
             }
-
-            // Stack operations
-            0x43 => ("DEPTH".to_string(), 1),
-            0x45 => ("DROP".to_string(), 1),
-            0x46 => ("NIP".to_string(), 1),
-            0x48 => ("XDROP".to_string(), 1),
-            0x49 => ("CLEAR".to_string(), 1),
-            0x4A => ("DUP".to_string(), 1),
-            0x4B => ("OVER".to_string(), 1),
-            0x4D => ("PICK".to_string(), 1),
-            0x4E => ("TUCK".to_string(), 1),
-            0x50 => ("SWAP".to_string(), 1),
-            0x51 => ("ROT".to_string(), 1),
-            0x52 => ("ROLL".to_string(), 1),
-            0x53 => ("REVERSE3".to_string(), 1),
-            0x54 => ("REVERSE4".to_string(), 1),
-            0x55 => ("REVERSEN".to_string(), 1),
-
-            // Slot operations
-            0x56 => {
+            OpCode::INITSSLOT => {
                 let count = self.read_u8(ip + 1);
                 (format!("INITSSLOT {}", count), 2)
             }
-            0x57 => {
+            OpCode::INITSLOT => {
                 let locals = self.read_u8(ip + 1);
                 let args = self.read_u8(ip + 2);
                 (format!("INITSLOT locals:{} args:{}", locals, args), 3)
             }
-            0x58 => ("LDSFLD0".to_string(), 1),
-            0x59 => ("LDSFLD1".to_string(), 1),
-            0x5A => ("LDSFLD2".to_string(), 1),
-            0x5B => ("LDSFLD3".to_string(), 1),
-            0x5C => ("LDSFLD4".to_string(), 1),
-            0x5D => ("LDSFLD5".to_string(), 1),
-            0x5E => {
+            OpCode::LDSFLD
+            | OpCode::STSFLD
+            | OpCode::LDLOC
+            | OpCode::STLOC
+            | OpCode::LDARG
+            | OpCode::STARG => {
                 let idx = self.read_u8(ip + 1);
-                (format!("LDSFLD {}", idx), 2)
+                (format!("{} {}", opcode.name(), idx), 2)
             }
-            0x5F => ("STSFLD0".to_string(), 1),
-            0x60 => ("STSFLD1".to_string(), 1),
-            0x61 => ("STSFLD2".to_string(), 1),
-            0x62 => ("STSFLD3".to_string(), 1),
-            0x63 => ("STSFLD4".to_string(), 1),
-            0x64 => ("STSFLD5".to_string(), 1),
-            0x65 => {
-                let idx = self.read_u8(ip + 1);
-                (format!("STSFLD {}", idx), 2)
-            }
-            0x66 => ("LDLOC0".to_string(), 1),
-            0x67 => ("LDLOC1".to_string(), 1),
-            0x68 => ("LDLOC2".to_string(), 1),
-            0x69 => ("LDLOC3".to_string(), 1),
-            0x6A => ("LDLOC4".to_string(), 1),
-            0x6B => ("LDLOC5".to_string(), 1),
-            0x6C => {
-                let idx = self.read_u8(ip + 1);
-                (format!("LDLOC {}", idx), 2)
-            }
-            0x6D => ("STLOC0".to_string(), 1),
-            0x6E => ("STLOC1".to_string(), 1),
-            0x6F => ("STLOC2".to_string(), 1),
-            0x70 => ("STLOC3".to_string(), 1),
-            0x71 => ("STLOC4".to_string(), 1),
-            0x72 => ("STLOC5".to_string(), 1),
-            0x73 => {
-                let idx = self.read_u8(ip + 1);
-                (format!("STLOC {}", idx), 2)
-            }
-            0x74 => ("LDARG0".to_string(), 1),
-            0x75 => ("LDARG1".to_string(), 1),
-            0x76 => ("LDARG2".to_string(), 1),
-            0x77 => ("LDARG3".to_string(), 1),
-            0x78 => ("LDARG4".to_string(), 1),
-            0x79 => ("LDARG5".to_string(), 1),
-            0x7A => {
-                let idx = self.read_u8(ip + 1);
-                (format!("LDARG {}", idx), 2)
-            }
-            0x7B => ("STARG0".to_string(), 1),
-            0x7C => ("STARG1".to_string(), 1),
-            0x7D => ("STARG2".to_string(), 1),
-            0x7E => ("STARG3".to_string(), 1),
-            0x7F => ("STARG4".to_string(), 1),
-            0x80 => ("STARG5".to_string(), 1),
-            0x81 => {
-                let idx = self.read_u8(ip + 1);
-                (format!("STARG {}", idx), 2)
-            }
-
-            // Splice
-            0x88 => ("NEWBUFFER".to_string(), 1),
-            0x89 => ("MEMCPY".to_string(), 1),
-            0x8B => ("CAT".to_string(), 1),
-            0x8C => ("SUBSTR".to_string(), 1),
-            0x8D => ("LEFT".to_string(), 1),
-            0x8E => ("RIGHT".to_string(), 1),
-
-            // Bitwise
-            0x90 => ("INVERT".to_string(), 1),
-            0x91 => ("AND".to_string(), 1),
-            0x92 => ("OR".to_string(), 1),
-            0x93 => ("XOR".to_string(), 1),
-            0x97 => ("EQUAL".to_string(), 1),
-            0x98 => ("NOTEQUAL".to_string(), 1),
-
-            // Arithmetic
-            0x99 => ("SIGN".to_string(), 1),
-            0x9A => ("ABS".to_string(), 1),
-            0x9B => ("NEGATE".to_string(), 1),
-            0x9C => ("INC".to_string(), 1),
-            0x9D => ("DEC".to_string(), 1),
-            0x9E => ("ADD".to_string(), 1),
-            0x9F => ("SUB".to_string(), 1),
-            0xA0 => ("MUL".to_string(), 1),
-            0xA1 => ("DIV".to_string(), 1),
-            0xA2 => ("MOD".to_string(), 1),
-            0xA3 => ("POW".to_string(), 1),
-            0xA4 => ("SQRT".to_string(), 1),
-            0xA5 => ("MODMUL".to_string(), 1),
-            0xA6 => ("MODPOW".to_string(), 1),
-            0xA8 => ("SHL".to_string(), 1),
-            0xA9 => ("SHR".to_string(), 1),
-            0xAA => ("NOT".to_string(), 1),
-            0xAB => ("BOOLAND".to_string(), 1),
-            0xAC => ("BOOLOR".to_string(), 1),
-            0xB1 => ("NZ".to_string(), 1),
-            0xB3 => ("NUMEQUAL".to_string(), 1),
-            0xB4 => ("NUMNOTEQUAL".to_string(), 1),
-            0xB5 => ("LT".to_string(), 1),
-            0xB6 => ("LE".to_string(), 1),
-            0xB7 => ("GT".to_string(), 1),
-            0xB8 => ("GE".to_string(), 1),
-            0xB9 => ("MIN".to_string(), 1),
-            0xBA => ("MAX".to_string(), 1),
-            0xBB => ("WITHIN".to_string(), 1),
-
-            // Compound types
-            0xBE => ("PACKMAP".to_string(), 1),
-            0xBF => ("PACKSTRUCT".to_string(), 1),
-            0xC0 => ("PACK".to_string(), 1),
-            0xC1 => ("UNPACK".to_string(), 1),
-            0xC2 => ("NEWARRAY0".to_string(), 1),
-            0xC3 => ("NEWARRAY".to_string(), 1),
-            0xC4 => {
+            OpCode::NEWARRAY_T => {
                 let t = self.read_u8(ip + 1);
                 (format!("NEWARRAY_T {}", self.type_name(t)), 2)
             }
-            0xC5 => ("NEWSTRUCT0".to_string(), 1),
-            0xC6 => ("NEWSTRUCT".to_string(), 1),
-            0xC8 => ("NEWMAP".to_string(), 1),
-            0xCA => ("SIZE".to_string(), 1),
-            0xCB => ("HASKEY".to_string(), 1),
-            0xCC => ("KEYS".to_string(), 1),
-            0xCD => ("VALUES".to_string(), 1),
-            0xCE => ("PICKITEM".to_string(), 1),
-            0xCF => ("APPEND".to_string(), 1),
-            0xD0 => ("SETITEM".to_string(), 1),
-            0xD1 => ("REVERSEITEMS".to_string(), 1),
-            0xD2 => ("REMOVE".to_string(), 1),
-            0xD3 => ("CLEARITEMS".to_string(), 1),
-            0xD4 => ("POPITEM".to_string(), 1),
-
-            // Types
-            0xD8 => ("ISNULL".to_string(), 1),
-            0xD9 => {
+            OpCode::ISTYPE => {
                 let t = self.read_u8(ip + 1);
                 (format!("ISTYPE {}", self.type_name(t)), 2)
             }
-            0xDB => {
+            OpCode::CONVERT => {
                 let t = self.read_u8(ip + 1);
                 (format!("CONVERT {}", self.type_name(t)), 2)
             }
-            0xE0 => ("ABORTMSG".to_string(), 1),
-            0xE1 => ("ASSERTMSG".to_string(), 1),
-
-            _ => (format!("??? (0x{:02X})", op), 1),
+            _ => (opcode.name().to_string(), 1),
         }
     }
 
@@ -483,16 +319,16 @@ impl<'a> Disassembler<'a> {
 
     fn type_name(&self, t: u8) -> &'static str {
         match t {
-            0x00 => "Any",
-            0x10 => "Pointer",
-            0x20 => "Boolean",
-            0x21 => "Integer",
-            0x28 => "ByteString",
-            0x30 => "Buffer",
-            0x40 => "Array",
-            0x41 => "Struct",
-            0x48 => "Map",
-            0x60 => "InteropInterface",
+            NEOVM_STACK_ITEM_TYPE_ANY => "Any",
+            NEOVM_STACK_ITEM_TYPE_POINTER => "Pointer",
+            NEOVM_STACK_ITEM_TYPE_BOOLEAN => "Boolean",
+            NEOVM_STACK_ITEM_TYPE_INTEGER => "Integer",
+            NEOVM_STACK_ITEM_TYPE_BYTESTRING => "ByteString",
+            NEOVM_STACK_ITEM_TYPE_BUFFER => "Buffer",
+            NEOVM_STACK_ITEM_TYPE_ARRAY => "Array",
+            NEOVM_STACK_ITEM_TYPE_STRUCT => "Struct",
+            NEOVM_STACK_ITEM_TYPE_MAP => "Map",
+            NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE => "InteropInterface",
             _ => "Unknown",
         }
     }

@@ -561,67 +561,62 @@ impl<'a> Inspector<'a> {
         let mut ip = 0;
 
         while ip < self.script.len() {
-            let op = self.script[ip];
-            match op {
-                0x22 | 0x24 | 0x26 | 0x28 | 0x2A | 0x2C | 0x2E | 0x30 | 0x32 | 0x34 => {
+            let opcode_ip = ip;
+            let raw_opcode = self.script[ip];
+            let Ok(opcode) = OpCode::try_from(raw_opcode) else {
+                ip += 1;
+                continue;
+            };
+            ip += 1;
+
+            match opcode {
+                OpCode::JMP
+                | OpCode::JMPIF
+                | OpCode::JMPIFNOT
+                | OpCode::JMPEQ
+                | OpCode::JMPNE
+                | OpCode::JMPGT
+                | OpCode::JMPGE
+                | OpCode::JMPLT
+                | OpCode::JMPLE
+                | OpCode::CALL => {
                     // 1-byte offset jumps
-                    if ip + 1 < self.script.len() {
-                        let offset = self.script[ip + 1] as i8;
-                        let target = (ip as isize + offset as isize) as usize;
+                    if ip < self.script.len() {
+                        let offset = self.script[ip] as i8;
+                        let target = (opcode_ip as isize + offset as isize) as usize;
                         if !targets.contains(&target) {
                             targets.push(target);
                         }
                     }
-                    ip += 2;
+                    ip = self.advance_past_operands(opcode, ip);
                 }
-                0x23 | 0x25 | 0x27 | 0x29 | 0x2B | 0x2D | 0x2F | 0x31 | 0x33 | 0x35 => {
+                OpCode::JMP_L
+                | OpCode::JMPIF_L
+                | OpCode::JMPIFNOT_L
+                | OpCode::JMPEQ_L
+                | OpCode::JMPNE_L
+                | OpCode::JMPGT_L
+                | OpCode::JMPGE_L
+                | OpCode::JMPLT_L
+                | OpCode::JMPLE_L
+                | OpCode::CALL_L => {
                     // 4-byte offset jumps
-                    if ip + 4 < self.script.len() {
+                    if ip + 3 < self.script.len() {
                         let offset = i32::from_le_bytes([
+                            self.script[ip],
                             self.script[ip + 1],
                             self.script[ip + 2],
                             self.script[ip + 3],
-                            self.script[ip + 4],
                         ]);
-                        let target = (ip as isize + offset as isize) as usize;
+                        let target = (opcode_ip as isize + offset as isize) as usize;
                         if !targets.contains(&target) {
                             targets.push(target);
                         }
                     }
-                    ip += 5;
+                    ip = self.advance_past_operands(opcode, ip);
                 }
                 _ => {
-                    ip += 1;
-                    // Skip operand bytes using OpCode metadata
-                    if let Ok(opcode) = OpCode::try_from(op) {
-                        let size = opcode.operand_size();
-                        // PUSHDATA: operand_size is the length-prefix size; read actual data length
-                        match opcode {
-                            OpCode::PUSHDATA1 if ip < self.script.len() => {
-                                ip = ip
-                                    .saturating_add(1 + self.script[ip] as usize)
-                                    .min(self.script.len());
-                            }
-                            OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
-                                let len = u16::from_le_bytes([self.script[ip], self.script[ip + 1]])
-                                    as usize;
-                                ip = ip.saturating_add(2 + len).min(self.script.len());
-                            }
-                            OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
-                                let len = u32::from_le_bytes([
-                                    self.script[ip],
-                                    self.script[ip + 1],
-                                    self.script[ip + 2],
-                                    self.script[ip + 3],
-                                ]) as usize;
-                                ip = ip
-                                    .saturating_add(4)
-                                    .saturating_add(len)
-                                    .min(self.script.len());
-                            }
-                            _ => ip += size,
-                        }
-                    }
+                    ip = self.advance_past_operands(opcode, ip);
                 }
             }
         }
@@ -637,45 +632,13 @@ impl<'a> Inspector<'a> {
 
         while ip < self.script.len() {
             let op = self.script[ip];
-            let cost = match op {
-                0x00..=0x20 => 1, // push constants
-                0x21..=0x40 => 2, // flow control, NOP, RET
-                0x41 => 512,      // SYSCALL, host cost depends on target API
-                0x42..=0x9F => 2, // stack, slot, splice, buffer, bitwise, INC/DEC, ADD/SUB
-                0xA0..=0xDF => 8, // arithmetic (MUL+), comparison, compound types
-                0xE0..=0xEF => 2, // ABORTMSG, ASSERTMSG, reserved
-                _ => 1,
-            };
+            let cost = OpCode::try_from(op).map_or(1, estimated_opcode_cost);
             min_gas += cost;
             max_gas += cost;
             ip += 1;
             // Skip operand bytes
             if let Ok(opcode) = OpCode::try_from(op) {
-                match opcode {
-                    OpCode::PUSHDATA1 if ip < self.script.len() => {
-                        ip = ip
-                            .saturating_add(1 + self.script[ip] as usize)
-                            .min(self.script.len());
-                    }
-                    OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
-                        let len =
-                            u16::from_le_bytes([self.script[ip], self.script[ip + 1]]) as usize;
-                        ip = ip.saturating_add(2 + len).min(self.script.len());
-                    }
-                    OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
-                        let len = u32::from_le_bytes([
-                            self.script[ip],
-                            self.script[ip + 1],
-                            self.script[ip + 2],
-                            self.script[ip + 3],
-                        ]) as usize;
-                        ip = ip
-                            .saturating_add(4)
-                            .saturating_add(len)
-                            .min(self.script.len());
-                    }
-                    _ => ip += opcode.operand_size(),
-                }
+                ip = self.advance_past_operands(opcode, ip);
             }
         }
 
@@ -683,6 +646,116 @@ impl<'a> Inspector<'a> {
         max_gas *= 10;
 
         (min_gas, max_gas)
+    }
+
+    fn advance_past_operands(&self, opcode: OpCode, ip: usize) -> usize {
+        match opcode {
+            OpCode::PUSHDATA1 if ip < self.script.len() => ip
+                .saturating_add(1 + self.script[ip] as usize)
+                .min(self.script.len()),
+            OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
+                let len = u16::from_le_bytes([self.script[ip], self.script[ip + 1]]) as usize;
+                ip.saturating_add(2 + len).min(self.script.len())
+            }
+            OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
+                let len = u32::from_le_bytes([
+                    self.script[ip],
+                    self.script[ip + 1],
+                    self.script[ip + 2],
+                    self.script[ip + 3],
+                ]) as usize;
+                ip.saturating_add(4)
+                    .saturating_add(len)
+                    .min(self.script.len())
+            }
+            _ => ip
+                .saturating_add(opcode.operand_size())
+                .min(self.script.len()),
+        }
+    }
+}
+
+fn estimated_opcode_cost(opcode: OpCode) -> u64 {
+    match opcode {
+        OpCode::PUSHINT8
+        | OpCode::PUSHINT16
+        | OpCode::PUSHINT32
+        | OpCode::PUSHINT64
+        | OpCode::PUSHINT128
+        | OpCode::PUSHINT256
+        | OpCode::PUSHT
+        | OpCode::PUSHF
+        | OpCode::PUSHA
+        | OpCode::PUSHNULL
+        | OpCode::PUSHDATA1
+        | OpCode::PUSHDATA2
+        | OpCode::PUSHDATA4
+        | OpCode::PUSHM1
+        | OpCode::PUSH0
+        | OpCode::PUSH1
+        | OpCode::PUSH2
+        | OpCode::PUSH3
+        | OpCode::PUSH4
+        | OpCode::PUSH5
+        | OpCode::PUSH6
+        | OpCode::PUSH7
+        | OpCode::PUSH8
+        | OpCode::PUSH9
+        | OpCode::PUSH10
+        | OpCode::PUSH11
+        | OpCode::PUSH12
+        | OpCode::PUSH13
+        | OpCode::PUSH14
+        | OpCode::PUSH15
+        | OpCode::PUSH16 => 1,
+        OpCode::SYSCALL => 512,
+        OpCode::MUL
+        | OpCode::DIV
+        | OpCode::MOD
+        | OpCode::POW
+        | OpCode::SQRT
+        | OpCode::MODMUL
+        | OpCode::MODPOW
+        | OpCode::SHL
+        | OpCode::SHR
+        | OpCode::NOT
+        | OpCode::BOOLAND
+        | OpCode::BOOLOR
+        | OpCode::NZ
+        | OpCode::NUMEQUAL
+        | OpCode::NUMNOTEQUAL
+        | OpCode::LT
+        | OpCode::LE
+        | OpCode::GT
+        | OpCode::GE
+        | OpCode::MIN
+        | OpCode::MAX
+        | OpCode::WITHIN
+        | OpCode::PACKMAP
+        | OpCode::PACKSTRUCT
+        | OpCode::PACK
+        | OpCode::UNPACK
+        | OpCode::NEWARRAY0
+        | OpCode::NEWARRAY
+        | OpCode::NEWARRAY_T
+        | OpCode::NEWSTRUCT0
+        | OpCode::NEWSTRUCT
+        | OpCode::NEWMAP
+        | OpCode::SIZE
+        | OpCode::HASKEY
+        | OpCode::KEYS
+        | OpCode::VALUES
+        | OpCode::PICKITEM
+        | OpCode::APPEND
+        | OpCode::SETITEM
+        | OpCode::REVERSEITEMS
+        | OpCode::REMOVE
+        | OpCode::CLEARITEMS
+        | OpCode::POPITEM
+        | OpCode::ISNULL
+        | OpCode::ISTYPE
+        | OpCode::CONVERT => 8,
+        _ => 2,
     }
 }
 
