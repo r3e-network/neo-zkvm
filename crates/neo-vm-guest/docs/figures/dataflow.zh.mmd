@@ -1,10 +1,20 @@
-flowchart LR
-    N1["Data 1: 脚本 + 参数"]
-    N2["Data 2: guest 外观层"]
-    N3["Data 3: VM 结果"]
-    N4["Data 4: 证明公开值"]
+flowchart TB
+    N1["1. neo-vm-guest: 数据流跨越输入、类型模型、核心函数、输出和测试；2 个源码文件，21 个公开符号，12 个测试，4 个依赖"]
+    N2["2. 数据 1: 脚本 + 参数"]
+    N3["3. 数据 2: guest 外观层"]
+    N4["4. 数据 3: VM 结果"]
+    N5["5. 数据 4: 证明公开值"]
+    N6["6. 关键类型: BincodeEncodeError | BincodeDecodeError | ProofInput | ProofOutput +4"]
+    N7["7. 关键函数: bincode_options | bincode_serialize | bincode_deserialize | hash_data +7"]
+    N8["8. 边界校验: src/lib.rs（7 个测试） | tests/shared_vm.rs（5 个测试）"]
+    N9["9. 消费者: neo-zkvm-program | neo-zkvm-prover | 示例"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    N8 --> N9
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate

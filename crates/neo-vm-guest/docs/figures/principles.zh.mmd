@@ -1,14 +1,24 @@
-flowchart LR
-    N1["职责边界: 面向 zkVM guest 的适配层，以 zkVM 兼容方式暴露共享 NeoVM 执行 API。"]
-    N2["核心原则: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
-    N3["输入契约: guest 字节码 | 栈输入 | 共享 VM crate"]
-    N4["状态与产物: guest 执行结果 | 公开输出种子 | fault 原因"]
-    N5["集成方式: neo-zkvm-program | neo-zkvm-prover | 示例"]
-    N6["维护规则: 保持边界小、语义确定、测试可复现。"]
+flowchart TB
+    N1["1. 职责边界: 面向 zkVM guest 的适配层，以 zkVM 兼容方式暴露共享 NeoVM 执行 API。"]
+    N2["2. 核心不变量: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
+    N3["3. 输入必须被约束: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N4["4. 输出必须可验证: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N5["5. 源码证据: 2 个源码文件，21 个公开符号，12 个测试，4 个依赖"]
+    N6["6. 测试证据: src/lib.rs（7 个测试） | tests/shared_vm.rs（5 个测试）"]
+    N7["7. 依赖原则: 运行时 4，测试 0，构建 0，内部 1，外部运行时 3"]
+    N8["8. 维护规则: 边界要小，语义要确定，测试要可复现，图和文档要随源码更新。"]
     N1 --> N2
-    N2 --> N3
-    N3 --> N4
-    N4 --> N5
-    N5 --> N6
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N4 crate

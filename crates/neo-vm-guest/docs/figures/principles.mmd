@@ -1,14 +1,24 @@
-flowchart LR
-    N1["Responsibility boundary: Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form."]
-    N2["Core principles: Call shared VM | Keep guest ABI small | Return deterministic result"]
-    N3["Input contract: guest bytecode | stack input | shared VM crate"]
-    N4["State and artifacts: guest execution result | public output seed | fault reason"]
-    N5["Integration contract: neo-zkvm-program | neo-zkvm-prover | examples"]
-    N6["Maintenance rule: Keep the boundary small, deterministic, and reproducible under tests."]
+flowchart TB
+    N1["1. Responsibility boundary: Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form."]
+    N2["2. Core principles: Call shared VM | Keep guest ABI small | Return deterministic result"]
+    N3["3. Input contract: guest bytecode | stack input | shared VM crate"]
+    N4["4. State and artifacts: guest execution result | public output seed | fault reason"]
+    N5["5. Source evidence: 2 source files, 21 public symbols, 12 tests, 4 deps"]
+    N6["6. Test evidence: src/lib.rs (7 tests) | tests/shared_vm.rs (5 tests)"]
+    N7["7. Dependency discipline: runtime 4, test 0, build 0, internal 1, external runtime 3"]
+    N8["8. Maintenance rule: Keep the boundary small, deterministic, and reproducible under tests."]
     N1 --> N2
-    N2 --> N3
-    N3 --> N4
-    N4 --> N5
-    N5 --> N6
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N4 crate

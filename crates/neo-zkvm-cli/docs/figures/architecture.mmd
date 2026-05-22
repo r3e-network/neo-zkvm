@@ -1,14 +1,27 @@
-flowchart LR
-    N1["Public entrypoints: CLI command | script/proof files | prover options"]
-    N2["neo-zkvm-cli: CLI and developer tooling for assembling, inspecting, proving, and verifying Neo zkVM programs."]
-    N3["Internal components: Parse commands | Use shared opcode metadata | Run prove/verify workflows"]
-    N4["Dependency boundary: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
-    N5["Output artifacts: assembled script | proof report | inspection output"]
-    N6["System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
+flowchart TB
+    N1["1. Architecture overview: neo-zkvm-cli: 5 source files, 9 public symbols, 60 tests, 6 deps"]
+    N2["2. Entry contract: CLI command | script/proof files | prover options"]
+    N3["3. Public API layer: types 3 | functions 6 | traits 0 | constants 0"]
+    N4["4. Core implementation files: src/main.rs (0 API/11 tests) | tests/integration_tests.rs (0 API/30 tests) | src/assembler.rs (5 API/14 tests) | src/disassembler.rs (4 API/3 tests) | tests/source_layout.rs (0 API/2 tests)"]
+    N5["5. Modules and re-exports: src/main.rs: mod assembler | src/main.rs: mod disassembler"]
+    N6["6. Dependency boundary: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
+    N7["7. Output artifacts: assembled script | proof report | inspection output"]
+    N8["8. Test guardrails: tests/integration_tests.rs (30 tests) | src/assembler.rs (14 tests) | src/main.rs (11 tests) | src/disassembler.rs (3 tests) | tests/source_layout.rs (2 tests)"]
+    N9["9. System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
-    N2 --> N3
-    N3 --> N4
-    N4 --> N5
-    N5 --> N6
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N1 --> N9
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
+    N8 -. related .-> N9
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate

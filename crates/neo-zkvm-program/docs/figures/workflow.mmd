@@ -1,10 +1,16 @@
-flowchart LR
-    N1["Step 1: Prepare input"]
-    N2["Step 2: Run guest/host logic"]
-    N3["Step 3: Generate or check proof"]
-    N4["Step 4: Record evidence"]
+flowchart TB
+    N1["1. neo-zkvm-program: Workflow has 4 stages; start source reading at src/main.rs."]
+    N2["2. Stage 1: Prepare input; likely source: src/main.rs (binary or CLI entrypoint)"]
+    N3["3. Stage 2: Run guest/host logic; likely source: src/main.rs (binary or CLI entrypoint)"]
+    N4["4. Stage 3: Generate or check proof; likely source: src/main.rs (binary or CLI entrypoint)"]
+    N5["5. Stage 4: Record evidence; likely source: src/main.rs (binary or CLI entrypoint)"]
+    N6["6. Verification: src/main.rs (4 tests)"]
+    N7["7. Output checks: SP1 public values | execution output | fault status"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate

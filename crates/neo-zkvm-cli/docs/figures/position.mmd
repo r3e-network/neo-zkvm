@@ -1,14 +1,30 @@
-flowchart LR
-    N1["Neo N4 layer: Neo zkVM stack"]
-    N2["Upstream inputs: CLI command | script/proof files | prover options"]
-    N3["neo-zkvm-cli: CLI and developer tooling for assembling, inspecting, proving, and verifying Neo zkVM programs."]
-    N4["Direct dependencies: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
-    N5["Downstream users: zkVM users | L2 prover service | L1 verification adapter"]
-    N6["Learning focus: Locate upstream and downstream first, then read this crate boundary, core data structures, and tests."]
-    N1 --> N2
-    N2 --> N3
+flowchart TB
+    N1["1. Neo N4 layer: Neo zkVM stack"]
+    N2["2. Upstream inputs: CLI command | script/proof files | prover options"]
+    N3["3. neo-zkvm-cli: CLI and developer tooling for assembling, inspecting, proving, and verifying Neo zkVM programs."]
+    N4["4. Downstream users: zkVM users | L2 prover service | L1 verification adapter"]
+    N5["5. Source scale: 5 source files, 9 public symbols, 60 tests, 6 deps"]
+    N6["6. Source entrypoints: src/main.rs (0 API/11 tests) | tests/integration_tests.rs (0 API/30 tests) | src/assembler.rs (5 API/14 tests)"]
+    N7["7. Core API: new | warnings | assemble | disassemble +1"]
+    N8["8. Test guardrails: tests/integration_tests.rs (30 tests) | src/assembler.rs (14 tests) | src/main.rs (11 tests) | src/disassembler.rs (3 tests) | tests/source_layout.rs (2 tests)"]
+    N9["9. Direct dependencies: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
+    N10["10. Learning focus: Locate upstream and downstream first, then read this crate boundary, core data structures, and tests."]
+    N3 --> N1
+    N3 --> N2
     N3 --> N4
-    N4 --> N5
-    N5 --> N6
+    N3 --> N5
+    N3 --> N6
+    N3 --> N7
+    N3 --> N8
+    N3 --> N9
+    N3 --> N10
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
+    N8 -. related .-> N9
+    N9 -. related .-> N10
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
     class N3 crate

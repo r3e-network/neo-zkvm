@@ -1,10 +1,20 @@
-flowchart LR
-    N1["Data 1: execution input"]
-    N2["Data 2: neo-zkvm-cli"]
-    N3["Data 3: proof/evidence artifact"]
-    N4["Data 4: Neo N4 verification flow"]
+flowchart TB
+    N1["1. neo-zkvm-cli: Data crosses inputs, type models, core functions, outputs, and tests; 5 source files, 9 public symbols, 60 tests, 6 deps"]
+    N2["2. Data 1: execution input"]
+    N3["3. Data 2: neo-zkvm-cli"]
+    N4["4. Data 3: proof/evidence artifact"]
+    N5["5. Data 4: Neo N4 verification flow"]
+    N6["6. Key types: AssemblerError | Assembler | Disassembler"]
+    N7["7. Key functions: new | warnings | assemble | disassemble +1"]
+    N8["8. Boundary checks: tests/integration_tests.rs (30 tests) | src/assembler.rs (14 tests) | src/main.rs (11 tests) | src/disassembler.rs (3 tests) | tests/source_layout.rs (2 tests)"]
+    N9["9. Consumers: zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    N8 --> N9
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate

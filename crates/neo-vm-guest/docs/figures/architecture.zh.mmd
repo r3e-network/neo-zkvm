@@ -1,14 +1,27 @@
-flowchart LR
-    N1["公开入口: guest 字节码 | 栈输入 | 共享 VM crate"]
-    N2["neo-vm-guest: 面向 zkVM guest 的适配层，以 zkVM 兼容方式暴露共享 NeoVM 执行 API。"]
-    N3["内部组件: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
-    N4["依赖边界: bincode | neo-vm-rs | serde | sha2"]
-    N5["输出产物: guest 执行结果 | 公开输出种子 | fault 原因"]
-    N6["系统位置: zkVM guest 外观层 -> neo-zkvm-program | neo-zkvm-prover | 示例"]
+flowchart TB
+    N1["1. 架构总览: neo-vm-guest: 2 个源码文件，21 个公开符号，12 个测试，4 个依赖"]
+    N2["2. 入口契约: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N3["3. 公开 API 层: 类型 8 | 函数 11 | Trait 0 | 常量 2"]
+    N4["4. 核心实现文件: src/lib.rs (21 API/7 测试) | tests/shared_vm.rs (0 API/5 测试)"]
+    N5["5. 模块/重导出: src/lib.rs: pub use neo_vm_rs::{interop_hash, pop_byte_arg, StackValue as StackItem}"]
+    N6["6. 依赖边界: bincode | neo-vm-rs | serde | sha2"]
+    N7["7. 输出产物: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N8["8. 测试护栏: src/lib.rs（7 个测试） | tests/shared_vm.rs（5 个测试）"]
+    N9["9. 系统位置: zkVM guest 外观层 -> neo-zkvm-program | neo-zkvm-prover | 示例"]
     N1 --> N2
-    N2 --> N3
-    N3 --> N4
-    N4 --> N5
-    N5 --> N6
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N1 --> N9
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
+    N8 -. related .-> N9
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate

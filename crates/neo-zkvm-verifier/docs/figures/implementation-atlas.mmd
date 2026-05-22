@@ -1,0 +1,36 @@
+flowchart TB
+    N1["1. neo-zkvm-verifier: Neo zkVM stack; 1 source files, 9 public symbols, 12 tests, 4 deps"]
+    N2["2. Why it exists: Verifier library that checks proof envelopes, public outputs, and mode compatibility."]
+    N3["3. Source entrypoints: src/lib.rs (9 API/12 tests)"]
+    N4["4. Core types: VerificationResult | ProofType"]
+    N5["5. Core functions: verify | verify_for_mode | verify_detailed | verify_detailed_for_mode +3"]
+    N6["6. Modules/exports: no mod/pub use declarations scanned"]
+    N7["7. Runtime path: Prepare input | Run guest/host logic | Generate or check proof | Record evidence"]
+    N8["8. Data path: execution input | neo-zkvm-verifier | proof/evidence artifact | Neo N4 verification flow"]
+    N9["9. Dependency boundary: runtime 4, test 0, build 0, internal 2, external runtime 2"]
+    N10["10. Test evidence: src/lib.rs (12 tests)"]
+    N11["11. Outputs/consumers: verification result | error reason | audit evidence -> zkVM users | L2 prover service | L1 verification adapter"]
+    N12["12. Before changing it: Keep the API table, test table, dependency table, workflow, and dataflow diagrams aligned with source."]
+    N1 --> N2
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N1 --> N9
+    N1 --> N10
+    N1 --> N11
+    N1 --> N12
+    N2 -. related .-> N3
+    N3 -. related .-> N4
+    N4 -. related .-> N5
+    N5 -. related .-> N6
+    N6 -. related .-> N7
+    N7 -. related .-> N8
+    N8 -. related .-> N9
+    N9 -. related .-> N10
+    N10 -. related .-> N11
+    N11 -. related .-> N12
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate

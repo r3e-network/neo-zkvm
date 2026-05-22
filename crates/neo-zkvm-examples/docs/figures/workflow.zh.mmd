@@ -1,10 +1,16 @@
-flowchart LR
-    N1["Step 1: 准备输入"]
-    N2["Step 2: 运行 guest/host 逻辑"]
-    N3["Step 3: 生成或校验证明"]
-    N4["Step 4: 记录证据"]
+flowchart TB
+    N1["1. neo-zkvm-examples: 工作流由 4 个阶段组成；源码入口优先看 src/batch_verification.rs。"]
+    N2["2. 阶段 1: 准备输入；相关源码：src/batch_verification.rs (实现细节或辅助模块)"]
+    N3["3. 阶段 2: 运行 guest/host 逻辑；相关源码：src/private_inputs.rs (实现细节或辅助模块)"]
+    N4["4. 阶段 3: 生成或校验证明；相关源码：src/tamper_resistance.rs (实现细节或辅助模块)"]
+    N5["5. 阶段 4: 记录证据；相关源码：src/basic.rs (实现细节或辅助模块)"]
+    N6["6. 验证方式: src/tamper_resistance.rs（2 个测试） | src/private_inputs.rs（2 个测试） | src/batch_verification.rs（2 个测试）"]
+    N7["7. 输出检查: 示例证明 | 教程输出 | 回归样本"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N2 crate
+    class N1 crate
