@@ -1,0 +1,10 @@
+flowchart LR
+    N1["neo-zkvm-fuzz: 3 source files, 1 public symbols"]
+    N2["fuzz_targets/common.rs: fuzzing harness and adversarial input exploration"]
+    N3["fuzz_targets/fuzz_script_parser.rs: fuzzing harness and adversarial input exploration"]
+    N4["fuzz_targets/fuzz_vm_execution.rs: fuzzing harness and adversarial input exploration"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate

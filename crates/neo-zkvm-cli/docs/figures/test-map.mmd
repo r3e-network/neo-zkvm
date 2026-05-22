@@ -1,0 +1,14 @@
+flowchart LR
+    N1["neo-zkvm-cli: 60 test functions across 5 test files"]
+    N2["tests/integration_tests.rs: test_full_prove_verify_cycle | test_complex_arithmetic | test_comparison_operations | test_prove_verify_with_arguments +26"]
+    N3["src/assembler.rs: test_pushint8_out_of_range_returns_error | test_push_sugar_uses_pushint64_for_large_values | test_assemble_resets_state_between_calls | test_unterminated_macro_definition_returns_error +10"]
+    N4["src/main.rs: test_parse_proof_mode_defaults_to_sp1 | test_parse_proof_mode_accepts_all_modes | test_parse_proof_mode_accepts_short_alias | test_parse_proof_mode_rejects_invalid_mode +7"]
+    N5["src/disassembler.rs: test_decode_long_flow_control_opcodes | test_disassembles_canonical_crypto_syscall | test_disassembles_reserved_opcode_bytes_as_unknown"]
+    N6["tests/source_layout.rs: cli_opcode_decoding_uses_shared_opcode_enum | cli_gas_estimation_uses_shared_opcode_enum"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate

@@ -1,0 +1,8 @@
+flowchart LR
+    N1["neo-vm-guest: 测试函数 12 个，测试文件 2 个"]
+    N2["src/lib.rs: test_output_matches_public_inputs_roundtrip | test_output_mismatch_detected | test_compute_commitment_changes_when_inputs_change | test_execute_reports_stack_overflow_for_excessive_arguments +3"]
+    N3["tests/shared_vm.rs: proof_input_stack_item_is_the_shared_neo_vm_rs_type | proof_guest_does_not_depend_on_legacy_neo_vm_core | proof_guest_uses_shared_byte_arg_helper | proof_execution_rejects_non_canonical_throwifnot_byte +1"]
+    N1 --> N2
+    N2 --> N3
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate

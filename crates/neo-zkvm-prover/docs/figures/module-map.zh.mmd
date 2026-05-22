@@ -1,0 +1,10 @@
+flowchart LR
+    N1["neo-zkvm-prover: 源码文件 3 个，公开符号 13 个"]
+    N2["src/lib.rs: crate 根、公开导出和顶层文档"]
+    N3["src/elf_markers.rs: 实现细节或辅助模块"]
+    N4["build.rs: 实现细节或辅助模块"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate

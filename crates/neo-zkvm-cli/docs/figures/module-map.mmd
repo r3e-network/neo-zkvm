@@ -1,0 +1,14 @@
+flowchart LR
+    N1["neo-zkvm-cli: 5 source files, 9 public symbols"]
+    N2["src/main.rs: binary or CLI entrypoint"]
+    N3["tests/integration_tests.rs: external behavior or integration test"]
+    N4["src/assembler.rs: developer assembly and script construction"]
+    N5["src/disassembler.rs: developer assembly and script construction"]
+    N6["tests/source_layout.rs: external behavior or integration test"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N1 crate
