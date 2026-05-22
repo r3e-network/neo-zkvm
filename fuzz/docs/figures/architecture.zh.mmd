@@ -1,13 +1,12 @@
 flowchart TB
-    N1["1. 架构总览: neo-zkvm-fuzz: 3 个源码文件，1 个公开符号，0 个测试，3 个依赖"]
-    N2["2. 入口契约: 随机字节码 | 变异证明 | 种子语料"]
-    N3["3. 公开 API 层: 类型 0 | 函数 1 | Trait 0 | 常量 0"]
-    N4["4. 核心实现文件: fuzz_targets/common.rs (1 API/0 测试) | fuzz_targets/fuzz_script_parser.rs (0 API/0 测试) | fuzz_targets/fuzz_vm_execution.rs (0 API/0 测试)"]
-    N5["5. 模块/重导出: fuzz_targets/fuzz_script_parser.rs: mod common | fuzz_targets/fuzz_vm_execution.rs: mod common"]
-    N6["6. 依赖边界: arbitrary | libfuzzer-sys | neo-vm-guest"]
-    N7["7. 输出产物: 崩溃语料 | 回归案例 | 覆盖率信号"]
-    N8["8. 测试护栏: 未扫描到 Rust #[test]"]
-    N9["9. 系统位置: Neo zkVM 栈 -> zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1["1. 入口域: 随机字节码 | 变异证明 | 种子语料"]
+    N2["2. 规范化层: 把 batch、witness 和公开输入整理成证明系统约束"]
+    N3["3. 核心技术机制: 生成输入 | 运行 no-panic 检查 | 捕获回归"]
+    N4["4. 状态与承诺层: 状态根、公开值、验证密钥和证明摘要"]
+    N5["5. 证据或结果层: 崩溃语料 | 回归案例 | 覆盖率信号"]
+    N6["6. 消费方边界: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N7["7. 失败路径: 证明生成失败、本地验证失败、公开输出不匹配或 verifier 拒绝"]
+    N8["8. 扩展点: proof backend、verifier adapter、报告格式和 DA 绑定"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -15,13 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N1 --> N9
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

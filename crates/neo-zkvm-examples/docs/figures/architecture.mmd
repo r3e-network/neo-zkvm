@@ -1,13 +1,12 @@
 flowchart TB
-    N1["1. Architecture overview: neo-zkvm-examples: 9 source files, 0 public symbols, 6 tests, 3 deps"]
-    N2["2. Entry contract: sample script | example input | local prover"]
-    N3["3. Public API layer: types 0 | functions 0 | traits 0 | constants 0"]
-    N4["4. Core implementation files: src/batch_verification.rs (0 API/2 tests) | src/private_inputs.rs (0 API/2 tests) | src/tamper_resistance.rs (0 API/2 tests) | src/basic.rs (0 API/0 tests) | src/proof_generation.rs (0 API/0 tests)"]
-    N5["5. Modules and re-exports: no mod/pub use declarations scanned"]
-    N6["6. Dependency boundary: neo-vm-guest | neo-zkvm-prover | neo-zkvm-verifier"]
-    N7["7. Output artifacts: example proof | tutorial output | regression sample"]
-    N8["8. Test guardrails: src/tamper_resistance.rs (2 tests) | src/private_inputs.rs (2 tests) | src/batch_verification.rs (2 tests)"]
-    N9["9. System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
+    N1["1. Entry domain: sample script | example input | local prover"]
+    N2["2. Normalization: shape batch, witness, and public input into proof-system constraints"]
+    N3["3. Core mechanism: Demonstrate APIs | Exercise edge cases | Document expected outputs"]
+    N4["4. State and commitment: state root, public values, verification key, and proof digest"]
+    N5["5. Evidence or result: example proof | tutorial output | regression sample"]
+    N6["6. Consumer boundary: zkVM users | L2 prover service | L1 verification adapter"]
+    N7["7. Failure path: proving fails, local verification fails, public output mismatches, or verifier rejects"]
+    N8["8. Extension point: proof backend, verifier adapter, report format, and DA binding"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -15,13 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N1 --> N9
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

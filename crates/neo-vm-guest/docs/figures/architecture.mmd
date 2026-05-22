@@ -1,13 +1,12 @@
 flowchart TB
-    N1["1. Architecture overview: neo-vm-guest: 2 source files, 21 public symbols, 12 tests, 4 deps"]
-    N2["2. Entry contract: guest bytecode | stack input | shared VM crate"]
-    N3["3. Public API layer: types 8 | functions 11 | traits 0 | constants 2"]
-    N4["4. Core implementation files: src/lib.rs (21 API/7 tests) | tests/shared_vm.rs (0 API/5 tests)"]
-    N5["5. Modules and re-exports: src/lib.rs: pub use neo_vm_rs::{interop_hash, pop_byte_arg, StackValue as StackItem}"]
-    N6["6. Dependency boundary: bincode | neo-vm-rs | serde | sha2"]
-    N7["7. Output artifacts: guest execution result | public output seed | fault reason"]
-    N8["8. Test guardrails: src/lib.rs (7 tests) | tests/shared_vm.rs (5 tests)"]
-    N9["9. System position: zkVM guest facade -> neo-zkvm-program | neo-zkvm-prover | examples"]
+    N1["1. Entry domain: guest bytecode | stack input | shared VM crate"]
+    N2["2. Normalization: shape bytecode, stack, gas, and syscall responses into canonical VM context"]
+    N3["3. Core mechanism: Call shared VM | Keep guest ABI small | Return deterministic result"]
+    N4["4. State and commitment: script hash, final stack digest, halt/fault status, and gas"]
+    N5["5. Evidence or result: guest execution result | public output seed | fault reason"]
+    N6["6. Consumer boundary: neo-zkvm-program | neo-zkvm-prover | examples"]
+    N7["7. Failure path: invalid opcode, stack mismatch, gas exhaustion, syscall rejection, or fault"]
+    N8["8. Extension point: syscall host, gas policy, diagnostics, and compatibility profiles"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -15,13 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N1 --> N9
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

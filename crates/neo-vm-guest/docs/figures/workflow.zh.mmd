@@ -1,16 +1,20 @@
 flowchart TB
-    N1["1. neo-vm-guest: 工作流由 4 个阶段组成；源码入口优先看 src/lib.rs。"]
-    N2["2. 阶段 1: 接收 guest 输入；相关源码：src/lib.rs (crate 根、公开导出和顶层文档)"]
-    N3["3. 阶段 2: 调用共享 VM；相关源码：tests/shared_vm.rs (外部行为或集成测试)"]
-    N4["4. 阶段 3: 收集输出；相关源码：tests/shared_vm.rs (外部行为或集成测试)"]
-    N5["5. 阶段 4: 提交结果；相关源码：tests/shared_vm.rs (外部行为或集成测试)"]
-    N6["6. 验证方式: src/lib.rs（7 个测试） | tests/shared_vm.rs（5 个测试）"]
-    N7["7. 输出检查: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N1["1. neo-vm-guest: 工作流表达技术阶段，不表达源码调用栈。"]
+    N2["2. 前置条件: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N3["3. 阶段 1: 接收 guest 输入"]
+    N4["4. 阶段 2: 调用共享 VM"]
+    N5["5. 阶段 3: 收集输出"]
+    N6["6. 阶段 4: 提交结果"]
+    N7["7. 成功条件: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N8["8. 拒绝条件: 非法 opcode、栈不匹配、gas 耗尽、syscall 拒绝或 fault"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     N6 --> N7
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

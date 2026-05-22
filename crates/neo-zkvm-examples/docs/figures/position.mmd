@@ -1,30 +1,21 @@
 flowchart TB
     N1["1. Neo N4 layer: Neo zkVM stack"]
-    N2["2. Upstream inputs: sample script | example input | local prover"]
+    N2["2. Upstream domains: sample script | example input | local prover"]
     N3["3. neo-zkvm-examples: Runnable examples that demonstrate common proof flows and application patterns."]
-    N4["4. Downstream users: zkVM users | L2 prover service | L1 verification adapter"]
-    N5["5. Source scale: 9 source files, 0 public symbols, 6 tests, 3 deps"]
-    N6["6. Source entrypoints: src/batch_verification.rs (0 API/2 tests) | src/private_inputs.rs (0 API/2 tests) | src/tamper_resistance.rs (0 API/2 tests)"]
-    N7["7. Core API: no public symbols scanned"]
-    N8["8. Test guardrails: src/tamper_resistance.rs (2 tests) | src/private_inputs.rs (2 tests) | src/batch_verification.rs (2 tests)"]
-    N9["9. Direct dependencies: neo-vm-guest | neo-zkvm-prover | neo-zkvm-verifier"]
-    N10["10. Learning focus: Locate upstream and downstream first, then read this crate boundary, core data structures, and tests."]
-    N3 --> N1
-    N3 --> N2
-    N3 --> N4
-    N3 --> N5
-    N3 --> N6
-    N3 --> N7
-    N3 --> N8
-    N3 --> N9
-    N3 --> N10
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    N9 -. related .-> N10
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    N4["4. Downstream domains: zkVM users | L2 prover service | L1 verification adapter"]
+    N5["5. Owned boundary: Demonstrate APIs | Exercise edge cases | Document expected outputs"]
+    N6["6. Outside boundary: does not own L1 governance, DA storage, or asset custody"]
+    N7["7. Learning focus: Understand accepted facts, produced evidence, and next consumer."]
+    N1 --> N2
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7 support;

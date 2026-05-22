@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-vm-guest: 生命周期图说明技术单元如何进入可观测运行。"]
+    N2["2. 配置: opcode、gas、syscall 规则、兼容性 profile"]
+    N3["3. 输入接收: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N4["4. 规范化: 把字节码、栈、gas 和 syscall 响应整理成标准 VM 上下文"]
+    N5["5. 执行或验证: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
+    N6["6. 提交或输出: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N7["7. 消费联动: neo-zkvm-program | neo-zkvm-prover | 示例"]
+    N8["8. 运维观测: opcode 进度、gas、栈摘要、fault 原因和 syscall 边界"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

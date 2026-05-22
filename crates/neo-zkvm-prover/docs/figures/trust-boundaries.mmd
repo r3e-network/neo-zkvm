@@ -1,0 +1,23 @@
+flowchart TB
+    N1["1. neo-zkvm-prover: Trust boundary shows what must be proven rather than believed."]
+    N2["2. Trusted base: verification key, guest program hash, verifier rules"]
+    N3["3. Untrusted input: proof input | guest program | prover mode"]
+    N4["4. Validation boundary: public input, proof envelope, verification key, and public output must match"]
+    N5["5. Replay and ordering: proof binds batch range and state root to prevent cross-batch reuse"]
+    N6["6. Authority: prover cannot advance state; verifier-accepted output is consumed"]
+    N7["7. External systems: proof backend, L1 verifier, NeoFS DA, report consumers"]
+    N8["8. Observed evidence: proof id, public output, verification result, duration, and failure reason"]
+    N1 --> N2
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

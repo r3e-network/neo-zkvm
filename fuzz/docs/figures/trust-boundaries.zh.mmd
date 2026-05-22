@@ -1,0 +1,23 @@
+flowchart TB
+    N1["1. neo-zkvm-fuzz: 信任边界说明哪些假设必须被证明，而不是被相信。"]
+    N2["2. 可信基: 验证密钥、guest 程序哈希、verifier 规则"]
+    N3["3. 不可信输入: 随机字节码 | 变异证明 | 种子语料"]
+    N4["4. 验证边界: 公开输入、proof envelope、验证密钥和公开输出必须一致"]
+    N5["5. 重放与顺序: proof 绑定批次范围和状态根，避免跨批次复用"]
+    N6["6. 权限模型: prover 无权推进状态；只消费 verifier 接受的输出"]
+    N7["7. 外部系统: 证明 backend、L1 verifier、NeoFS DA、报告消费者"]
+    N8["8. 观测证据: proof id、公开输出、验证结果、耗时和失败原因"]
+    N1 --> N2
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N1 --> N8
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

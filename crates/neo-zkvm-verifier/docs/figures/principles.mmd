@@ -1,12 +1,12 @@
 flowchart TB
-    N1["1. Responsibility boundary: Verifier library that checks proof envelopes, public outputs, and mode compatibility."]
-    N2["2. Core principles: Check proof format | Verify public values | Report validity"]
-    N3["3. Input contract: proof envelope | verification key | expected public output"]
-    N4["4. State and artifacts: verification result | error reason | audit evidence"]
-    N5["5. Source evidence: 1 source files, 9 public symbols, 12 tests, 4 deps"]
-    N6["6. Test evidence: src/lib.rs (12 tests)"]
-    N7["7. Dependency discipline: runtime 4, test 0, build 0, internal 2, external runtime 2"]
-    N8["8. Maintenance rule: Keep the boundary small, deterministic, and reproducible under tests."]
+    N1["1. Technical objective: Verifier library that checks proof envelopes, public outputs, and mode compatibility."]
+    N2["2. Determinism: same public input and witness produce the same public output and proof"]
+    N3["3. Input constraints: proof envelope | verification key | expected public output"]
+    N4["4. Transition rule: guest execution is constrained by public values and verifier rules"]
+    N5["5. Verifiable output: verification result | error reason | audit evidence"]
+    N6["6. Minimal trust: trust verification keys and verifiers, not prover runtime environments"]
+    N7["7. Layer separation: guest proves computation, host orchestrates, L1 verifies compact results"]
+    N8["8. Observable evidence: proof id, public output, verification result, duration, and failure reason"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -14,11 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N4 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

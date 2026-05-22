@@ -1,76 +1,75 @@
-# neo-zkvm-program 源码级学习指南
+# neo-zkvm-program 技术学习指南
 
-这份文档从 crate 的真实 `Cargo.toml`、Rust 源码文件、公开符号和测试函数生成。目标是在读实现细节之前，先弄清楚这个 crate 自己负责什么、边界在哪里、应该从哪些文件开始读。
+这份指南把 `neo-zkvm-program` 当作 Neo N4 的一个技术单元来解释。它不是源码阅读图，而是帮助读者理解：这个单元负责什么、哪些技术假设保证它正确、数据如何移动、状态如何变化、证据如何被验证、它如何接入 Neo N4 的整体架构。
 
-## 这个 Crate 是什么
+## 技术契约
 
-| 主题 | 说明 |
+| 维度 | 含义 |
 | --- | --- |
 | 层级 | Neo zkVM 栈 |
 | 目的 | SP1 guest 二进制入口，将证明输入绑定到确定性 NeoVM 执行。 |
-| 输入 | SP1 stdin、Neo 证明输入、guest 外观层 |
-| 职责 | 反序列化 stdin、执行脚本、提交公开值 |
-| 输出 | SP1 公开值、执行输出、fault 状态 |
-| 使用者 | zkVM 用户、L2 prover 服务、L1 验证适配器 |
+| 输入 | SP1 stdin <br> Neo 证明输入 <br> guest 外观层 |
+| 职责 | 反序列化 stdin <br> 执行脚本 <br> 提交公开值 |
+| 输出 | SP1 公开值 <br> 执行输出 <br> fault 状态 |
+| 消费方 | zkVM 用户 <br> L2 prover 服务 <br> L1 验证适配器 |
 
-## 可视化阅读顺序
+## 图表集合
 
-| 步骤 | 图 | 用它学习什么 |
-| ---: | --- | --- |
-| 1 | [位置图](figures/position.zh.svg) | 这个 crate 为什么存在、在 Neo N4 中处于哪里。 |
-| 2 | [技术原理图](figures/principles.zh.svg) | 这个 crate 必须保护的不变量和职责边界。 |
-| 3 | [模块图](figures/module-map.zh.svg) | 哪些源码文件是最好的入口。 |
-| 4 | [公开 API 图](figures/api-surface.zh.svg) | 哪些导出符号构成 crate 契约。 |
-| 5 | [架构图](figures/architecture.zh.svg) | 输入、内部组件、依赖和输出如何连接。 |
-| 6 | [工作流图](figures/workflow.zh.svg) | 正常执行路径。 |
-| 7 | [数据流图](figures/dataflow.zh.svg) | 数据如何跨越 crate 边界并被转换。 |
-| 8 | [测试证据图](figures/test-map.zh.svg) | 哪些测试保护行为。 |
-| 9 | [依赖图](figures/dependency-map.zh.svg) | 哪些依赖是运行时、测试或构建期依赖。 |
-| 10 | [实现全景图](figures/implementation-atlas.zh.svg) | 用一张高密度图同时理解用途、源码入口、API、工作流、数据流、依赖、测试和修改检查点。 |
+| # | 图 | 学什么 |
+| --- | --- | --- |
+| 1 | [系统位置图](figures/position.zh.svg) | 它在 Neo N4 中的位置。 |
+| 2 | [技术原理图](figures/principles.zh.svg) | 保证设计正确的技术规则。 |
+| 3 | [概念架构图](figures/architecture.zh.svg) | 主要技术块和边界。 |
+| 4 | [工作流图](figures/workflow.zh.svg) | 运行时的有序过程。 |
+| 5 | [数据流图](figures/dataflow.zh.svg) | 信息、承诺和证据如何移动。 |
+| 6 | [状态模型图](figures/state-model.zh.svg) | 状态归属、转换和终局性。 |
+| 7 | [证明与证据流图](figures/proof-flow.zh.svg) | 声明如何变成可验证证据。 |
+| 8 | [信任边界图](figures/trust-boundaries.zh.svg) | 哪些内容被信任、检查、拒绝或观测。 |
+| 9 | [集成关系图](figures/integration-map.zh.svg) | 该单元如何接入更大的 N4 栈。 |
+| 10 | [运行生命周期图](figures/lifecycle.zh.svg) | 从配置到执行、证据和运维的生命周期。 |
 
-## 源码文件地图
+## 架构模型
 
-| 文件 | 作用 | 公开符号 | 测试 |
-| --- | --- | ---: | ---: |
-| `src/main.rs` | 二进制或 CLI 入口 | 1 | 4 |
+`neo-zkvm-program` 接收 SP1 stdin | Neo 证明输入 | guest 外观层，拥有的边界是：反序列化 stdin | 执行脚本 | 提交公开值。它输出 SP1 公开值 | 执行输出 | fault 状态，然后由 zkVM 用户 | L2 prover 服务 | L1 验证适配器 消费。
 
-## 公开 API 面
+分层规则：guest 证明计算，host 编排，L1 验证压缩结果。
 
-| 符号 | 文件 |
-| --- | --- |
-| `fn zkvm_main` | `src/main.rs` |
+## 工作流
 
-## 模块与重导出信号
+1. 准备输入
+2. 运行 guest/host 逻辑
+3. 生成或校验证明
+4. 记录证据
 
-未扫描到 `mod` 或 `pub use` 声明。
+失败路径：证明生成失败、本地验证失败、公开输出不匹配或 verifier 拒绝。
 
-## 测试证据
+## 数据流
 
-| 测试 | 文件 |
-| --- | --- |
-| `test_basic_execution` | `src/main.rs` |
-| `test_arithmetic` | `src/main.rs` |
-| `test_hash_with_bincode_limit_matches_serialized_hash_on_success` | `src/main.rs` |
-| `test_hash_with_bincode_limit_uses_error_marker_on_serialize_failure` | `src/main.rs` |
+1. 执行输入
+2. neo-zkvm-program
+3. 证明/证据产物
+4. Neo N4 验证流程
 
-## 依赖边界
+承诺信号：状态根、公开值、验证密钥和证明摘要。
 
-| 依赖 | 类型 |
-| --- | --- |
-| `bincode` | 运行时 |
-| `neo-vm-guest` | 运行时 |
-| `serde` | 运行时 |
-| `sha2` | 运行时 |
-| `sp1-zkvm` | 运行时 |
-| `sp1-build` | 构建 |
+## 状态、证明和信任
 
-## 建议阅读路径
+- 状态转换：guest 执行受公开值和 verifier 规则约束。
+- 终局条件：verifier 接受 proof 且公开输出匹配目标状态。
+- 信任模型：信任验证密钥和 verifier，不信任 prover 运行环境。
+- 验证边界：公开输入、proof envelope、验证密钥和公开输出必须一致。
+- 重放与顺序：proof 绑定批次范围和状态根，避免跨批次复用。
 
-1. 读 `src/main.rs`：二进制或 CLI 入口。
+## 集成和运行
 
-## 修改安全清单
+- NeoFS DA：NeoFS 保存批次数据、见证或轨迹摘要以及可取回证据。
+- 证明系统：证明系统把 L2 执行声明压缩为可验证证据。
+- Gateway/API：Gateway 负责用户路由、查询、提交和健康状态聚合。
+- 桥与异构链：桥规则统一 L1-L2、L2-L2 和异构链消息与资产。
+- 可观测证据：proof id、公开输出、验证结果、耗时和失败原因。
 
-- 保持职责边界不变：反序列化 stdin、执行脚本、提交公开值。
-- 增加或删除主要执行步骤时，同步更新工作流图和数据流图。
-- 修改公开 API 或状态转换行为时，更新“测试证据”中对应的测试。
-- 源码结构变化后，在 Neo N4 仓库根目录重新运行 `python tools/docs/generate_crate_visual_docs.py`。
+在 Neo N4 仓库根目录重新生成这些技术图：
+
+```powershell
+python tools/docs/generate_crate_visual_docs.py
+```

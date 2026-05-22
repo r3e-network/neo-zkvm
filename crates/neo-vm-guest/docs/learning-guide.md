@@ -1,106 +1,75 @@
-# neo-vm-guest Source-Level Learning Guide
+# neo-vm-guest Technical Learning Guide
 
-This guide is generated from the crate's actual `Cargo.toml`, Rust source files, public symbols, and test functions. It is meant to help a reader understand what this crate owns before reading implementation details.
+This guide explains `neo-vm-guest` as a Neo N4 technical unit. It is written for architecture learning: what the unit is responsible for, which assumptions make it correct, how data moves, how state changes, how evidence is checked, and where it plugs into the wider Neo N4 stack.
 
-## What This Crate Is
+## Technical Contract
 
-| Topic | Detail |
+| Aspect | Meaning |
 | --- | --- |
 | Layer | zkVM guest facade |
 | Purpose | Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form. |
-| Inputs | guest bytecode, stack input, shared VM crate |
-| Responsibilities | Call shared VM, Keep guest ABI small, Return deterministic result |
-| Outputs | guest execution result, public output seed, fault reason |
-| Consumers | neo-zkvm-program, neo-zkvm-prover, examples |
+| Inputs | guest bytecode <br> stack input <br> shared VM crate |
+| Responsibilities | Call shared VM <br> Keep guest ABI small <br> Return deterministic result |
+| Outputs | guest execution result <br> public output seed <br> fault reason |
+| Consumers | neo-zkvm-program <br> neo-zkvm-prover <br> examples |
 
-## Visual Reading Order
+## Diagram Set
 
-| Step | Diagram | Use it to learn |
-| ---: | --- | --- |
-| 1 | [Position](figures/position.svg) | Why this crate exists and where it sits in Neo N4. |
-| 2 | [Principles](figures/principles.svg) | The invariants and boundaries this crate must protect. |
-| 3 | [Module map](figures/module-map.svg) | Which files are the best entry points. |
-| 4 | [Public API surface](figures/api-surface.svg) | Which exported symbols form the crate contract. |
-| 5 | [Architecture](figures/architecture.svg) | How inputs, internal components, dependencies, and outputs connect. |
-| 6 | [Workflow](figures/workflow.svg) | The normal execution path. |
-| 7 | [Dataflow](figures/dataflow.svg) | How data is transformed across the crate boundary. |
-| 8 | [Test evidence](figures/test-map.svg) | Which tests protect the behavior. |
-| 9 | [Dependency map](figures/dependency-map.svg) | Which dependencies are runtime, test, or build-only. |
-| 10 | [Implementation atlas](figures/implementation-atlas.svg) | A dense one-page map of purpose, source entrypoints, API, workflow, dataflow, dependencies, tests, and change checks. |
+| # | Diagram | What to learn |
+| --- | --- | --- |
+| 1 | [System Position](figures/position.svg) | where this crate sits in Neo N4. |
+| 2 | [Technical Principles](figures/principles.svg) | the rules that make the design correct. |
+| 3 | [Conceptual Architecture](figures/architecture.svg) | major technical blocks and boundaries. |
+| 4 | [Workflow](figures/workflow.svg) | the ordered runtime process. |
+| 5 | [Data Flow](figures/dataflow.svg) | how information, commitments, and evidence move. |
+| 6 | [State Model](figures/state-model.svg) | state ownership, transitions, and finality. |
+| 7 | [Proof and Evidence Flow](figures/proof-flow.svg) | how claims become verifiable evidence. |
+| 8 | [Trust Boundaries](figures/trust-boundaries.svg) | what is trusted, checked, rejected, or observed. |
+| 9 | [Integration Map](figures/integration-map.svg) | how this unit connects to the wider N4 stack. |
+| 10 | [Runtime Lifecycle](figures/lifecycle.svg) | from configuration through execution, evidence, and operation. |
 
-## Source File Map
+## Architecture Model
 
-| File | Role | Public symbols | Tests |
-| --- | --- | ---: | ---: |
-| `src/lib.rs` | crate root, public exports, and top-level documentation | 21 | 7 |
-| `tests/shared_vm.rs` | external behavior or integration test | 0 | 5 |
+`neo-vm-guest` receives guest bytecode | stack input | shared VM crate and owns this boundary: Call shared VM | Keep guest ABI small | Return deterministic result. It emits guest execution result | public output seed | fault reason, which are consumed by neo-zkvm-program | neo-zkvm-prover | examples.
 
-## Public API Surface
+Layering rule: VM semantics stay separate from host context and chain policy.
 
-| Symbol | File |
-| --- | --- |
-| `type BincodeEncodeError` | `src/lib.rs` |
-| `type BincodeDecodeError` | `src/lib.rs` |
-| `const PROOF_FORMAT_VERSION` | `src/lib.rs` |
-| `const PROOF_MAX_SCRIPT_SIZE` | `src/lib.rs` |
-| `fn bincode_options` | `src/lib.rs` |
-| `fn bincode_serialize` | `src/lib.rs` |
-| `fn bincode_deserialize` | `src/lib.rs` |
-| `struct ProofInput` | `src/lib.rs` |
-| `struct ProofOutput` | `src/lib.rs` |
-| `enum ProofMode` | `src/lib.rs` |
-| `struct PublicInputs` | `src/lib.rs` |
-| `struct NeoProof` | `src/lib.rs` |
-| `struct MockProof` | `src/lib.rs` |
-| `fn hash_data` | `src/lib.rs` |
-| `fn try_hash_proof_output` | `src/lib.rs` |
-| `fn hash_proof_output` | `src/lib.rs` |
-| `fn compute_commitment` | `src/lib.rs` |
-| `fn public_inputs_equal` | `src/lib.rs` |
-| `fn output_matches_public_inputs` | `src/lib.rs` |
-| `fn deserialize_neoproof` | `src/lib.rs` |
-| `fn execute` | `src/lib.rs` |
+## Workflow
 
-## Module and Re-Export Signals
+1. Receive guest input
+2. Invoke shared VM
+3. Collect output
+4. Commit result
 
-| Signal |
-| --- |
-| `src/lib.rs: pub use neo_vm_rs::{interop_hash, pop_byte_arg, StackValue as StackItem}` |
+Failure path: invalid opcode, stack mismatch, gas exhaustion, syscall rejection, or fault.
 
-## Test Evidence
+## Data Flow
 
-| Test | File |
-| --- | --- |
-| `test_output_matches_public_inputs_roundtrip` | `src/lib.rs` |
-| `test_output_mismatch_detected` | `src/lib.rs` |
-| `test_compute_commitment_changes_when_inputs_change` | `src/lib.rs` |
-| `test_execute_reports_stack_overflow_for_excessive_arguments` | `src/lib.rs` |
-| `test_execute_reports_runtime_fault_error` | `src/lib.rs` |
-| `test_try_hash_proof_output_rejects_oversized_output` | `src/lib.rs` |
-| `test_legacy_neoproof_deserializes_with_default_format_version` | `src/lib.rs` |
-| `proof_input_stack_item_is_the_shared_neo_vm_rs_type` | `tests/shared_vm.rs` |
-| `proof_guest_does_not_depend_on_legacy_neo_vm_core` | `tests/shared_vm.rs` |
-| `proof_guest_uses_shared_byte_arg_helper` | `tests/shared_vm.rs` |
-| `proof_execution_rejects_non_canonical_throwifnot_byte` | `tests/shared_vm.rs` |
-| `deterministic_crypto_uses_syscall_not_pseudo_opcode` | `tests/shared_vm.rs` |
+1. script + args
+2. guest facade
+3. VM result
+4. proof public values
 
-## Dependency Boundary
+Commitment signal: script hash, final stack digest, halt/fault status, and gas.
 
-| Dependency | Kind |
-| --- | --- |
-| `bincode` | runtime |
-| `neo-vm-rs` | runtime |
-| `serde` | runtime |
-| `sha2` | runtime |
+## State, Proof, and Trust
 
-## Suggested Reading Path
+- State transition: opcode semantics, stack rules, gas, and syscall contracts define transitions.
+- Finality: VM halts successfully and host accepts final stack and effects.
+- Trust model: trust canonical NeoVM semantics, not script authors.
+- Validation boundary: opcode, stack types, gas, jump target, and syscall response must be valid.
+- Replay and ordering: VM context binds script and host state.
 
-1. Read `src/lib.rs`: crate root, public exports, and top-level documentation.
-2. Read `tests/shared_vm.rs`: external behavior or integration test.
+## Integration and Operation
 
-## Change Safety Checklist
+- NeoFS DA: NeoFS stores batch data, witness or trace summaries, and retrievable evidence.
+- Proof system: The proof system compresses L2 execution claims into verifiable evidence.
+- Gateway/API: Gateway handles user routing, queries, submission, and health aggregation.
+- Bridge and heterogeneous chains: Bridge rules unify L1-L2, L2-L2, and heterogeneous-chain messages and assets.
+- Observable evidence: opcode progress, gas, stack digest, fault reason, and syscall boundary.
 
-- Keep the stated responsibility boundary intact: Call shared VM, Keep guest ABI small, Return deterministic result.
-- Update the workflow and dataflow diagrams when adding or removing major execution steps.
-- Add or update tests in the files listed under Test Evidence when public API or state-transition behavior changes.
-- Re-run `python tools/docs/generate_crate_visual_docs.py` from the Neo N4 repository root after source layout changes.
+Regenerate these technical diagrams from the Neo N4 repository root with:
+
+```powershell
+python tools/docs/generate_crate_visual_docs.py
+```

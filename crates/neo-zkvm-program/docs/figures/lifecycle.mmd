@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-zkvm-program: Lifecycle shows how the unit reaches observable runtime operation."]
+    N2["2. Configuration: proving mode, guest image, verification key, DA policy"]
+    N3["3. Input intake: SP1 stdin | Neo proof input | guest facade"]
+    N4["4. Normalization: shape batch, witness, and public input into proof-system constraints"]
+    N5["5. Execution or verification: Deserialize stdin | Execute script | Commit public values"]
+    N6["6. Commit or output: SP1 public values | execution output | fault status"]
+    N7["7. Consumption: zkVM users | L2 prover service | L1 verification adapter"]
+    N8["8. Operation: proof id, public output, verification result, duration, and failure reason"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-zkvm-prover: 证明与证据流说明技术声明如何变成可检查结果。"]
+    N2["2. 声明: 本单元完成了：哈希输入 | 运行 guest 执行 | 构建证明封装。"]
+    N3["3. 见证或输入: 证明输入 | guest 程序 | prover 模式"]
+    N4["4. 执行或检查: 在证明系统中重放确定性计算"]
+    N5["5. 公开承诺: 状态根、公开值、验证密钥和证明摘要"]
+    N6["6. 验证者: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N7["7. 接受结果: NeoProof | 公开输出 | prover 报告"]
+    N8["8. 拒绝结果: 拒绝 proof、公开输出或模式；状态根不推进"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

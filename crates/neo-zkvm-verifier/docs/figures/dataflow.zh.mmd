@@ -1,13 +1,12 @@
 flowchart TB
-    N1["1. neo-zkvm-verifier: 数据流跨越输入、类型模型、核心函数、输出和测试；1 个源码文件，9 个公开符号，12 个测试，4 个依赖"]
-    N2["2. 数据 1: 执行输入"]
-    N3["3. 数据 2: neo-zkvm-verifier"]
-    N4["4. 数据 3: 证明/证据产物"]
-    N5["5. 数据 4: Neo N4 验证流程"]
-    N6["6. 关键类型: VerificationResult | ProofType"]
-    N7["7. 关键函数: verify | verify_for_mode | verify_detailed | verify_detailed_for_mode +3"]
-    N8["8. 边界校验: src/lib.rs（12 个测试）"]
-    N9["9. 消费者: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1["1. neo-zkvm-verifier: 数据流表达信息、承诺、证据和控制信号如何移动。"]
+    N2["2. 数据段 1: 执行输入"]
+    N3["3. 数据段 2: neo-zkvm-verifier"]
+    N4["4. 数据段 3: 证明/证据产物"]
+    N5["5. 数据段 4: Neo N4 验证流程"]
+    N6["6. 承诺信号: 状态根、公开值、验证密钥和证明摘要"]
+    N7["7. 控制信号: 证明、验证、拒绝、重试、发布证据"]
+    N8["8. 后续消费方: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
@@ -15,6 +14,7 @@ flowchart TB
     N5 --> N6
     N6 --> N7
     N7 --> N8
-    N8 --> N9
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

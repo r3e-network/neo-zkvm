@@ -1,30 +1,21 @@
 flowchart TB
     N1["1. Neo N4 层级: Neo zkVM 栈"]
-    N2["2. 上游输入: CLI 命令 | 脚本/证明文件 | prover 选项"]
+    N2["2. 上游技术域: CLI 命令 | 脚本/证明文件 | prover 选项"]
     N3["3. neo-zkvm-cli: 用于汇编、检查、生成证明和验证 Neo zkVM 程序的 CLI 与开发工具。"]
-    N4["4. 下游使用者: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
-    N5["5. 源码规模: 5 个源码文件，9 个公开符号，60 个测试，6 个依赖"]
-    N6["6. 读源码入口: src/main.rs (0 API/11 测试) | tests/integration_tests.rs (0 API/30 测试) | src/assembler.rs (5 API/14 测试)"]
-    N7["7. 核心 API: new | warnings | assemble | disassemble +1"]
-    N8["8. 测试护栏: tests/integration_tests.rs（30 个测试） | src/assembler.rs（14 个测试） | src/main.rs（11 个测试） | src/disassembler.rs（3 个测试） | tests/source_layout.rs（2 个测试）"]
-    N9["9. 直接依赖: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
-    N10["10. 学习重点: 先定位上下游，再阅读源码地图、公开 API、测试证据和依赖边界。"]
-    N3 --> N1
-    N3 --> N2
-    N3 --> N4
-    N3 --> N5
-    N3 --> N6
-    N3 --> N7
-    N3 --> N8
-    N3 --> N9
-    N3 --> N10
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    N9 -. related .-> N10
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    N4["4. 下游技术域: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N5["5. 拥有的边界: 解析命令 | 使用共享 opcode 元数据 | 运行 prove/verify 工作流"]
+    N6["6. 不拥有的边界: 不负责 L1 治理、DA 存储或资产托管"]
+    N7["7. 学习重点: 理解它接受的技术事实、产生的证据、以及下游如何消费。"]
+    N1 --> N2
+    N1 --> N3
+    N1 --> N4
+    N1 --> N5
+    N1 --> N6
+    N1 --> N7
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7 support;

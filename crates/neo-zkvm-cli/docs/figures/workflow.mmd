@@ -1,16 +1,20 @@
 flowchart TB
-    N1["1. neo-zkvm-cli: Workflow has 4 stages; start source reading at src/main.rs."]
-    N2["2. Stage 1: Prepare input; likely source: src/main.rs (binary or CLI entrypoint)"]
-    N3["3. Stage 2: Run guest/host logic; likely source: tests/integration_tests.rs (external behavior or integration test)"]
-    N4["4. Stage 3: Generate or check proof; likely source: src/assembler.rs (developer assembly and script construction)"]
-    N5["5. Stage 4: Record evidence; likely source: src/disassembler.rs (developer assembly and script construction)"]
-    N6["6. Verification: tests/integration_tests.rs (30 tests) | src/assembler.rs (14 tests) | src/main.rs (11 tests) | src/disassembler.rs (3 tests) | tests/source_layout.rs (2 tests)"]
-    N7["7. Output checks: assembled script | proof report | inspection output"]
+    N1["1. neo-zkvm-cli: Workflow shows technical phases, not a source call stack."]
+    N2["2. Precondition: CLI command | script/proof files | prover options"]
+    N3["3. Stage 1: Prepare input"]
+    N4["4. Stage 2: Run guest/host logic"]
+    N5["5. Stage 3: Generate or check proof"]
+    N6["6. Stage 4: Record evidence"]
+    N7["7. Success: assembled script | proof report | inspection output"]
+    N8["8. Reject: proving fails, local verification fails, public output mismatches, or verifier rejects"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     N6 --> N7
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

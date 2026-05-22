@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-vm-guest: 证明与证据流说明技术声明如何变成可检查结果。"]
+    N2["2. 声明: 本单元完成了：调用共享 VM | 保持 guest ABI 小 | 返回确定性结果。"]
+    N3["3. 见证或输入: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N4["4. 执行或检查: 按 NeoVM 语义执行并检查栈、gas、syscall 和 fault"]
+    N5["5. 公开承诺: 脚本哈希、最终栈摘要、halt/fault 状态和 gas"]
+    N6["6. 验证者: neo-zkvm-program | neo-zkvm-prover | 示例"]
+    N7["7. 接受结果: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N8["8. 拒绝结果: 进入 fault 或 reject；不可验证副作用不提交"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

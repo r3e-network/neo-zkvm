@@ -1,12 +1,12 @@
 flowchart TB
-    N1["1. 职责边界: 用于对证明与 VM 输入做对抗性探索的 fuzz 工作区。"]
-    N2["2. 核心不变量: 生成输入 | 运行 no-panic 检查 | 捕获回归"]
-    N3["3. 输入必须被约束: 随机字节码 | 变异证明 | 种子语料"]
-    N4["4. 输出必须可验证: 崩溃语料 | 回归案例 | 覆盖率信号"]
-    N5["5. 源码证据: 3 个源码文件，1 个公开符号，0 个测试，3 个依赖"]
-    N6["6. 测试证据: 未扫描到 Rust #[test]"]
-    N7["7. 依赖原则: 运行时 3，测试 0，构建 0，内部 1，外部运行时 2"]
-    N8["8. 维护规则: 边界要小，语义要确定，测试要可复现，图和文档要随源码更新。"]
+    N1["1. 技术目标: 用于对证明与 VM 输入做对抗性探索的 fuzz 工作区。"]
+    N2["2. 确定性: 同一公开输入和见证必须得到同一公开输出与证明"]
+    N3["3. 输入约束: 随机字节码 | 变异证明 | 种子语料"]
+    N4["4. 状态转换规则: guest 执行受公开值和 verifier 规则约束"]
+    N5["5. 可验证输出: 崩溃语料 | 回归案例 | 覆盖率信号"]
+    N6["6. 最小信任: 信任验证密钥和 verifier，不信任 prover 运行环境"]
+    N7["7. 分层边界: guest 证明计算，host 编排，L1 验证压缩结果"]
+    N8["8. 可观测证据: proof id、公开输出、验证结果、耗时和失败原因"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -14,11 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N4 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

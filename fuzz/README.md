@@ -1,67 +1,38 @@
 # neo-zkvm-fuzz
 
 <!-- N4-CRATE-VISUAL-GUIDE:START -->
+## Technical Visual Guide
 
-## Crate Visual Learning Guide
+These diagrams are local to this crate and explain `neo-zkvm-fuzz` at the technical architecture level. They focus on system role, principles, data movement, workflow, state, proof/evidence, trust boundaries, integration, and runtime lifecycle.
 
-These diagrams are local to this crate. They explain `neo-zkvm-fuzz` as an independent unit: where it sits in the Neo N4 stack, which boundary it owns, how its internal workflow runs, and how data moves through it.
+Full technical explanation: [docs/learning-guide.md](docs/learning-guide.md).
 
-For the full source-level explanation, read [docs/learning-guide.md](docs/learning-guide.md).
-
-| View | Diagram | Source |
+| View | Diagram | Mermaid |
 | --- | --- | --- |
-| Position in Neo N4 | ![Position](docs/figures/position.svg) | [Mermaid](docs/figures/position.mmd) |
-| Technical principles | ![Principles](docs/figures/principles.svg) | [Mermaid](docs/figures/principles.mmd) |
-| Architecture | ![Architecture](docs/figures/architecture.svg) | [Mermaid](docs/figures/architecture.mmd) |
+| System Position | ![System Position](docs/figures/position.svg) | [Mermaid](docs/figures/position.mmd) |
+| Technical Principles | ![Technical Principles](docs/figures/principles.svg) | [Mermaid](docs/figures/principles.mmd) |
+| Conceptual Architecture | ![Conceptual Architecture](docs/figures/architecture.svg) | [Mermaid](docs/figures/architecture.mmd) |
 | Workflow | ![Workflow](docs/figures/workflow.svg) | [Mermaid](docs/figures/workflow.mmd) |
-| Dataflow | ![Dataflow](docs/figures/dataflow.svg) | [Mermaid](docs/figures/dataflow.mmd) |
-| Module map | ![Module map](docs/figures/module-map.svg) | [Mermaid](docs/figures/module-map.mmd) |
-| Public API surface | ![Public API surface](docs/figures/api-surface.svg) | [Mermaid](docs/figures/api-surface.mmd) |
-| Test evidence | ![Test evidence](docs/figures/test-map.svg) | [Mermaid](docs/figures/test-map.mmd) |
-| Dependency map | ![Dependency map](docs/figures/dependency-map.svg) | [Mermaid](docs/figures/dependency-map.mmd) |
-| Implementation atlas | ![Implementation atlas](docs/figures/implementation-atlas.svg) | [Mermaid](docs/figures/implementation-atlas.mmd) |
+| Data Flow | ![Data Flow](docs/figures/dataflow.svg) | [Mermaid](docs/figures/dataflow.mmd) |
+| State Model | ![State Model](docs/figures/state-model.svg) | [Mermaid](docs/figures/state-model.mmd) |
+| Proof and Evidence Flow | ![Proof and Evidence Flow](docs/figures/proof-flow.svg) | [Mermaid](docs/figures/proof-flow.mmd) |
+| Trust Boundaries | ![Trust Boundaries](docs/figures/trust-boundaries.svg) | [Mermaid](docs/figures/trust-boundaries.mmd) |
+| Integration Map | ![Integration Map](docs/figures/integration-map.svg) | [Mermaid](docs/figures/integration-map.mmd) |
+| Runtime Lifecycle | ![Runtime Lifecycle](docs/figures/lifecycle.svg) | [Mermaid](docs/figures/lifecycle.mmd) |
 
-### Role in Neo N4
+### Technical Role
 
 - **Layer:** Neo zkVM stack
 - **Purpose:** Fuzzing workspace for adversarial proof and VM input exploration.
-- **Primary inputs:** random bytecode, mutated proof, seed corpus
-- **Primary outputs:** crash corpus, regression case, coverage signal
-- **Downstream consumers:** zkVM users, L2 prover service, L1 verification adapter
-- **Source files scanned:** 3
-- **Public symbols scanned:** 1
-- **Rust tests scanned:** 0
+- **Inputs:** random bytecode | mutated proof | seed corpus
+- **Responsibilities:** Generate inputs | Run no-panic checks | Capture regressions
+- **Outputs:** crash corpus | regression case | coverage signal
+- **Consumers:** zkVM users | L2 prover service | L1 verification adapter
 
-### Boundary and Responsibilities
+### Reading Order
 
-- **Owns:** Generate inputs, Run no-panic checks, Capture regressions
-- **Consumes:** random bytecode, mutated proof, seed corpus
-- **Produces:** crash corpus, regression case, coverage signal
-- **Used by:** zkVM users, L2 prover service, L1 verification adapter
-
-### Source Map Snapshot
-
-| File | Why it matters | Public API | Tests |
-| --- | --- | ---: | ---: |
-| `fuzz_targets/common.rs` | fuzzing harness and adversarial input exploration | 1 | 0 |
-| `fuzz_targets/fuzz_script_parser.rs` | fuzzing harness and adversarial input exploration | 0 | 0 |
-| `fuzz_targets/fuzz_vm_execution.rs` | fuzzing harness and adversarial input exploration | 0 | 0 |
-
-### API Snapshot
-
-| Kind | Representative symbols |
-| --- | --- |
-| Types | no public symbols scanned |
-| Functions | append_bounded_neo_vm_sequence |
-| Trait | no public symbols scanned |
-| Constants | no public symbols scanned |
-
-### Learning Path
-
-1. Start with the position diagram to understand why this crate exists and who calls it.
-2. Read the technical principles diagram to identify the invariants and responsibility boundary.
-3. Use the module map and API surface to identify the files and symbols to read first.
-4. Follow the workflow, dataflow, test, and dependency diagrams before changing code.
-5. Use the implementation atlas as the compact source-reading map when you want one dense view instead of separate technical views.
-
+1. Start with system position and conceptual architecture.
+2. Read technical principles, trust boundaries, and state model to understand correctness.
+3. Follow workflow and dataflow to see runtime movement.
+4. Use proof/evidence flow, integration map, and lifecycle for operational understanding.
 <!-- N4-CRATE-VISUAL-GUIDE:END -->

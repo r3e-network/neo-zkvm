@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-zkvm-cli: 生命周期图说明技术单元如何进入可观测运行。"]
+    N2["2. 配置: proving mode、guest image、验证密钥、DA 策略"]
+    N3["3. 输入接收: CLI 命令 | 脚本/证明文件 | prover 选项"]
+    N4["4. 规范化: 把 batch、witness 和公开输入整理成证明系统约束"]
+    N5["5. 执行或验证: 解析命令 | 使用共享 opcode 元数据 | 运行 prove/verify 工作流"]
+    N6["6. 提交或输出: 汇编脚本 | 证明报告 | 检查输出"]
+    N7["7. 消费联动: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N8["8. 运维观测: proof id、公开输出、验证结果、耗时和失败原因"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

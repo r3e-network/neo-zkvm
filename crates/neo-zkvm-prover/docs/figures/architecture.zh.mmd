@@ -1,13 +1,12 @@
 flowchart TB
-    N1["1. 架构总览: neo-zkvm-prover: 3 个源码文件，13 个公开符号，23 个测试，4 个依赖"]
-    N2["2. 入口契约: 证明输入 | guest 程序 | prover 模式"]
-    N3["3. 公开 API 层: 类型 2 | 函数 6 | Trait 0 | 常量 5"]
-    N4["4. 核心实现文件: src/lib.rs (9 API/23 测试) | src/elf_markers.rs (4 API/0 测试) | build.rs (0 API/0 测试)"]
-    N5["5. 模块/重导出: build.rs: mod elf_markers | src/lib.rs: mod elf_markers | src/lib.rs: pub use neo_vm_guest::{MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION}"]
-    N6["6. 依赖边界: bincode | neo-vm-guest | sp1-build | sp1-sdk"]
-    N7["7. 输出产物: NeoProof | 公开输出 | prover 报告"]
-    N8["8. 测试护栏: src/lib.rs（23 个测试）"]
-    N9["9. 系统位置: Neo zkVM 栈 -> zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1["1. 入口域: 证明输入 | guest 程序 | prover 模式"]
+    N2["2. 规范化层: 把 batch、witness 和公开输入整理成证明系统约束"]
+    N3["3. 核心技术机制: 哈希输入 | 运行 guest 执行 | 构建证明封装"]
+    N4["4. 状态与承诺层: 状态根、公开值、验证密钥和证明摘要"]
+    N5["5. 证据或结果层: NeoProof | 公开输出 | prover 报告"]
+    N6["6. 消费方边界: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N7["7. 失败路径: 证明生成失败、本地验证失败、公开输出不匹配或 verifier 拒绝"]
+    N8["8. 扩展点: proof backend、verifier adapter、报告格式和 DA 绑定"]
     N1 --> N2
     N1 --> N3
     N1 --> N4
@@ -15,13 +14,10 @@ flowchart TB
     N1 --> N6
     N1 --> N7
     N1 --> N8
-    N1 --> N9
-    N2 -. related .-> N3
-    N3 -. related .-> N4
-    N4 -. related .-> N5
-    N5 -. related .-> N6
-    N6 -. related .-> N7
-    N7 -. related .-> N8
-    N8 -. related .-> N9
-    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N1 crate
+    N2 -. constrains .-> N4
+    N4 -. produces .-> N5
+    N5 -. consumed by .-> N6
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;

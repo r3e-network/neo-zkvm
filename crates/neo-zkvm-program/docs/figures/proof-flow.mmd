@@ -1,0 +1,20 @@
+flowchart TB
+    N1["1. neo-zkvm-program: Proof/evidence flow shows how a claim becomes checkable."]
+    N2["2. Claim: This unit performed: Deserialize stdin | Execute script | Commit public values."]
+    N3["3. Witness or input: SP1 stdin | Neo proof input | guest facade"]
+    N4["4. Execution or check: replay deterministic computation inside the proof system"]
+    N5["5. Public commitment: state root, public values, verification key, and proof digest"]
+    N6["6. Verifier: zkVM users | L2 prover service | L1 verification adapter"]
+    N7["7. Accepted result: SP1 public values | execution output | fault status"]
+    N8["8. Rejected result: reject proof, public output, or mode; state root does not advance"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    N6 --> N7
+    N7 --> N8
+    classDef core fill:#0f172a,stroke:#38bdf8,color:#e5f2ff,stroke-width:2px;
+    classDef support fill:#111827,stroke:#64748b,color:#f8fafc;
+    class N1 core;
+    class N2,N3,N4,N5,N6,N7,N8 support;
