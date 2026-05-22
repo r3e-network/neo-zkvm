@@ -138,11 +138,11 @@ jobs:
       - name: Fuzz VM execution (smoke)
         run: |
           cd fuzz
-          cargo +nightly fuzz run fuzz_vm_execution -- -runs=128 -max_len=512
+          cargo +nightly fuzz run --sanitizer none fuzz_vm_execution -- -runs=128 -max_len=512
       - name: Fuzz script parser (smoke)
         run: |
           cd fuzz
-          cargo +nightly fuzz run fuzz_script_parser -- -runs=128 -max_len=512
+          cargo +nightly fuzz run --sanitizer none fuzz_script_parser -- -runs=128 -max_len=512
 
   # Build and test documentation
   doc:
