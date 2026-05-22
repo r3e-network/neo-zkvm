@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: Neo zkVM stack"]
-    N2["Inputs: sample script | example input | local prover"]
-    N3["neo-zkvm-examples: Runnable examples that demonstrate common proof flows and application patterns."]
-    N4["Responsibilities: Demonstrate APIs | Exercise edge cases | Document expected outputs"]
-    N5["Outputs: example proof | tutorial output | regression sample"]
-    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1["Public entrypoints: sample script | example input | local prover"]
+    N2["neo-zkvm-examples: Runnable examples that demonstrate common proof flows and application patterns."]
+    N3["Internal components: Demonstrate APIs | Exercise edge cases | Document expected outputs"]
+    N4["Dependency boundary: neo-vm-guest | neo-zkvm-prover | neo-zkvm-verifier"]
+    N5["Output artifacts: example proof | tutorial output | regression sample"]
+    N6["System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

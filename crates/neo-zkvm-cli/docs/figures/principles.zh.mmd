@@ -1,0 +1,14 @@
+flowchart LR
+    N1["职责边界: 用于汇编、检查、生成证明和验证 Neo zkVM 程序的 CLI 与开发工具。"]
+    N2["核心原则: 解析命令 | 使用共享 opcode 元数据 | 运行 prove/verify 工作流"]
+    N3["输入契约: CLI 命令 | 脚本/证明文件 | prover 选项"]
+    N4["状态与产物: 汇编脚本 | 证明报告 | 检查输出"]
+    N5["集成方式: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N6["维护规则: 保持边界小、语义确定、测试可复现。"]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

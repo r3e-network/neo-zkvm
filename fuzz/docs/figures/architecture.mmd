@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: Neo zkVM stack"]
-    N2["Inputs: random bytecode | mutated proof | seed corpus"]
-    N3["neo-zkvm-fuzz: Fuzzing workspace for adversarial proof and VM input exploration."]
-    N4["Responsibilities: Generate inputs | Run no-panic checks | Capture regressions"]
-    N5["Outputs: crash corpus | regression case | coverage signal"]
-    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1["Public entrypoints: random bytecode | mutated proof | seed corpus"]
+    N2["neo-zkvm-fuzz: Fuzzing workspace for adversarial proof and VM input exploration."]
+    N3["Internal components: Generate inputs | Run no-panic checks | Capture regressions"]
+    N4["Dependency boundary: arbitrary | libfuzzer-sys | neo-vm-guest"]
+    N5["Output artifacts: crash corpus | regression case | coverage signal"]
+    N6["System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: Neo zkVM stack"]
-    N2["Inputs: SP1 stdin | Neo proof input | guest facade"]
-    N3["neo-zkvm-program: SP1 guest binary entrypoint that binds proof inputs to deterministic NeoVM execution."]
-    N4["Responsibilities: Deserialize stdin | Execute script | Commit public values"]
-    N5["Outputs: SP1 public values | execution output | fault status"]
-    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1["Public entrypoints: SP1 stdin | Neo proof input | guest facade"]
+    N2["neo-zkvm-program: SP1 guest binary entrypoint that binds proof inputs to deterministic NeoVM execution."]
+    N3["Internal components: Deserialize stdin | Execute script | Commit public values"]
+    N4["Dependency boundary: bincode | neo-vm-guest | serde | sha2 | sp1-build"]
+    N5["Output artifacts: SP1 public values | execution output | fault status"]
+    N6["System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

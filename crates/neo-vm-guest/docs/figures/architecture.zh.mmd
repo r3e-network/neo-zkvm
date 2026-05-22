@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: zkVM guest 外观层"]
-    N2["Inputs: guest 字节码 | 栈输入 | 共享 VM crate"]
-    N3["neo-vm-guest: 面向 zkVM guest 的适配层，以 zkVM 兼容方式暴露共享 NeoVM 执行 API。"]
-    N4["Responsibilities: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
-    N5["Outputs: guest 执行结果 | 公开输出种子 | fault 原因"]
-    N6["Consumers: neo-zkvm-program | neo-zkvm-prover | 示例"]
+    N1["公开入口: guest 字节码 | 栈输入 | 共享 VM crate"]
+    N2["neo-vm-guest: 面向 zkVM guest 的适配层，以 zkVM 兼容方式暴露共享 NeoVM 执行 API。"]
+    N3["内部组件: 调用共享 VM | 保持 guest ABI 小 | 返回确定性结果"]
+    N4["依赖边界: bincode | neo-vm-rs | serde | sha2"]
+    N5["输出产物: guest 执行结果 | 公开输出种子 | fault 原因"]
+    N6["系统位置: zkVM guest 外观层 -> neo-zkvm-program | neo-zkvm-prover | 示例"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

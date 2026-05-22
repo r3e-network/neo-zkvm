@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: zkVM guest facade"]
-    N2["Inputs: guest bytecode | stack input | shared VM crate"]
-    N3["neo-vm-guest: Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form."]
-    N4["Responsibilities: Call shared VM | Keep guest ABI small | Return deterministic result"]
-    N5["Outputs: guest execution result | public output seed | fault reason"]
-    N6["Consumers: neo-zkvm-program | neo-zkvm-prover | examples"]
+    N1["Public entrypoints: guest bytecode | stack input | shared VM crate"]
+    N2["neo-vm-guest: Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form."]
+    N3["Internal components: Call shared VM | Keep guest ABI small | Return deterministic result"]
+    N4["Dependency boundary: bincode | neo-vm-rs | serde | sha2"]
+    N5["Output artifacts: guest execution result | public output seed | fault reason"]
+    N6["System position: zkVM guest facade -> neo-zkvm-program | neo-zkvm-prover | examples"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

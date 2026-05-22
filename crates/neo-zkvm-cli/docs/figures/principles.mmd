@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Responsibility boundary: CLI and developer tooling for assembling, inspecting, proving, and verifying Neo zkVM programs."]
+    N2["Core principles: Parse commands | Use shared opcode metadata | Run prove/verify workflows"]
+    N3["Input contract: CLI command | script/proof files | prover options"]
+    N4["State and artifacts: assembled script | proof report | inspection output"]
+    N5["Integration contract: zkVM users | L2 prover service | L1 verification adapter"]
+    N6["Maintenance rule: Keep the boundary small, deterministic, and reproducible under tests."]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

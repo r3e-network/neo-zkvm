@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Neo N4 layer: zkVM guest facade"]
+    N2["Upstream inputs: guest bytecode | stack input | shared VM crate"]
+    N3["neo-vm-guest: Guest-facing adapter that exposes shared NeoVM execution APIs in zkVM-compatible form."]
+    N4["Direct dependencies: bincode | neo-vm-rs | serde | sha2"]
+    N5["Downstream users: neo-zkvm-program | neo-zkvm-prover | examples"]
+    N6["Learning focus: Locate upstream and downstream first, then read this crate boundary, core data structures, and tests."]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

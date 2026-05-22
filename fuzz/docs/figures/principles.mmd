@@ -1,0 +1,14 @@
+flowchart LR
+    N1["Responsibility boundary: Fuzzing workspace for adversarial proof and VM input exploration."]
+    N2["Core principles: Generate inputs | Run no-panic checks | Capture regressions"]
+    N3["Input contract: random bytecode | mutated proof | seed corpus"]
+    N4["State and artifacts: crash corpus | regression case | coverage signal"]
+    N5["Integration contract: zkVM users | L2 prover service | L1 verification adapter"]
+    N6["Maintenance rule: Keep the boundary small, deterministic, and reproducible under tests."]
+    N1 --> N2
+    N2 --> N3
+    N3 --> N4
+    N4 --> N5
+    N5 --> N6
+    classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
+    class N3 crate

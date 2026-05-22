@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: Neo zkVM 栈"]
-    N2["Inputs: CLI 命令 | 脚本/证明文件 | prover 选项"]
-    N3["neo-zkvm-cli: 用于汇编、检查、生成证明和验证 Neo zkVM 程序的 CLI 与开发工具。"]
-    N4["Responsibilities: 解析命令 | 使用共享 opcode 元数据 | 运行 prove/verify 工作流"]
-    N5["Outputs: 汇编脚本 | 证明报告 | 检查输出"]
-    N6["Consumers: zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
+    N1["公开入口: CLI 命令 | 脚本/证明文件 | prover 选项"]
+    N2["neo-zkvm-cli: 用于汇编、检查、生成证明和验证 Neo zkVM 程序的 CLI 与开发工具。"]
+    N3["内部组件: 解析命令 | 使用共享 opcode 元数据 | 运行 prove/verify 工作流"]
+    N4["依赖边界: hex | neo-vm-guest | neo-vm-rs | neo-zkvm-prover | neo-zkvm-verifier"]
+    N5["输出产物: 汇编脚本 | 证明报告 | 检查输出"]
+    N6["系统位置: Neo zkVM 栈 -> zkVM 用户 | L2 prover 服务 | L1 验证适配器"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate

@@ -9,32 +9,36 @@
 <text x="70" y="82" fill="#f6fbff" font-size="30" font-family="Segoe UI, Arial, sans-serif" font-weight="700">neo-vm-guest Architecture</text>
 <text x="70" y="114" fill="#aebdcc" font-size="17" font-family="Segoe UI, Arial, sans-serif">Neo N4 crate 可视化学习图</text>
 <rect x="104" y="155" width="340" height="130" rx="12" fill="#101f2d" stroke="#38d978" stroke-width="2"/>
-<text x="126" y="189" fill="#38d978" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Project layer</text>
-<text x="126" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">zkVM guest 外观层</text>
+<text x="126" y="189" fill="#38d978" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">公开入口</text>
+<text x="126" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">guest 字节码 | 栈输入 | 共享 V</text>
+<text x="126" y="243" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">M crate</text>
 <rect x="470" y="155" width="340" height="130" rx="12" fill="#101f2d" stroke="#52a6ff" stroke-width="2"/>
-<text x="492" y="189" fill="#52a6ff" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Inputs</text>
-<text x="492" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">guest 字节码 | 栈输入 | 共享 V</text>
-<text x="492" y="243" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">M crate</text>
+<text x="492" y="189" fill="#52a6ff" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">neo-vm-guest</text>
+<text x="492" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">面向 zkVM guest 的适配层，以 z</text>
+<text x="492" y="243" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">kVM 兼容方式暴露共享 NeoVM 执行 </text>
+<text x="492" y="265" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">API。</text>
 <line x1="452" y1="220" x2="462" y2="220" stroke="#38d978" stroke-width="2.5" marker-end="url(#arrow)" opacity="0.9"/>
 <rect x="836" y="155" width="340" height="130" rx="12" fill="#101f2d" stroke="#ffca3a" stroke-width="2"/>
-<text x="858" y="189" fill="#ffca3a" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">neo-vm-guest</text>
-<text x="858" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">面向 zkVM guest 的适配层，以 z</text>
-<text x="858" y="243" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">kVM 兼容方式暴露共享 NeoVM 执行 </text>
-<text x="858" y="265" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">API。</text>
+<text x="858" y="189" fill="#ffca3a" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">内部组件</text>
+<text x="858" y="221" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">调用共享 VM | 保持 guest ABI</text>
+<text x="858" y="243" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif"> 小 | 返回确定性结果</text>
 <line x1="818" y1="220" x2="828" y2="220" stroke="#38d978" stroke-width="2.5" marker-end="url(#arrow)" opacity="0.9"/>
 <rect x="104" y="415" width="340" height="130" rx="12" fill="#101f2d" stroke="#52a6ff" stroke-width="2"/>
-<text x="126" y="449" fill="#52a6ff" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Responsibilities</text>
-<text x="126" y="481" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">调用共享 VM | 保持 guest ABI</text>
-<text x="126" y="503" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif"> 小 | 返回确定性结果</text>
+<text x="126" y="449" fill="#52a6ff" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">依赖边界</text>
+<text x="126" y="481" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">bincode</text>
+<text x="126" y="503" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">neo-vm-rs</text>
+<text x="126" y="525" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">serde</text>
+<text x="126" y="547" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">sha2</text>
 <rect x="470" y="415" width="340" height="130" rx="12" fill="#101f2d" stroke="#ffca3a" stroke-width="2"/>
-<text x="492" y="449" fill="#ffca3a" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Outputs</text>
+<text x="492" y="449" fill="#ffca3a" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">输出产物</text>
 <text x="492" y="481" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">guest 执行结果 | 公开输出种子 | </text>
 <text x="492" y="503" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">fault 原因</text>
 <line x1="452" y1="480" x2="462" y2="480" stroke="#38d978" stroke-width="2.5" marker-end="url(#arrow)" opacity="0.9"/>
 <rect x="836" y="415" width="340" height="130" rx="12" fill="#101f2d" stroke="#38d978" stroke-width="2"/>
-<text x="858" y="449" fill="#38d978" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Consumers</text>
-<text x="858" y="481" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">neo-zkvm-program | neo</text>
-<text x="858" y="503" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">-zkvm-prover | 示例</text>
+<text x="858" y="449" fill="#38d978" font-size="18" font-family="Segoe UI, Arial, sans-serif" font-weight="700">系统位置</text>
+<text x="858" y="481" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">zkVM guest 外观层 -&gt; neo-</text>
+<text x="858" y="503" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">zkvm-program | neo-zkv</text>
+<text x="858" y="525" fill="#d9e6f2" font-size="15" font-family="Segoe UI, Arial, sans-serif">m-prover | 示例</text>
 <line x1="818" y1="480" x2="828" y2="480" stroke="#38d978" stroke-width="2.5" marker-end="url(#arrow)" opacity="0.9"/>
 <path d="M640 300 C640 350 640 370 640 412" stroke="#52a6ff" stroke-width="2.5" fill="none" marker-end="url(#arrow)" opacity="0.85"/>
 <text x="70" y="704" fill="#6f8194" font-size="14" font-family="Segoe UI, Arial, sans-serif">Generated from Cargo package metadata and Neo N4 architecture roles. Edit the companion .mmd source or rerun tools/docs/generate_crate_visual_docs.py.</text>

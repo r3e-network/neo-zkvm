@@ -1,14 +1,14 @@
 flowchart LR
-    N1["Project layer: Neo zkVM stack"]
-    N2["Inputs: proof input | guest program | prover mode"]
-    N3["neo-zkvm-prover: Proof generation library that turns NeoVM execution inputs into verifiable proof artifacts."]
-    N4["Responsibilities: Hash inputs | Run guest execution | Build proof envelope"]
-    N5["Outputs: NeoProof | public output | prover report"]
-    N6["Consumers: zkVM users | L2 prover service | L1 verification adapter"]
+    N1["Public entrypoints: proof input | guest program | prover mode"]
+    N2["neo-zkvm-prover: Proof generation library that turns NeoVM execution inputs into verifiable proof artifacts."]
+    N3["Internal components: Hash inputs | Run guest execution | Build proof envelope"]
+    N4["Dependency boundary: bincode | neo-vm-guest | sp1-build | sp1-sdk"]
+    N5["Output artifacts: NeoProof | public output | prover report"]
+    N6["System position: Neo zkVM stack -> zkVM users | L2 prover service | L1 verification adapter"]
     N1 --> N2
     N2 --> N3
     N3 --> N4
     N4 --> N5
     N5 --> N6
     classDef crate fill:#101f2d,stroke:#38d978,color:#f6fbff
-    class N3 crate
+    class N2 crate
