@@ -105,10 +105,6 @@ jobs:
           shared-key: "ci"
       - name: Run basic example
         run: cargo run --locked --bin basic
-      - name: Run storage example
-        run: cargo run --locked --bin storage_example
-      - name: Run native contracts example
-        run: cargo run --locked --bin native_contracts
       - name: Run proof generation example
         run: cargo run --locked --bin proof_generation
       - name: Run batch verification example
@@ -117,6 +113,14 @@ jobs:
         run: cargo run --locked --bin private_inputs
       - name: Run tamper resistance example
         run: cargo run --locked --bin tamper_resistance
+      - name: Run preimage example
+        run: cargo run --locked --bin zk_preimage
+      - name: Run scaling example
+        run: cargo run --locked --bin zk_scaling
+      - name: Run DAO voting example
+        run: cargo run --locked --bin zk_dao_voting
+      - name: Run DEX rollup example
+        run: cargo run --locked --bin zk_dex_rollup
 
   # Run bounded fuzz smoke checks
   fuzz-smoke:

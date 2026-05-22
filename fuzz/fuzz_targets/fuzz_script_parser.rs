@@ -4,6 +4,8 @@
 
 #![no_main]
 
+mod common;
+
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use neo_vm_guest::{execute, ProofInput, StackItem};
@@ -25,14 +27,10 @@ fuzz_target!(|input: FuzzInput| {
         .map(|value| StackItem::Integer(*value))
         .collect();
 
-    // Keep the fuzz target deterministic and terminating while still exploring
-    // stack, arithmetic, and control-free instruction decoding through neo-vm-rs.
-    let mut script: Vec<u8> = input
-        .script
-        .into_iter()
-        .take(256)
-        .map(safe_opcode)
-        .collect();
+    let mut script = Vec::with_capacity(input.script.len().min(256) * 5 + 1);
+    for byte in input.script.into_iter().take(256) {
+        common::append_bounded_neo_vm_sequence(&mut script, byte);
+    }
     script.push(0x40);
 
     let _ = execute(ProofInput {
@@ -41,20 +39,3 @@ fuzz_target!(|input: FuzzInput| {
         gas_limit,
     });
 });
-
-fn safe_opcode(byte: u8) -> u8 {
-    match byte % 12 {
-        0 => 0x10, // PUSH0
-        1 => 0x11, // PUSH1
-        2 => 0x12, // PUSH2
-        3 => 0x13, // PUSH3
-        4 => 0x4A, // DUP
-        5 => 0x45, // DROP
-        6 => 0x9E, // ADD
-        7 => 0x9F, // SUB
-        8 => 0xA0, // MUL
-        9 => 0xB3, // NUMEQUAL
-        10 => 0xAA, // NOT
-        _ => 0x21, // NOP
-    }
-}
