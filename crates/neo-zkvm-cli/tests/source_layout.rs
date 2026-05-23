@@ -52,7 +52,57 @@ fn cli_assembler_uses_shared_opcode_enum() {
     );
 }
 
+#[test]
+fn guest_crate_reexports_shared_opcode_enum() {
+    let source = read_workspace_source("crates/neo-vm-guest/src/lib.rs");
+
+    assert!(
+        source.contains("OpCode"),
+        "neo-vm-guest should re-export neo-vm-rs::OpCode for scripts built outside the CLI"
+    );
+}
+
+#[test]
+fn workspace_examples_build_scripts_from_shared_opcode_enum() {
+    for relative_path in [
+        "crates/neo-vm-guest/src/lib.rs",
+        "crates/neo-vm-guest/tests/shared_vm.rs",
+        "crates/neo-zkvm-prover/src/lib.rs",
+        "crates/neo-zkvm-program/src/main.rs",
+        "crates/neo-zkvm-examples/src/proof_generation.rs",
+        "crates/neo-zkvm-examples/src/zk_preimage.rs",
+    ] {
+        let source = read_workspace_source(relative_path);
+
+        assert!(
+            source.contains("OpCode::") && source.contains(".byte()"),
+            "{relative_path} should build NeoVM scripts through shared OpCode metadata"
+        );
+        for duplicate in [
+            "vec![0x12, 0x13, 0x9E, 0x40]",
+            "vec![0x15, 0x12, 0x9F, 0x40]",
+            "vec![0x4A, 0xA0, 0x40]",
+            "script.push(0x40)",
+            "vec![0x41]",
+        ] {
+            assert!(
+                !source.contains(duplicate),
+                "{relative_path} must not duplicate NeoVM opcode byte constants: {duplicate}"
+            );
+        }
+    }
+}
+
 fn read_source(relative_path: &str) -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(relative_path))
         .unwrap_or_else(|error| panic!("{relative_path} should be readable: {error}"))
+}
+
+fn read_workspace_source(relative_path: &str) -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(relative_path),
+    )
+    .unwrap_or_else(|error| panic!("{relative_path} should be readable: {error}"))
 }

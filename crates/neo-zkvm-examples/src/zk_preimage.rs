@@ -1,4 +1,4 @@
-use neo_vm_guest::{interop_hash, ProofInput, StackItem};
+use neo_vm_guest::{interop_hash, OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
 
@@ -13,9 +13,9 @@ fn main() {
 
     // Deterministic zkVM crypto is exposed through the syscall adapter so it
     // does not consume canonical NeoVM opcode space.
-    let mut script = vec![0x41]; // SYSCALL
+    let mut script = vec![OpCode::SYSCALL.byte()];
     script.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
-    script.push(0x40); // RET
+    script.push(OpCode::RET.byte());
 
     let prover = NeoProver::new(ProverConfig {
         proof_mode: ProofMode::Mock, // Use Mock for fast demonstration

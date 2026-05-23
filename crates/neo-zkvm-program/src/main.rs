@@ -78,11 +78,17 @@ mod tests {
     use super::*;
     use neo_vm_guest::bincode_serialize;
     use neo_vm_guest::execute;
+    use neo_vm_guest::OpCode;
 
     #[test]
     fn test_basic_execution() {
         let output = execute(ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40], // PUSH2 PUSH3 ADD RET
+            script: vec![
+                OpCode::PUSH2.byte(),
+                OpCode::PUSH3.byte(),
+                OpCode::ADD.byte(),
+                OpCode::RET.byte(),
+            ],
             arguments: vec![],
             gas_limit: 1_000_000,
         });
@@ -97,7 +103,12 @@ mod tests {
     #[test]
     fn test_arithmetic() {
         let output = execute(ProofInput {
-            script: vec![0x15, 0x12, 0x9F, 0x40], // PUSH5 PUSH2 SUB RET
+            script: vec![
+                OpCode::PUSH5.byte(),
+                OpCode::PUSH2.byte(),
+                OpCode::SUB.byte(),
+                OpCode::RET.byte(),
+            ],
             arguments: vec![],
             gas_limit: 1_000_000,
         });
@@ -112,7 +123,7 @@ mod tests {
     #[test]
     fn test_hash_with_bincode_limit_matches_serialized_hash_on_success() {
         let input = ProofInput {
-            script: vec![0x40],
+            script: vec![OpCode::RET.byte()],
             arguments: vec![],
             gas_limit: 123,
         };

@@ -11,7 +11,7 @@ mod zk_proof_syscalls;
 pub use legacy_neo_proof::LegacyNeoProof;
 pub use mock_proof::MockProof;
 pub use neo_proof::NeoProof;
-pub use neo_vm_rs::{interop_hash, pop_byte_arg, StackValue as StackItem};
+pub use neo_vm_rs::{interop_hash, pop_byte_arg, OpCode, StackValue as StackItem};
 use neo_vm_rs::{
     interpret_with_stack_and_syscalls, VmState, DEFAULT_MAX_STACK_DEPTH, MAX_SCRIPT_SIZE,
 };
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn test_execute_reports_stack_overflow_for_excessive_arguments() {
         let input = ProofInput {
-            script: vec![0x40], // RET
+            script: vec![OpCode::RET.byte()],
             arguments: vec![StackItem::Integer(1); 10_000],
             gas_limit: 1_000_000,
         };

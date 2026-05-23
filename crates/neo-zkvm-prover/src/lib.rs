@@ -6,7 +6,7 @@
 //!
 //! ```rust
 //! use neo_zkvm_prover::{NeoProver, ProverConfig, ProofMode};
-//! use neo_vm_guest::ProofInput;
+//! use neo_vm_guest::{OpCode, ProofInput};
 //!
 //! // Use mock mode for local/debug development.
 //! let prover = NeoProver::new(ProverConfig {
@@ -16,7 +16,12 @@
 //!
 //! // Define input
 //! let input = ProofInput {
-//!     script: vec![0x12, 0x13, 0x9E, 0x40], // 2 + 3
+//!     script: vec![
+//!         OpCode::PUSH2.byte(),
+//!         OpCode::PUSH3.byte(),
+//!         OpCode::ADD.byte(),
+//!         OpCode::RET.byte(),
+//!     ],
 //!     arguments: vec![],
 //!     gas_limit: 1_000_000,
 //! };
@@ -545,7 +550,35 @@ fn decode_public_inputs(values: &SP1PublicValues) -> Result<PublicInputs, DynErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_guest::StackItem;
+    use neo_vm_guest::{OpCode, StackItem};
+
+    fn add_script() -> Vec<u8> {
+        vec![
+            OpCode::PUSH2.byte(),
+            OpCode::PUSH3.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ]
+    }
+
+    fn ret_script() -> Vec<u8> {
+        vec![OpCode::RET.byte()]
+    }
+
+    fn div_by_zero_script() -> Vec<u8> {
+        vec![
+            OpCode::PUSH5.byte(),
+            OpCode::PUSH0.byte(),
+            OpCode::DIV.byte(),
+            OpCode::RET.byte(),
+        ]
+    }
+
+    fn many_push1_script() -> Vec<u8> {
+        let mut script = vec![OpCode::PUSH1.byte(); 6];
+        script.push(OpCode::RET.byte());
+        script
+    }
 
     #[test]
     fn test_mock_proof() {
@@ -555,7 +588,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -573,7 +606,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -591,7 +624,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -610,7 +643,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -631,7 +664,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -652,7 +685,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -667,7 +700,7 @@ mod tests {
     #[test]
     fn test_input_hash_matches_serialized_proof_input() {
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![StackItem::Integer(7)],
             gas_limit: 123,
         };
@@ -684,12 +717,12 @@ mod tests {
     #[test]
     fn test_input_hash_distinguishes_complex_argument_variants() {
         let null_input = ProofInput {
-            script: vec![0x40],
+            script: ret_script(),
             arguments: vec![StackItem::Null],
             gas_limit: 1_000_000,
         };
         let array_input = ProofInput {
-            script: vec![0x40],
+            script: ret_script(),
             arguments: vec![StackItem::Array(vec![StackItem::Integer(42)])],
             gas_limit: 1_000_000,
         };
@@ -703,7 +736,7 @@ mod tests {
     #[test]
     fn test_hash_proof_input_rejects_oversized_arguments() {
         let input = ProofInput {
-            script: vec![0x40],
+            script: ret_script(),
             arguments: vec![StackItem::ByteString(vec![0u8; 10 * 1024 * 1024 + 1])],
             gas_limit: 1_000_000,
         };
@@ -718,7 +751,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x40],
+            script: ret_script(),
             arguments: vec![StackItem::ByteString(vec![0u8; 10 * 1024 * 1024 + 1])],
             gas_limit: 1_000_000,
         };
@@ -740,7 +773,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -756,7 +789,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -772,7 +805,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -788,7 +821,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            script: div_by_zero_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -804,7 +837,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            script: div_by_zero_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -822,7 +855,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x15, 0x10, 0xA1, 0x40], // div by zero
+            script: div_by_zero_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -840,7 +873,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -865,7 +898,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x40], // many PUSH1 + RET
+            script: many_push1_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -888,7 +921,7 @@ mod tests {
         });
 
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -944,7 +977,7 @@ mod tests {
     #[test]
     fn test_hash_proof_input_does_not_panic_on_oversized_arguments() {
         let input = ProofInput {
-            script: vec![0x40],
+            script: ret_script(),
             arguments: vec![StackItem::ByteString(vec![0u8; 10 * 1024 * 1024 + 1])],
             gas_limit: 1_000_000,
         };

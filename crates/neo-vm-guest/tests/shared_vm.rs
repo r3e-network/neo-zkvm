@@ -1,7 +1,7 @@
-use neo_vm_guest::{execute, ProofInput, StackItem};
+use neo_vm_guest::{execute, OpCode, ProofInput, StackItem};
 
 fn syscall(name: &str) -> Vec<u8> {
-    let mut script = vec![0x41];
+    let mut script = vec![OpCode::SYSCALL.byte()];
     script.extend_from_slice(&neo_vm_rs::interop_hash(name).to_le_bytes());
     script
 }
@@ -34,7 +34,7 @@ fn proof_guest_uses_shared_byte_arg_helper() {
 #[test]
 fn proof_execution_rejects_non_canonical_throwifnot_byte() {
     let output = execute(ProofInput {
-        script: vec![0xf1, 0x40],
+        script: vec![0xf1, OpCode::RET.byte()],
         arguments: vec![],
         gas_limit: 1_000_000,
     });
@@ -50,7 +50,7 @@ fn proof_execution_rejects_non_canonical_throwifnot_byte() {
 #[test]
 fn deterministic_crypto_uses_syscall_not_pseudo_opcode() {
     let mut script = syscall("System.Crypto.SHA256");
-    script.push(0x40);
+    script.push(OpCode::RET.byte());
 
     let output = execute(ProofInput {
         script,

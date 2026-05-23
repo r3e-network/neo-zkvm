@@ -15,7 +15,7 @@
 //! - SP1: Generate real ZK proof (production)
 //! - SP1Plonk: Generate PLONK proof (on-chain verification)
 
-use neo_vm_guest::{ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::{verify, verify_detailed};
 
@@ -27,9 +27,13 @@ fn main() {
     // =========================================================================
     println!("--- Part 1: Simple Arithmetic (2 + 3 = 5) ---\n");
 
-    // Create a simple addition script: PUSH2, PUSH3, ADD, RET
-    // Opcodes: 0x12 = PUSH2, 0x13 = PUSH3, 0x9E = ADD, 0x40 = RET
-    let add_script = vec![0x12, 0x13, 0x9E, 0x40];
+    // Create a simple addition script: PUSH2, PUSH3, ADD, RET.
+    let add_script = vec![
+        OpCode::PUSH2.byte(),
+        OpCode::PUSH3.byte(),
+        OpCode::ADD.byte(),
+        OpCode::RET.byte(),
+    ];
 
     // Prepare proof input
     let input = ProofInput {
@@ -72,7 +76,7 @@ fn main() {
 
     // Script that multiplies two numbers from the stack
     // DUP, MUL, RET (squares the top value)
-    let square_script = vec![0x4A, 0xA0, 0x40]; // DUP, MUL, RET
+    let square_script = vec![OpCode::DUP.byte(), OpCode::MUL.byte(), OpCode::RET.byte()];
 
     let input_with_args = ProofInput {
         script: square_script,
@@ -111,7 +115,12 @@ fn main() {
     let exec_prover = NeoProver::new(exec_config);
 
     let input3 = ProofInput {
-        script: vec![0x15, 0x14, 0xA0, 0x40], // PUSH5, PUSH4, MUL, RET = 20
+        script: vec![
+            OpCode::PUSH5.byte(),
+            OpCode::PUSH4.byte(),
+            OpCode::MUL.byte(),
+            OpCode::RET.byte(),
+        ],
         arguments: vec![],
         gas_limit: 100_000,
     };
