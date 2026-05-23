@@ -12,7 +12,7 @@
 mod macro_definition;
 mod pending_label;
 
-use neo_vm_rs::interop_hash;
+use neo_vm_rs::{interop_hash, OpCode};
 use std::collections::HashMap;
 
 use macro_definition::Macro;
@@ -76,6 +76,19 @@ impl Assembler {
 
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    fn opcode_from_mnemonic(op: &str) -> Option<OpCode> {
+        match op {
+            "TRUE" => Some(OpCode::PUSHT),
+            "FALSE" => Some(OpCode::PUSHF),
+            "NEG" => Some(OpCode::NEGATE),
+            _ => OpCode::from_name(op),
+        }
+    }
+
+    fn emit_opcode(bytecode: &mut Vec<u8>, opcode: OpCode) {
+        bytecode.push(opcode.byte());
     }
 
     pub fn assemble(&mut self, source: &str) -> Result<Vec<u8>, String> {
@@ -291,157 +304,10 @@ impl Assembler {
 
     fn is_simple_opcode(&self, s: &str) -> bool {
         let op = s.to_uppercase();
-        matches!(
-            op.as_str(),
-            "PUSH0"
-                | "PUSH1"
-                | "PUSH2"
-                | "PUSH3"
-                | "PUSH4"
-                | "PUSH5"
-                | "PUSH6"
-                | "PUSH7"
-                | "PUSH8"
-                | "PUSH9"
-                | "PUSH10"
-                | "PUSH11"
-                | "PUSH12"
-                | "PUSH13"
-                | "PUSH14"
-                | "PUSH15"
-                | "PUSH16"
-                | "PUSHM1"
-                | "PUSHNULL"
-                | "TRUE"
-                | "FALSE"
-                | "NOP"
-                | "RET"
-                | "ABORT"
-                | "ASSERT"
-                | "THROW"
-                | "DEPTH"
-                | "DROP"
-                | "NIP"
-                | "CLEAR"
-                | "DUP"
-                | "OVER"
-                | "PICK"
-                | "TUCK"
-                | "SWAP"
-                | "ROT"
-                | "ROLL"
-                | "REVERSE3"
-                | "REVERSE4"
-                | "REVERSEN"
-                | "XDROP"
-                | "ADD"
-                | "SUB"
-                | "MUL"
-                | "DIV"
-                | "MOD"
-                | "POW"
-                | "SQRT"
-                | "SHL"
-                | "SHR"
-                | "INC"
-                | "DEC"
-                | "SIGN"
-                | "ABS"
-                | "NEGATE"
-                | "NEG"
-                | "INVERT"
-                | "AND"
-                | "OR"
-                | "XOR"
-                | "EQUAL"
-                | "NOTEQUAL"
-                | "NOT"
-                | "BOOLAND"
-                | "BOOLOR"
-                | "NZ"
-                | "LT"
-                | "LE"
-                | "GT"
-                | "GE"
-                | "MIN"
-                | "MAX"
-                | "WITHIN"
-                | "NUMEQUAL"
-                | "NUMNOTEQUAL"
-                | "NEWARRAY0"
-                | "NEWARRAY"
-                | "NEWSTRUCT0"
-                | "NEWSTRUCT"
-                | "NEWMAP"
-                | "SIZE"
-                | "HASKEY"
-                | "KEYS"
-                | "VALUES"
-                | "PICKITEM"
-                | "APPEND"
-                | "SETITEM"
-                | "REVERSEITEMS"
-                | "REMOVE"
-                | "CLEARITEMS"
-                | "POPITEM"
-                | "PACK"
-                | "UNPACK"
-                | "ISNULL"
-                | "SHA256"
-                | "RIPEMD160"
-                | "HASH160"
-                | "CHECKSIG"
-                | "LDLOC0"
-                | "LDLOC1"
-                | "LDLOC2"
-                | "LDLOC3"
-                | "LDLOC4"
-                | "LDLOC5"
-                | "STLOC0"
-                | "STLOC1"
-                | "STLOC2"
-                | "STLOC3"
-                | "STLOC4"
-                | "STLOC5"
-                | "LDARG0"
-                | "LDARG1"
-                | "LDARG2"
-                | "LDARG3"
-                | "LDARG4"
-                | "LDARG5"
-                | "STARG0"
-                | "STARG1"
-                | "STARG2"
-                | "STARG3"
-                | "STARG4"
-                | "STARG5"
-                | "LDSFLD0"
-                | "LDSFLD1"
-                | "LDSFLD2"
-                | "LDSFLD3"
-                | "LDSFLD4"
-                | "LDSFLD5"
-                | "STSFLD0"
-                | "STSFLD1"
-                | "STSFLD2"
-                | "STSFLD3"
-                | "STSFLD4"
-                | "STSFLD5"
-                | "NEWBUFFER"
-                | "MEMCPY"
-                | "CAT"
-                | "SUBSTR"
-                | "LEFT"
-                | "RIGHT"
-                | "PACKMAP"
-                | "PACKSTRUCT"
-                | "MODMUL"
-                | "MODPOW"
-                | "CALLA"
-                | "ENDFINALLY"
-                | "ABORTMSG"
-                | "ASSERTMSG"
-        )
+        match Self::opcode_from_mnemonic(&op) {
+            Some(opcode) => opcode.operand_size() == 0,
+            None => matches!(op.as_str(), "SHA256" | "RIPEMD160" | "HASH160" | "CHECKSIG"),
+        }
     }
 
     fn optimal_push(&self, n: i64) -> String {
@@ -470,34 +336,33 @@ impl Assembler {
         let operands = &parts[1..];
 
         match op.as_str() {
-            // Constants
             "PUSHINT8" => {
-                bytecode.push(0x00);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT8);
                 let val = self.parse_i8(operands, line_num)?;
                 bytecode.push(val as u8);
             }
             "PUSHINT16" => {
-                bytecode.push(0x01);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT16);
                 let val = self.parse_i16(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT32" => {
-                bytecode.push(0x02);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT32);
                 let val = self.parse_i32(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT64" => {
-                bytecode.push(0x03);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT64);
                 let val = self.parse_int(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT128" => {
-                bytecode.push(0x04);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT128);
                 let val = self.parse_i128(operands, line_num)?;
                 bytecode.extend_from_slice(&val.to_le_bytes());
             }
             "PUSHINT256" => {
-                bytecode.push(0x05);
+                Self::emit_opcode(bytecode, OpCode::PUSHINT256);
                 let bytes = if let Ok(val) = self.parse_i128(operands, line_num) {
                     let mut out = [0u8; 32];
                     out[..16].copy_from_slice(&val.to_le_bytes());
@@ -520,13 +385,12 @@ impl Assembler {
                 bytecode.extend_from_slice(&bytes);
             }
             "PUSHA" => {
-                bytecode.push(0x0A);
+                Self::emit_opcode(bytecode, OpCode::PUSHA);
                 let offset = self.parse_i32(operands, line_num)?;
                 bytecode.extend_from_slice(&offset.to_le_bytes());
             }
-            "PUSHNULL" => bytecode.push(0x0B),
             "PUSHDATA1" => {
-                bytecode.push(0x0C);
+                Self::emit_opcode(bytecode, OpCode::PUSHDATA1);
                 let data = self.parse_data(operands, line_num)?;
                 let len = data.len();
                 if len > 255 {
@@ -540,7 +404,7 @@ impl Assembler {
                 bytecode.extend_from_slice(&data);
             }
             "PUSHDATA2" => {
-                bytecode.push(0x0D);
+                Self::emit_opcode(bytecode, OpCode::PUSHDATA2);
                 let data = self.parse_data(operands, line_num)?;
                 let len = data.len();
                 if len > u16::MAX as usize {
@@ -556,7 +420,7 @@ impl Assembler {
                 bytecode.extend_from_slice(&data);
             }
             "PUSHDATA4" => {
-                bytecode.push(0x0E);
+                Self::emit_opcode(bytecode, OpCode::PUSHDATA4);
                 let data = self.parse_data(operands, line_num)?;
                 let len = data.len();
                 if len > u32::MAX as usize {
@@ -570,118 +434,93 @@ impl Assembler {
                 bytecode.extend_from_slice(&(len as u32).to_le_bytes());
                 bytecode.extend_from_slice(&data);
             }
-            "PUSHM1" => bytecode.push(0x0F),
-            "PUSH0" | "PUSHF" | "FALSE" => bytecode.push(0x10),
-            "PUSH1" | "PUSHT" | "TRUE" => bytecode.push(0x11),
-            "PUSH2" => bytecode.push(0x12),
-            "PUSH3" => bytecode.push(0x13),
-            "PUSH4" => bytecode.push(0x14),
-            "PUSH5" => bytecode.push(0x15),
-            "PUSH6" => bytecode.push(0x16),
-            "PUSH7" => bytecode.push(0x17),
-            "PUSH8" => bytecode.push(0x18),
-            "PUSH9" => bytecode.push(0x19),
-            "PUSH10" => bytecode.push(0x1A),
-            "PUSH11" => bytecode.push(0x1B),
-            "PUSH12" => bytecode.push(0x1C),
-            "PUSH13" => bytecode.push(0x1D),
-            "PUSH14" => bytecode.push(0x1E),
-            "PUSH15" => bytecode.push(0x1F),
-            "PUSH16" => bytecode.push(0x20),
-
-            // Flow control
-            "NOP" => bytecode.push(0x21),
             "JMP" => {
-                bytecode.push(0x22);
+                Self::emit_opcode(bytecode, OpCode::JMP);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMP_L" => {
-                bytecode.push(0x23);
+                Self::emit_opcode(bytecode, OpCode::JMP_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPIF" => {
-                bytecode.push(0x24);
+                Self::emit_opcode(bytecode, OpCode::JMPIF);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPIF_L" => {
-                bytecode.push(0x25);
+                Self::emit_opcode(bytecode, OpCode::JMPIF_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPIFNOT" => {
-                bytecode.push(0x26);
+                Self::emit_opcode(bytecode, OpCode::JMPIFNOT);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPIFNOT_L" => {
-                bytecode.push(0x27);
+                Self::emit_opcode(bytecode, OpCode::JMPIFNOT_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPEQ" => {
-                bytecode.push(0x28);
+                Self::emit_opcode(bytecode, OpCode::JMPEQ);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPEQ_L" => {
-                bytecode.push(0x29);
+                Self::emit_opcode(bytecode, OpCode::JMPEQ_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPNE" => {
-                bytecode.push(0x2A);
+                Self::emit_opcode(bytecode, OpCode::JMPNE);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPNE_L" => {
-                bytecode.push(0x2B);
+                Self::emit_opcode(bytecode, OpCode::JMPNE_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPGT" => {
-                bytecode.push(0x2C);
+                Self::emit_opcode(bytecode, OpCode::JMPGT);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPGT_L" => {
-                bytecode.push(0x2D);
+                Self::emit_opcode(bytecode, OpCode::JMPGT_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPGE" => {
-                bytecode.push(0x2E);
+                Self::emit_opcode(bytecode, OpCode::JMPGE);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPGE_L" => {
-                bytecode.push(0x2F);
+                Self::emit_opcode(bytecode, OpCode::JMPGE_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPLT" => {
-                bytecode.push(0x30);
+                Self::emit_opcode(bytecode, OpCode::JMPLT);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPLT_L" => {
-                bytecode.push(0x31);
+                Self::emit_opcode(bytecode, OpCode::JMPLT_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "JMPLE" => {
-                bytecode.push(0x32);
+                Self::emit_opcode(bytecode, OpCode::JMPLE);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "JMPLE_L" => {
-                bytecode.push(0x33);
+                Self::emit_opcode(bytecode, OpCode::JMPLE_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
             "CALL" => {
-                bytecode.push(0x34);
+                Self::emit_opcode(bytecode, OpCode::CALL);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "CALL_L" => {
-                bytecode.push(0x35);
+                Self::emit_opcode(bytecode, OpCode::CALL_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
-            "CALLA" => bytecode.push(0x36),
             "CALLT" => {
-                bytecode.push(0x37);
+                Self::emit_opcode(bytecode, OpCode::CALLT);
                 let token = self.parse_u16(operands, line_num)?;
                 bytecode.extend_from_slice(&token.to_le_bytes());
             }
-            "ABORT" => bytecode.push(0x38),
-            "ASSERT" => bytecode.push(0x39),
-            "THROW" => bytecode.push(0x3A),
             "TRY" => {
-                bytecode.push(0x3B);
+                Self::emit_opcode(bytecode, OpCode::TRY);
                 if operands.len() != 2 {
                     return Err(AssemblerError::InvalidOperand(
                         "TRY requires two offsets: <catch> <finally>".to_string(),
@@ -708,7 +547,7 @@ impl Assembler {
                 )?;
             }
             "TRY_L" => {
-                bytecode.push(0x3C);
+                Self::emit_opcode(bytecode, OpCode::TRY_L);
                 if operands.len() != 2 {
                     return Err(AssemblerError::InvalidOperand(
                         "TRY_L requires two offsets: <catch> <finally>".to_string(),
@@ -735,223 +574,89 @@ impl Assembler {
                 )?;
             }
             "ENDTRY" => {
-                bytecode.push(0x3D);
+                Self::emit_opcode(bytecode, OpCode::ENDTRY);
                 self.emit_jump_offset(bytecode, operands, line_num)?;
             }
             "ENDTRY_L" => {
-                bytecode.push(0x3E);
+                Self::emit_opcode(bytecode, OpCode::ENDTRY_L);
                 self.emit_jump_offset_long(bytecode, operands, line_num)?;
             }
-            "ENDFINALLY" => bytecode.push(0x3F),
-            "RET" => bytecode.push(0x40),
             "SYSCALL" => {
-                bytecode.push(0x41);
+                Self::emit_opcode(bytecode, OpCode::SYSCALL);
                 let id = self.parse_syscall_id(operands, line_num)?;
                 bytecode.extend_from_slice(&id.to_le_bytes());
             }
-
-            // Stack operations
-            "DEPTH" => bytecode.push(0x43),
-            "DROP" => bytecode.push(0x45),
-            "NIP" => bytecode.push(0x46),
-            "XDROP" => bytecode.push(0x48),
-            "CLEAR" => bytecode.push(0x49),
-            "DUP" => bytecode.push(0x4A),
-            "OVER" => bytecode.push(0x4B),
-            "PICK" => bytecode.push(0x4D),
-            "TUCK" => bytecode.push(0x4E),
-            "SWAP" => bytecode.push(0x50),
-            "ROT" => bytecode.push(0x51),
-            "ROLL" => bytecode.push(0x52),
-            "REVERSE3" => bytecode.push(0x53),
-            "REVERSE4" => bytecode.push(0x54),
-            "REVERSEN" => bytecode.push(0x55),
-
-            // Slot operations
             "INITSSLOT" => {
-                bytecode.push(0x56);
+                Self::emit_opcode(bytecode, OpCode::INITSSLOT);
                 let count = self.parse_u8(operands, line_num)?;
                 bytecode.push(count);
             }
             "INITSLOT" => {
-                bytecode.push(0x57);
+                Self::emit_opcode(bytecode, OpCode::INITSLOT);
                 let (locals, args) = self.parse_slot_args(operands, line_num)?;
                 bytecode.push(locals);
                 bytecode.push(args);
             }
-            "LDSFLD0" => bytecode.push(0x58),
-            "LDSFLD1" => bytecode.push(0x59),
-            "LDSFLD2" => bytecode.push(0x5A),
-            "LDSFLD3" => bytecode.push(0x5B),
-            "LDSFLD4" => bytecode.push(0x5C),
-            "LDSFLD5" => bytecode.push(0x5D),
             "LDSFLD" => {
-                bytecode.push(0x5E);
+                Self::emit_opcode(bytecode, OpCode::LDSFLD);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-            "STSFLD0" => bytecode.push(0x5F),
-            "STSFLD1" => bytecode.push(0x60),
-            "STSFLD2" => bytecode.push(0x61),
-            "STSFLD3" => bytecode.push(0x62),
-            "STSFLD4" => bytecode.push(0x63),
-            "STSFLD5" => bytecode.push(0x64),
             "STSFLD" => {
-                bytecode.push(0x65);
+                Self::emit_opcode(bytecode, OpCode::STSFLD);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-            "LDLOC0" => bytecode.push(0x66),
-            "LDLOC1" => bytecode.push(0x67),
-            "LDLOC2" => bytecode.push(0x68),
-            "LDLOC3" => bytecode.push(0x69),
-            "LDLOC4" => bytecode.push(0x6A),
-            "LDLOC5" => bytecode.push(0x6B),
             "LDLOC" => {
-                bytecode.push(0x6C);
+                Self::emit_opcode(bytecode, OpCode::LDLOC);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-            "STLOC0" => bytecode.push(0x6D),
-            "STLOC1" => bytecode.push(0x6E),
-            "STLOC2" => bytecode.push(0x6F),
-            "STLOC3" => bytecode.push(0x70),
-            "STLOC4" => bytecode.push(0x71),
-            "STLOC5" => bytecode.push(0x72),
             "STLOC" => {
-                bytecode.push(0x73);
+                Self::emit_opcode(bytecode, OpCode::STLOC);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-            "LDARG0" => bytecode.push(0x74),
-            "LDARG1" => bytecode.push(0x75),
-            "LDARG2" => bytecode.push(0x76),
-            "LDARG3" => bytecode.push(0x77),
-            "LDARG4" => bytecode.push(0x78),
-            "LDARG5" => bytecode.push(0x79),
             "LDARG" => {
-                bytecode.push(0x7A);
+                Self::emit_opcode(bytecode, OpCode::LDARG);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-            "STARG0" => bytecode.push(0x7B),
-            "STARG1" => bytecode.push(0x7C),
-            "STARG2" => bytecode.push(0x7D),
-            "STARG3" => bytecode.push(0x7E),
-            "STARG4" => bytecode.push(0x7F),
-            "STARG5" => bytecode.push(0x80),
             "STARG" => {
-                bytecode.push(0x81);
+                Self::emit_opcode(bytecode, OpCode::STARG);
                 let idx = self.parse_u8(operands, line_num)?;
                 bytecode.push(idx);
             }
-
-            // Splice operations
-            "NEWBUFFER" => bytecode.push(0x88),
-            "MEMCPY" => bytecode.push(0x89),
-            "CAT" => bytecode.push(0x8B),
-            "SUBSTR" => bytecode.push(0x8C),
-            "LEFT" => bytecode.push(0x8D),
-            "RIGHT" => bytecode.push(0x8E),
-
-            // Bitwise operations
-            "INVERT" => bytecode.push(0x90),
-            "AND" => bytecode.push(0x91),
-            "OR" => bytecode.push(0x92),
-            "XOR" => bytecode.push(0x93),
-            "EQUAL" => bytecode.push(0x97),
-            "NOTEQUAL" => bytecode.push(0x98),
-
-            // Arithmetic
-            "SIGN" => bytecode.push(0x99),
-            "ABS" => bytecode.push(0x9A),
-            "NEGATE" | "NEG" => bytecode.push(0x9B),
-            "INC" => bytecode.push(0x9C),
-            "DEC" => bytecode.push(0x9D),
-            "ADD" => bytecode.push(0x9E),
-            "SUB" => bytecode.push(0x9F),
-            "MUL" => bytecode.push(0xA0),
-            "DIV" => bytecode.push(0xA1),
-            "MOD" => bytecode.push(0xA2),
-            "POW" => bytecode.push(0xA3),
-            "SQRT" => bytecode.push(0xA4),
-            "MODMUL" => bytecode.push(0xA5),
-            "MODPOW" => bytecode.push(0xA6),
-            "SHL" => bytecode.push(0xA8),
-            "SHR" => bytecode.push(0xA9),
-            "NOT" => bytecode.push(0xAA),
-            "BOOLAND" => bytecode.push(0xAB),
-            "BOOLOR" => bytecode.push(0xAC),
-            "NZ" => bytecode.push(0xB1),
-            "NUMEQUAL" => bytecode.push(0xB3),
-            "NUMNOTEQUAL" => bytecode.push(0xB4),
-            "LT" => bytecode.push(0xB5),
-            "LE" => bytecode.push(0xB6),
-            "GT" => bytecode.push(0xB7),
-            "GE" => bytecode.push(0xB8),
-            "MIN" => bytecode.push(0xB9),
-            "MAX" => bytecode.push(0xBA),
-            "WITHIN" => bytecode.push(0xBB),
-
-            // Compound types
-            "PACKMAP" => bytecode.push(0xBE),
-            "PACKSTRUCT" => bytecode.push(0xBF),
-            "PACK" => bytecode.push(0xC0),
-            "UNPACK" => bytecode.push(0xC1),
-            "NEWARRAY0" => bytecode.push(0xC2),
-            "NEWARRAY" => bytecode.push(0xC3),
             "NEWARRAY_T" => {
-                bytecode.push(0xC4);
+                Self::emit_opcode(bytecode, OpCode::NEWARRAY_T);
                 let type_id = self.parse_u8(operands, line_num)?;
                 bytecode.push(type_id);
             }
-            "NEWSTRUCT0" => bytecode.push(0xC5),
-            "NEWSTRUCT" => bytecode.push(0xC6),
-            "NEWMAP" => bytecode.push(0xC8),
-            "SIZE" => bytecode.push(0xCA),
-            "HASKEY" => bytecode.push(0xCB),
-            "KEYS" => bytecode.push(0xCC),
-            "VALUES" => bytecode.push(0xCD),
-            "PICKITEM" => bytecode.push(0xCE),
-            "APPEND" => bytecode.push(0xCF),
-            "SETITEM" => bytecode.push(0xD0),
-            "REVERSEITEMS" => bytecode.push(0xD1),
-            "REMOVE" => bytecode.push(0xD2),
-            "CLEARITEMS" => bytecode.push(0xD3),
-            "POPITEM" => bytecode.push(0xD4),
-
-            // Types
-            "ISNULL" => bytecode.push(0xD8),
             "ISTYPE" => {
-                bytecode.push(0xD9);
+                Self::emit_opcode(bytecode, OpCode::ISTYPE);
                 let type_id = self.parse_u8(operands, line_num)?;
                 bytecode.push(type_id);
             }
             "CONVERT" => {
-                bytecode.push(0xDB);
+                Self::emit_opcode(bytecode, OpCode::CONVERT);
                 let type_id = self.parse_u8(operands, line_num)?;
                 bytecode.push(type_id);
             }
-            "ABORTMSG" => bytecode.push(0xE0),
-            "ASSERTMSG" => bytecode.push(0xE1),
-
-            // Convenience syscall aliases. These are emitted as canonical
-            // SYSCALL instructions instead of private crypto opcodes.
             "SHA256" => self.emit_named_syscall(bytecode, "System.Crypto.SHA256"),
             "RIPEMD160" => self.emit_named_syscall(bytecode, "System.Crypto.RIPEMD160"),
             "HASH160" => self.emit_named_syscall(bytecode, "System.Crypto.Hash160"),
             "CHECKSIG" => self.emit_named_syscall(bytecode, "System.Crypto.CheckSig"),
-
-            // Raw byte emission
             "DB" | ".BYTE" => {
                 for operand in operands {
                     let byte = self.parse_byte(operand, line_num)?;
                     bytecode.push(byte);
                 }
             }
-
             _ => {
-                return Err(AssemblerError::UnknownOpcode(op, line_num).to_string());
+                let opcode = Self::opcode_from_mnemonic(&op).ok_or_else(|| {
+                    AssemblerError::UnknownOpcode(op.clone(), line_num).to_string()
+                })?;
+                Self::emit_opcode(bytecode, opcode);
             }
         }
 
@@ -959,7 +664,7 @@ impl Assembler {
     }
 
     fn emit_named_syscall(&self, bytecode: &mut Vec<u8>, name: &str) {
-        bytecode.push(0x41);
+        Self::emit_opcode(bytecode, OpCode::SYSCALL);
         bytecode.extend_from_slice(&interop_hash(name).to_le_bytes());
     }
 
@@ -1274,7 +979,7 @@ impl Assembler {
 #[cfg(test)]
 mod tests {
     use super::Assembler;
-    use neo_vm_rs::interop_hash;
+    use neo_vm_rs::{interop_hash, OpCode, StackItemType};
 
     #[test]
     fn test_pushint8_out_of_range_returns_error() {
@@ -1287,7 +992,7 @@ mod tests {
     fn test_push_sugar_uses_pushint64_for_large_values() {
         let mut assembler = Assembler::new();
         let bytes = assembler.assemble("PUSH 2147483648").unwrap();
-        assert_eq!(bytes[0], 0x03); // PUSHINT64
+        assert_eq!(bytes[0], OpCode::PUSHINT64.byte());
     }
 
     #[test]
@@ -1348,18 +1053,37 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(bytes[0], 0x25); // JMPIF_L
+        assert_eq!(bytes[0], OpCode::JMPIF_L.byte());
         assert_eq!(&bytes[1..5], &[0x04, 0x00, 0x00, 0x00]);
-        assert_eq!(&bytes[5..8], &[0x3B, 0x02, 0xFF]); // TRY
+        assert_eq!(&bytes[5..8], &[OpCode::TRY.byte(), 0x02, 0xFF]);
         assert_eq!(
             &bytes[8..17],
-            &[0x3C, 0x00, 0x01, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF]
-        ); // TRY_L
-        assert_eq!(&bytes[17..22], &[0x3E, 0x08, 0x00, 0x00, 0x00]); // ENDTRY_L
-        assert_eq!(bytes[22], 0x3F); // ENDFINALLY
-        assert_eq!(&bytes[23..28], &[0x35, 0xFC, 0xFF, 0xFF, 0xFF]); // CALL_L -4
-        assert_eq!(&bytes[28..31], &[0x37, 0x01, 0x02]); // CALLT 513
-        assert_eq!(&bytes[31..33], &[0xE0, 0xE1]); // ABORTMSG, ASSERTMSG
+            &[
+                OpCode::TRY_L.byte(),
+                0x00,
+                0x01,
+                0x00,
+                0x00,
+                0xFE,
+                0xFF,
+                0xFF,
+                0xFF,
+            ]
+        );
+        assert_eq!(
+            &bytes[17..22],
+            &[OpCode::ENDTRY_L.byte(), 0x08, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(bytes[22], OpCode::ENDFINALLY.byte());
+        assert_eq!(
+            &bytes[23..28],
+            &[OpCode::CALL_L.byte(), 0xFC, 0xFF, 0xFF, 0xFF]
+        );
+        assert_eq!(&bytes[28..31], &[OpCode::CALLT.byte(), 0x01, 0x02]);
+        assert_eq!(
+            &bytes[31..33],
+            &[OpCode::ABORTMSG.byte(), OpCode::ASSERTMSG.byte()]
+        );
     }
 
     #[test]
@@ -1367,11 +1091,11 @@ mod tests {
         let mut assembler = Assembler::new();
         let bytes = assembler.assemble("SHA256").unwrap();
 
-        let mut expected = vec![0x41];
+        let mut expected = vec![OpCode::SYSCALL.byte()];
         expected.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
 
         assert_eq!(bytes, expected);
-        assert_ne!(bytes, vec![0xF0]);
+        assert_ne!(bytes, vec![OpCode::PUSHM1.byte()]);
     }
 
     #[test]
@@ -1379,10 +1103,30 @@ mod tests {
         let mut assembler = Assembler::new();
         let bytes = assembler.assemble("SYSCALL System.Crypto.SHA256").unwrap();
 
-        let mut expected = vec![0x41];
+        let mut expected = vec![OpCode::SYSCALL.byte()];
         expected.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
 
         assert_eq!(bytes, expected);
+    }
+
+    #[test]
+    fn test_boolean_mnemonics_use_canonical_opcode_bytes() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble("PUSHF PUSHT FALSE TRUE PUSH0 PUSH1")
+            .unwrap();
+
+        assert_eq!(
+            bytes,
+            vec![
+                OpCode::PUSHF.byte(),
+                OpCode::PUSHT.byte(),
+                OpCode::PUSHF.byte(),
+                OpCode::PUSHT.byte(),
+                OpCode::PUSH0.byte(),
+                OpCode::PUSH1.byte(),
+            ]
+        );
     }
 
     #[test]
@@ -1440,7 +1184,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(bytes[0], 0x3C);
+        assert_eq!(bytes[0], OpCode::TRY_L.byte());
         assert_eq!(&bytes[1..5], &[0x0A, 0x00, 0x00, 0x00]); // catch label
         assert_eq!(&bytes[5..9], &[0x0B, 0x00, 0x00, 0x00]); // finally label
     }
@@ -1465,7 +1209,40 @@ mod tests {
         assert_eq!(
             bytes,
             vec![
-                0x56, 0x03, 0x5E, 0x02, 0x65, 0x01, 0x81, 0x04, 0xC4, 0x40, 0xD9, 0x21, 0xDB, 0x28
+                OpCode::INITSSLOT.byte(),
+                0x03,
+                OpCode::LDSFLD.byte(),
+                0x02,
+                OpCode::STSFLD.byte(),
+                0x01,
+                OpCode::STARG.byte(),
+                0x04,
+                OpCode::NEWARRAY_T.byte(),
+                StackItemType::Array.to_byte(),
+                OpCode::ISTYPE.byte(),
+                StackItemType::Integer.to_byte(),
+                OpCode::CONVERT.byte(),
+                StackItemType::ByteString.to_byte(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_slot_six_opcodes_use_shared_canonical_values() {
+        let mut assembler = Assembler::new();
+        let bytes = assembler
+            .assemble("LDSFLD6 STSFLD6 LDLOC6 STLOC6 LDARG6 STARG6")
+            .unwrap();
+
+        assert_eq!(
+            bytes,
+            vec![
+                OpCode::LDSFLD6.byte(),
+                OpCode::STSFLD6.byte(),
+                OpCode::LDLOC6.byte(),
+                OpCode::STLOC6.byte(),
+                OpCode::LDARG6.byte(),
+                OpCode::STARG6.byte(),
             ]
         );
     }
@@ -1482,10 +1259,10 @@ mod tests {
         let mut assembler = Assembler::new();
         let bytes = assembler.assemble("PUSHINT128 -1\nPUSHINT256 -1").unwrap();
 
-        assert_eq!(bytes[0], 0x04);
+        assert_eq!(bytes[0], OpCode::PUSHINT128.byte());
         assert!(bytes[1..17].iter().all(|b| *b == 0xFF));
 
-        assert_eq!(bytes[17], 0x05);
+        assert_eq!(bytes[17], OpCode::PUSHINT256.byte());
         assert!(bytes[18..50].iter().all(|b| *b == 0xFF));
     }
 
@@ -1498,7 +1275,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(bytes[0], 0x05);
+        assert_eq!(bytes[0], OpCode::PUSHINT256.byte());
         assert_eq!(bytes.len(), 33);
         assert_eq!(bytes[1], 0x00);
         assert_eq!(bytes[32], 0x1F);
