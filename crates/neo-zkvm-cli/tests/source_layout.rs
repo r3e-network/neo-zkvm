@@ -53,6 +53,34 @@ fn cli_assembler_uses_shared_opcode_enum() {
 }
 
 #[test]
+fn cli_disassembler_uses_shared_stack_item_type_names() {
+    let source = read_source("src/disassembler.rs");
+
+    assert!(
+        source.contains("StackItemType::from_byte(t)")
+            && source.contains(".map(StackItemType::name)"),
+        "disassembler should format StackItemType operands through neo-vm-rs::StackItemType"
+    );
+    for duplicate in [
+        "NEOVM_STACK_ITEM_TYPE_ANY",
+        "NEOVM_STACK_ITEM_TYPE_POINTER",
+        "NEOVM_STACK_ITEM_TYPE_BOOLEAN",
+        "NEOVM_STACK_ITEM_TYPE_INTEGER",
+        "NEOVM_STACK_ITEM_TYPE_BYTESTRING",
+        "NEOVM_STACK_ITEM_TYPE_BUFFER",
+        "NEOVM_STACK_ITEM_TYPE_ARRAY",
+        "NEOVM_STACK_ITEM_TYPE_STRUCT",
+        "NEOVM_STACK_ITEM_TYPE_MAP",
+        "NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE",
+    ] {
+        assert!(
+            !source.contains(duplicate),
+            "disassembler must not keep a private StackItemType name table: {duplicate}"
+        );
+    }
+}
+
+#[test]
 fn guest_crate_reexports_shared_opcode_enum() {
     let source = read_workspace_source("crates/neo-vm-guest/src/lib.rs");
 

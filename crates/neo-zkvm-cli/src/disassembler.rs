@@ -6,12 +6,7 @@
 //! - Jump target annotations
 //! - Operand decoding
 
-use neo_vm_rs::{
-    interop_hash, OpCode, NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY,
-    NEOVM_STACK_ITEM_TYPE_BOOLEAN, NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING,
-    NEOVM_STACK_ITEM_TYPE_INTEGER, NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE,
-    NEOVM_STACK_ITEM_TYPE_MAP, NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT,
-};
+use neo_vm_rs::{interop_hash, OpCode, StackItemType};
 
 pub struct Disassembler<'a> {
     script: &'a [u8],
@@ -318,19 +313,9 @@ impl<'a> Disassembler<'a> {
     }
 
     fn type_name(&self, t: u8) -> &'static str {
-        match t {
-            NEOVM_STACK_ITEM_TYPE_ANY => "Any",
-            NEOVM_STACK_ITEM_TYPE_POINTER => "Pointer",
-            NEOVM_STACK_ITEM_TYPE_BOOLEAN => "Boolean",
-            NEOVM_STACK_ITEM_TYPE_INTEGER => "Integer",
-            NEOVM_STACK_ITEM_TYPE_BYTESTRING => "ByteString",
-            NEOVM_STACK_ITEM_TYPE_BUFFER => "Buffer",
-            NEOVM_STACK_ITEM_TYPE_ARRAY => "Array",
-            NEOVM_STACK_ITEM_TYPE_STRUCT => "Struct",
-            NEOVM_STACK_ITEM_TYPE_MAP => "Map",
-            NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE => "InteropInterface",
-            _ => "Unknown",
-        }
+        StackItemType::from_byte(t)
+            .map(StackItemType::name)
+            .unwrap_or("Unknown")
     }
 }
 
