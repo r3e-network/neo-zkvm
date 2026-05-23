@@ -67,10 +67,19 @@ fn workspace_examples_build_scripts_from_shared_opcode_enum() {
     for relative_path in [
         "crates/neo-vm-guest/src/lib.rs",
         "crates/neo-vm-guest/tests/shared_vm.rs",
+        "crates/neo-zkvm-cli/tests/integration_tests.rs",
         "crates/neo-zkvm-prover/src/lib.rs",
+        "crates/neo-zkvm-verifier/src/lib.rs",
         "crates/neo-zkvm-program/src/main.rs",
+        "crates/neo-zkvm-examples/src/basic.rs",
+        "crates/neo-zkvm-examples/src/private_inputs.rs",
+        "crates/neo-zkvm-examples/src/batch_verification.rs",
         "crates/neo-zkvm-examples/src/proof_generation.rs",
+        "crates/neo-zkvm-examples/src/tamper_resistance.rs",
         "crates/neo-zkvm-examples/src/zk_preimage.rs",
+        "fuzz/fuzz_targets/common.rs",
+        "fuzz/fuzz_targets/fuzz_vm_execution.rs",
+        "fuzz/fuzz_targets/fuzz_script_parser.rs",
     ] {
         let source = read_workspace_source(relative_path);
 
@@ -81,7 +90,11 @@ fn workspace_examples_build_scripts_from_shared_opcode_enum() {
         for duplicate in [
             "vec![0x12, 0x13, 0x9E, 0x40]",
             "vec![0x15, 0x12, 0x9F, 0x40]",
+            "vec![0x15, 0x10, 0xA1, 0x40]",
             "vec![0x4A, 0xA0, 0x40]",
+            "0x12, 0x13, 0x9E, 0x45",
+            "0x13, 0x11, 0x9F, 0x45",
+            "0x11, 0x12, 0xA0, 0x45",
             "script.push(0x40)",
             "vec![0x41]",
         ] {

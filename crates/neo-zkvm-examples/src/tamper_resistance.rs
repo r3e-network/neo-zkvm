@@ -1,4 +1,4 @@
-use neo_vm_guest::{ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_detailed;
 
@@ -9,7 +9,12 @@ fn generate_valid_mock_proof() -> NeoProof {
     });
 
     prover.prove(ProofInput {
-        script: vec![0x12, 0x13, 0x9E, 0x40],
+        script: vec![
+            OpCode::PUSH2.byte(),
+            OpCode::PUSH3.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ],
         arguments: vec![],
         gas_limit: 1_000_000,
     })

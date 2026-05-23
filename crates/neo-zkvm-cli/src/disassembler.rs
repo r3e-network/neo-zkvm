@@ -336,7 +336,7 @@ impl<'a> Disassembler<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::Disassembler;
+    use super::{Disassembler, OpCode};
     use neo_vm_rs::interop_hash;
 
     #[test]
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_disassembles_canonical_crypto_syscall() {
-        let mut script = vec![0x41];
+        let mut script = vec![OpCode::SYSCALL.byte()];
         script.extend_from_slice(&interop_hash("System.Crypto.SHA256").to_le_bytes());
 
         let disasm = Disassembler::new(&script);

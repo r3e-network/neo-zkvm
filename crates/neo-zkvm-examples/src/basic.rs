@@ -1,10 +1,15 @@
 //! Basic shared VM usage example
-use neo_vm_guest::{execute, ProofInput};
+use neo_vm_guest::{execute, OpCode, ProofInput};
 
 fn main() {
     // 2 + 3 = 5
     let output = execute(ProofInput {
-        script: vec![0x12, 0x13, 0x9E, 0x40],
+        script: vec![
+            OpCode::PUSH2.byte(),
+            OpCode::PUSH3.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ],
         arguments: vec![],
         gas_limit: 1_000_000,
     });

@@ -7,7 +7,7 @@
 mod common;
 
 use libfuzzer_sys::fuzz_target;
-use neo_vm_guest::{execute, ProofInput};
+use neo_vm_guest::{execute, OpCode, ProofInput};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
@@ -18,7 +18,7 @@ fuzz_target!(|data: &[u8]| {
     for byte in data.iter().take(256) {
         common::append_bounded_neo_vm_sequence(&mut script, *byte);
     }
-    script.push(0x40); // RET
+    script.push(OpCode::RET.byte());
 
     let _ = execute(ProofInput {
         script,

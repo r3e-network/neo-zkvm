@@ -1,25 +1,24 @@
 //! Integration tests for Neo zkVM
 
 use neo_vm_guest::{
-    bincode_deserialize, bincode_serialize, execute, interop_hash, ProofInput, StackItem,
+    bincode_deserialize, bincode_serialize, execute, interop_hash, OpCode, ProofInput, StackItem,
 };
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 
 fn syscall(name: &str) -> Vec<u8> {
-    let mut script = vec![0x41];
+    let mut script = vec![OpCode::SYSCALL.byte()];
     script.extend_from_slice(&interop_hash(name).to_le_bytes());
     script
 }
 
+fn opcodes(ops: &[OpCode]) -> Vec<u8> {
+    ops.iter().map(|opcode| opcode.byte()).collect()
+}
+
 #[test]
 fn test_full_prove_verify_cycle() {
-    let script = vec![
-        0x12, // PUSH2
-        0x13, // PUSH3
-        0x9E, // ADD
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH2, OpCode::PUSH3, OpCode::ADD, OpCode::RET]);
 
     let input = ProofInput {
         script,
@@ -39,14 +38,14 @@ fn test_full_prove_verify_cycle() {
 
 #[test]
 fn test_complex_arithmetic() {
-    let script = vec![
-        0x14, // PUSH4
-        0x15, // PUSH5
-        0xA0, // MUL (4*5=20)
-        0x12, // PUSH2
-        0xA1, // DIV (20/2=10)
-        0x40, // RET
-    ];
+    let script = opcodes(&[
+        OpCode::PUSH4,
+        OpCode::PUSH5,
+        OpCode::MUL,
+        OpCode::PUSH2,
+        OpCode::DIV,
+        OpCode::RET,
+    ]);
 
     let input = ProofInput {
         script,
@@ -61,12 +60,7 @@ fn test_complex_arithmetic() {
 
 #[test]
 fn test_comparison_operations() {
-    let script = vec![
-        0x13, // PUSH3
-        0x15, // PUSH5
-        0xB5, // LT (3 < 5 = true)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH3, OpCode::PUSH5, OpCode::LT, OpCode::RET]);
 
     let input = ProofInput {
         script,
@@ -85,11 +79,13 @@ fn test_comparison_operations() {
 #[test]
 fn test_prove_verify_with_arguments() {
     let script = vec![
-        0x57, 0x00, 0x02, // INITSLOT 0 locals, 2 args
-        0x78, // LDARG0
-        0x79, // LDARG1
-        0x9E, // ADD
-        0x40, // RET
+        OpCode::INITSLOT.byte(),
+        0x00,
+        0x02,
+        OpCode::LDARG0.byte(),
+        OpCode::LDARG1.byte(),
+        OpCode::ADD.byte(),
+        OpCode::RET.byte(),
     ];
 
     let input = ProofInput {
@@ -111,12 +107,10 @@ fn test_prove_verify_with_arguments() {
 
 #[test]
 fn test_prove_verify_hash_operation() {
-    let script = [
-        0x0C, 0x05, b'h', b'e', b'l', b'l', b'o', 0x40, // RET
-    ];
-    let mut script_with_hash = script[..7].to_vec();
+    let script = [OpCode::PUSHDATA1.byte(), 0x05, b'h', b'e', b'l', b'l', b'o'];
+    let mut script_with_hash = script.to_vec();
     script_with_hash.extend(syscall("System.Crypto.SHA256"));
-    script_with_hash.push(0x40);
+    script_with_hash.push(OpCode::RET.byte());
 
     let input = ProofInput {
         script: script_with_hash,
@@ -136,12 +130,7 @@ fn test_prove_verify_hash_operation() {
 
 #[test]
 fn test_prove_verify_array_operations() {
-    let script = vec![
-        0x13, // PUSH3
-        0xC3, // NEWARRAY
-        0xCA, // SIZE
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH3, OpCode::NEWARRAY, OpCode::SIZE, OpCode::RET]);
 
     let input = ProofInput {
         script,
@@ -163,14 +152,16 @@ fn test_prove_verify_array_operations() {
 #[test]
 fn test_prove_verify_control_flow() {
     let script = vec![
-        0x15, // PUSH5
-        0x13, // PUSH3
-        0xB7, // GT (5 > 3)
-        0x24, 0x03, // JMPIF +3
-        0x10, // PUSH0
-        0x22, 0x02, // JMP +2
-        0x11, // PUSH1
-        0x40, // RET
+        OpCode::PUSH5.byte(),
+        OpCode::PUSH3.byte(),
+        OpCode::GT.byte(),
+        OpCode::JMPIF.byte(),
+        0x03,
+        OpCode::PUSH0.byte(),
+        OpCode::JMP.byte(),
+        0x02,
+        OpCode::PUSH1.byte(),
+        OpCode::RET.byte(),
     ];
 
     let input = ProofInput {
@@ -191,12 +182,7 @@ fn test_prove_verify_control_flow() {
 
 #[test]
 fn test_execute_faulted_script() {
-    let script = vec![
-        0x15, // PUSH5
-        0x10, // PUSH0
-        0xA1, // DIV (5/0 = fault)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH5, OpCode::PUSH0, OpCode::DIV, OpCode::RET]);
 
     let input = ProofInput {
         script,
@@ -210,11 +196,14 @@ fn test_execute_faulted_script() {
 
 #[test]
 fn test_gas_tracking_in_proof() {
-    let script = vec![
-        0x15, 0x13, 0x9E, // 5 + 3
-        0x12, 0xA0, // * 2
-        0x40, // RET
-    ];
+    let script = opcodes(&[
+        OpCode::PUSH5,
+        OpCode::PUSH3,
+        OpCode::ADD,
+        OpCode::PUSH2,
+        OpCode::MUL,
+        OpCode::RET,
+    ]);
 
     let input = ProofInput {
         script,
@@ -238,7 +227,7 @@ fn test_gas_tracking_in_proof() {
 
 #[test]
 fn test_script_size_limit() {
-    let script = vec![0x42; 1024 * 1024 + 1]; // 1MB + 1 byte
+    let script = vec![OpCode::NOP.byte(); 1024 * 1024 + 1];
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -250,7 +239,7 @@ fn test_script_size_limit() {
 
 #[test]
 fn test_stack_underflow_handling() {
-    let script = vec![0x45, 0x40]; // DROP on empty stack
+    let script = opcodes(&[OpCode::DROP, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -262,7 +251,7 @@ fn test_stack_underflow_handling() {
 
 #[test]
 fn test_division_by_zero() {
-    let script = vec![0x15, 0x10, 0xA1, 0x40]; // 5, 0, DIV
+    let script = opcodes(&[OpCode::PUSH5, OpCode::PUSH0, OpCode::DIV, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -274,7 +263,7 @@ fn test_division_by_zero() {
 
 #[test]
 fn test_gas_exhaustion() {
-    let script = vec![0x42; 100]; // 100 NOPs
+    let script = vec![OpCode::NOP.byte(); 100];
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -287,9 +276,9 @@ fn test_gas_exhaustion() {
 #[test]
 fn test_pushdata_boundary() {
     // PUSHDATA1 with exact length matching remaining bytes
-    let mut script = vec![0x0C, 0x05]; // PUSHDATA1, length 5
+    let mut script = vec![OpCode::PUSHDATA1.byte(), 0x05];
     script.extend_from_slice(b"hello");
-    script.push(0x40); // RET
+    script.push(OpCode::RET.byte());
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -302,7 +291,15 @@ fn test_pushdata_boundary() {
 #[test]
 fn test_pushdata_truncated() {
     // PUSHDATA1 claims 10 bytes but only 5 available
-    let script = vec![0x0C, 0x0A, 0x42, 0x42, 0x42, 0x42, 0x42]; // 7 bytes total
+    let script = vec![
+        OpCode::PUSHDATA1.byte(),
+        0x0A,
+        OpCode::NOP.byte(),
+        OpCode::NOP.byte(),
+        OpCode::NOP.byte(),
+        OpCode::NOP.byte(),
+        OpCode::NOP.byte(),
+    ];
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -315,7 +312,7 @@ fn test_pushdata_truncated() {
 #[test]
 fn test_loop_detection_by_gas() {
     // Test that a loop consumes gas and eventually halts
-    let script = vec![0x22, 0xFE]; // JMP -2 (infinite loop)
+    let script = vec![OpCode::JMP.byte(), 0xFE];
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -329,11 +326,7 @@ fn test_loop_detection_by_gas() {
 
 #[test]
 fn test_control_flow_jump_valid() {
-    // Simple NOP and RET test
-    let script = vec![
-        0x21, // NOP
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::NOP, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -345,12 +338,7 @@ fn test_control_flow_jump_valid() {
 
 #[test]
 fn test_control_flow_abort() {
-    // Test ABORT instruction
-    let script = vec![
-        0x15, // PUSH5
-        0x38, // ABORT
-        0x40, // RET (unreachable)
-    ];
+    let script = opcodes(&[OpCode::PUSH5, OpCode::ABORT, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -362,12 +350,7 @@ fn test_control_flow_abort() {
 
 #[test]
 fn test_control_flow_assert() {
-    // Test ASSERT - fails when condition is false
-    let script = vec![
-        0x10, // PUSH0 (false)
-        0x39, // ASSERT (fails)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH0, OpCode::ASSERT, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -381,12 +364,14 @@ fn test_control_flow_assert() {
 fn test_control_flow_jump_backward() {
     // Test backward jump with a bounded loop that halts
     let script = vec![
-        0x12, // PUSH2 (counter)
-        0x4A, // DUP
-        0x26, 0x05, // JMPIFNOT +5 (jump to RET when counter == 0)
-        0x9D, // DEC
-        0x22, 0xFC, // JMP -4 (jump back to DUP)
-        0x40, // RET
+        OpCode::PUSH2.byte(),
+        OpCode::DUP.byte(),
+        OpCode::JMPIFNOT.byte(),
+        0x05,
+        OpCode::DEC.byte(),
+        OpCode::JMP.byte(),
+        0xFC,
+        OpCode::RET.byte(),
     ];
     let input = ProofInput {
         script,
@@ -399,12 +384,7 @@ fn test_control_flow_jump_backward() {
 
 #[test]
 fn test_bitwise_operations() {
-    let script = vec![
-        0x14, // PUSH4
-        0x13, // PUSH3
-        0x91, // AND (4 & 3 = 0)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH4, OpCode::PUSH3, OpCode::AND, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -417,12 +397,7 @@ fn test_bitwise_operations() {
 
 #[test]
 fn test_shift_operations() {
-    let script = vec![
-        0x12, // PUSH2
-        0x11, // PUSH1
-        0xA8, // SHL (2 << 1 = 4)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH2, OpCode::PUSH1, OpCode::SHL, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -435,12 +410,7 @@ fn test_shift_operations() {
 
 #[test]
 fn test_modulo_operations() {
-    let script = vec![
-        0x17, // PUSH7
-        0x13, // PUSH3
-        0xA2, // MOD (7 % 3 = 1)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH7, OpCode::PUSH3, OpCode::MOD, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -453,12 +423,7 @@ fn test_modulo_operations() {
 
 #[test]
 fn test_power_operations() {
-    let script = vec![
-        0x12, // PUSH2
-        0x11, // PUSH1
-        0xA3, // POW (2^1 = 2)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSH2, OpCode::PUSH1, OpCode::POW, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -471,12 +436,7 @@ fn test_power_operations() {
 
 #[test]
 fn test_min_max_operations() {
-    let script = vec![
-        0x0F, // PUSHM1 (-1)
-        0x11, // PUSH1 (1)
-        0xB9, // MIN (-1 < 1 = -1)
-        0x40, // RET
-    ];
+    let script = opcodes(&[OpCode::PUSHM1, OpCode::PUSH1, OpCode::MIN, OpCode::RET]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -489,13 +449,13 @@ fn test_min_max_operations() {
 
 #[test]
 fn test_within_range_check() {
-    let script = vec![
-        0x15, // PUSH5
-        0x10, // PUSH0
-        0x17, // PUSH7
-        0xBB, // WITHIN (0 <= 5 < 7 = true)
-        0x40, // RET
-    ];
+    let script = opcodes(&[
+        OpCode::PUSH5,
+        OpCode::PUSH0,
+        OpCode::PUSH7,
+        OpCode::WITHIN,
+        OpCode::RET,
+    ]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -535,12 +495,10 @@ fn test_cli_uses_shared_byte_arg_helper() {
 
 #[test]
 fn test_native_crypto_sha256() {
-    let script = vec![
-        0x0C, 0x04, b't', b'e', b's', b't', // PUSHDATA1 "test" (4 bytes)
-    ];
+    let script = vec![OpCode::PUSHDATA1.byte(), 0x04, b't', b'e', b's', b't'];
     let mut script = script;
     script.extend(syscall("System.Crypto.SHA256"));
-    script.extend([0xCA, 0x40]); // SIZE, RET
+    script.extend([OpCode::SIZE.byte(), OpCode::RET.byte()]);
     let input = ProofInput {
         script,
         arguments: vec![],
@@ -555,7 +513,7 @@ fn test_native_crypto_sha256() {
 fn test_throwifnot_byte_is_rejected_as_non_canonical() {
     let script = vec![
         0xF1, // reserved in NeoVM 3.9.x
-        0x40, // RET
+        OpCode::RET.byte(),
     ];
     let input = ProofInput {
         script,

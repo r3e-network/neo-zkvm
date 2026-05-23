@@ -8,7 +8,7 @@ mod common;
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use neo_vm_guest::{execute, ProofInput, StackItem};
+use neo_vm_guest::{execute, OpCode, ProofInput, StackItem};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzInput {
@@ -31,7 +31,7 @@ fuzz_target!(|input: FuzzInput| {
     for byte in input.script.into_iter().take(256) {
         common::append_bounded_neo_vm_sequence(&mut script, byte);
     }
-    script.push(0x40);
+    script.push(OpCode::RET.byte());
 
     let _ = execute(ProofInput {
         script,

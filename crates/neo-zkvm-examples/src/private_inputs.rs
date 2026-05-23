@@ -1,4 +1,4 @@
-use neo_vm_guest::{ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 
@@ -9,7 +9,7 @@ fn prove_square_of_secret(secret: i64) -> NeoProof {
     });
 
     prover.prove(ProofInput {
-        script: vec![0x4A, 0xA0, 0x40],
+        script: vec![OpCode::DUP.byte(), OpCode::MUL.byte(), OpCode::RET.byte()],
         arguments: vec![StackItem::Integer(secret)],
         gas_limit: 1_000_000,
     })

@@ -7,14 +7,19 @@
 //! ```rust
 //! use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 //! use neo_zkvm_verifier::verify;
-//! use neo_vm_guest::ProofInput;
+//! use neo_vm_guest::{OpCode, ProofInput};
 //!
 //! let prover = NeoProver::new(ProverConfig {
 //!     proof_mode: ProofMode::Mock,
 //!     ..Default::default()
 //! });
 //! let input = ProofInput {
-//!     script: vec![0x12, 0x13, 0x9E, 0x40],
+//!     script: vec![
+//!         OpCode::PUSH2.byte(),
+//!         OpCode::PUSH3.byte(),
+//!         OpCode::ADD.byte(),
+//!         OpCode::RET.byte(),
+//!     ],
 //!     arguments: vec![],
 //!     gas_limit: 1_000_000,
 //! };
@@ -428,10 +433,28 @@ fn expected_proof_type(mode: ProofMode) -> ProofType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_vm_guest::{ProofInput, StackItem};
+    use neo_vm_guest::{OpCode, ProofInput, StackItem};
     use neo_zkvm_prover::{NeoProver, ProverConfig};
     #[cfg(feature = "sp1")]
     use sp1_sdk::SP1PublicValues;
+
+    fn add_script() -> Vec<u8> {
+        vec![
+            OpCode::PUSH2.byte(),
+            OpCode::PUSH3.byte(),
+            OpCode::ADD.byte(),
+            OpCode::RET.byte(),
+        ]
+    }
+
+    fn div_by_zero_script() -> Vec<u8> {
+        vec![
+            OpCode::PUSH5.byte(),
+            OpCode::PUSH0.byte(),
+            OpCode::DIV.byte(),
+            OpCode::RET.byte(),
+        ]
+    }
 
     #[test]
     fn test_verify_mock_proof() {
@@ -440,7 +463,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -455,7 +478,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -470,7 +493,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![StackItem::Integer(42)],
             gas_limit: 1_000_000,
         };
@@ -508,7 +531,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -528,7 +551,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -552,7 +575,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -569,7 +592,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x15, 0x10, 0xA1, 0x40],
+            script: div_by_zero_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -585,7 +608,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -601,7 +624,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -617,7 +640,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -638,7 +661,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };
@@ -659,7 +682,7 @@ mod tests {
             ..Default::default()
         });
         let input = ProofInput {
-            script: vec![0x12, 0x13, 0x9E, 0x40],
+            script: add_script(),
             arguments: vec![],
             gas_limit: 1_000_000,
         };

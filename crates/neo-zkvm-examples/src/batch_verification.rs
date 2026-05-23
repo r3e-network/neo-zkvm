@@ -1,4 +1,4 @@
-use neo_vm_guest::{ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_detailed;
 
@@ -19,7 +19,12 @@ fn build_arithmetic_jobs() -> Vec<BatchJob> {
         BatchJob {
             name: "add_2_plus_3",
             input: ProofInput {
-                script: vec![0x12, 0x13, 0x9E, 0x40],
+                script: vec![
+                    OpCode::PUSH2.byte(),
+                    OpCode::PUSH3.byte(),
+                    OpCode::ADD.byte(),
+                    OpCode::RET.byte(),
+                ],
                 arguments: vec![],
                 gas_limit: 1_000_000,
             },
@@ -28,7 +33,12 @@ fn build_arithmetic_jobs() -> Vec<BatchJob> {
         BatchJob {
             name: "mul_5_times_4",
             input: ProofInput {
-                script: vec![0x15, 0x14, 0xA0, 0x40],
+                script: vec![
+                    OpCode::PUSH5.byte(),
+                    OpCode::PUSH4.byte(),
+                    OpCode::MUL.byte(),
+                    OpCode::RET.byte(),
+                ],
                 arguments: vec![],
                 gas_limit: 1_000_000,
             },
@@ -37,7 +47,7 @@ fn build_arithmetic_jobs() -> Vec<BatchJob> {
         BatchJob {
             name: "square_7",
             input: ProofInput {
-                script: vec![0x4A, 0xA0, 0x40],
+                script: vec![OpCode::DUP.byte(), OpCode::MUL.byte(), OpCode::RET.byte()],
                 arguments: vec![StackItem::Integer(7)],
                 gas_limit: 1_000_000,
             },
