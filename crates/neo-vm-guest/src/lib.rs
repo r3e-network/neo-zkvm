@@ -214,6 +214,14 @@ pub fn execute(input: ProofInput) -> ProofOutput {
             let state = match result.state {
                 VmState::Halt => 0,
                 VmState::Fault => 1,
+                state => {
+                    return ProofOutput {
+                        state: 1,
+                        result: Some(StackItem::Boolean(false)),
+                        gas_consumed: estimated_gas,
+                        error: Some(format!("interpreter returned non-final VM state {state:?}")),
+                    };
+                }
             };
 
             ProofOutput {
