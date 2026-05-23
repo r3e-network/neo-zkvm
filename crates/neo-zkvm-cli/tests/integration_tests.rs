@@ -527,10 +527,10 @@ fn test_shared_stack_value_serialization_roundtrip() {
 
 #[test]
 fn test_cli_uses_shared_byte_arg_helper() {
-    let main_rs = include_str!("../src/main.rs");
+    let trace_host_rs = include_str!("../src/trace_host.rs");
 
-    assert!(main_rs.contains("pop_byte_arg"));
-    assert!(!main_rs.contains("fn pop_byte_arg"));
+    assert!(trace_host_rs.contains("pop_byte_arg"));
+    assert!(!trace_host_rs.contains("fn pop_byte_arg"));
 }
 
 #[test]

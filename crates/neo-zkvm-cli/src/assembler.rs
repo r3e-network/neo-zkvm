@@ -9,8 +9,14 @@
 
 #![allow(dead_code)]
 
+mod macro_definition;
+mod pending_label;
+
 use neo_vm_rs::interop_hash;
 use std::collections::HashMap;
+
+use macro_definition::Macro;
+use pending_label::PendingLabel;
 
 #[derive(Debug, Clone)]
 pub enum AssemblerError {
@@ -45,21 +51,6 @@ impl std::fmt::Display for AssemblerError {
             Self::SyntaxError(msg, line) => write!(f, "Syntax error at line {}: {}", line, msg),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct Macro {
-    params: Vec<String>,
-    body: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-struct PendingLabel {
-    pos: usize,
-    base_ip: usize,
-    label: String,
-    line_num: usize,
-    is_long_jump: bool,
 }
 
 const MAX_MACRO_DEPTH: usize = 100;

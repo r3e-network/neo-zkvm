@@ -26,6 +26,7 @@
 //! ```
 
 mod elf_markers;
+mod prover_config;
 
 use neo_vm_guest::{
     bincode_deserialize, bincode_serialize, compute_commitment, execute, hash_data,
@@ -40,6 +41,7 @@ use sp1_sdk::{
 
 // Re-export shared types so downstream crates (CLI, examples) keep compiling.
 pub use neo_vm_guest::{MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION};
+pub use prover_config::ProverConfig;
 
 /// SP1 ELF binary - embedded at compile time.
 pub const NEO_ZKVM_ELF: &[u8] =
@@ -49,32 +51,6 @@ type DynError = Box<dyn std::error::Error>;
 type Sp1ProofArtifacts = (Vec<u8>, [u8; 32], PublicInputs);
 #[cfg(feature = "sp1")]
 type Sp1FallbackResult = (Vec<u8>, [u8; 32], ProofMode, Option<PublicInputs>);
-
-/// Prover configuration
-#[derive(Clone, Debug)]
-pub struct ProverConfig {
-    /// Maximum cycles for SP1 execution
-    pub max_cycles: u64,
-    /// Proof mode (determines proof type and verification cost)
-    pub proof_mode: ProofMode,
-    /// Allow cryptographic proof modes to fall back to mock proofs on failure.
-    ///
-    /// Defaults to `false` so production callers fail closed unless they opt in.
-    pub allow_mock_fallback: bool,
-    /// Optional fixed timestamp for deterministic mock proofs.
-    pub deterministic_mock_timestamp: Option<u64>,
-}
-
-impl Default for ProverConfig {
-    fn default() -> Self {
-        Self {
-            max_cycles: 10_000_000,
-            proof_mode: ProofMode::Sp1,
-            allow_mock_fallback: false,
-            deterministic_mock_timestamp: None,
-        }
-    }
-}
 
 /// Neo zkVM Prover
 pub struct NeoProver {

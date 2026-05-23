@@ -2,17 +2,16 @@ use neo_vm_guest::{ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_detailed;
 
+#[path = "batch_verification/batch_summary.rs"]
+mod batch_summary;
+
+use batch_summary::BatchSummary;
+
 #[derive(Clone)]
 struct BatchJob {
     name: &'static str,
     input: ProofInput,
     expected_result: i128,
-}
-
-struct BatchSummary {
-    total: usize,
-    valid: usize,
-    invalid_jobs: Vec<String>,
 }
 
 fn build_arithmetic_jobs() -> Vec<BatchJob> {

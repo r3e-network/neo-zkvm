@@ -4,22 +4,21 @@
 //! including execution, debugging, assembly, and proof generation.
 
 use neo_vm_guest::{execute, ProofInput};
-use neo_vm_rs::{
-    interop_hash, interpret_with_stack_and_syscalls, last_interpreter_ip, pop_byte_arg, OpCode,
-    StackValue, SyscallProvider, MAX_SCRIPT_SIZE,
-};
+use neo_vm_rs::{interpret_with_stack_and_syscalls, OpCode, MAX_SCRIPT_SIZE};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 
 mod assembler;
 mod disassembler;
+mod trace_host;
+mod trace_step;
 
 use assembler::Assembler;
 use disassembler::Disassembler;
+use trace_host::TraceHost;
 
 const VERSION: &str = "0.2.2";
 
@@ -404,73 +403,6 @@ fn should_error_on_fallback(
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
         )
         && actual_mode != requested_mode
-}
-
-// ============================================================================
-// Shared execution trace
-// ============================================================================
-
-struct TraceStep {
-    ip: usize,
-    opcode: u8,
-    instruction: String,
-}
-
-struct TraceHost {
-    script: Vec<u8>,
-    steps: Vec<TraceStep>,
-}
-
-impl TraceHost {
-    fn new(script: Vec<u8>) -> Self {
-        Self {
-            script,
-            steps: Vec::new(),
-        }
-    }
-
-    fn print_trace(&self) {
-        println!("Executed instructions:");
-        if self.steps.is_empty() {
-            println!("  <none>");
-            return;
-        }
-
-        for step in &self.steps {
-            println!(
-                "  0x{:04X}: {:02X}  {}",
-                step.ip, step.opcode, step.instruction
-            );
-        }
-    }
-}
-
-impl SyscallProvider for TraceHost {
-    fn on_instruction(&mut self, opcode: u8) -> Result<(), String> {
-        let ip = last_interpreter_ip() as usize;
-        let instruction = if ip < self.script.len() {
-            Disassembler::new(&self.script).decode_instruction(ip).0
-        } else {
-            format!("??? (0x{opcode:02X})")
-        };
-
-        self.steps.push(TraceStep {
-            ip,
-            opcode,
-            instruction,
-        });
-        Ok(())
-    }
-
-    fn syscall(&mut self, api: u32, _ip: usize, stack: &mut Vec<StackValue>) -> Result<(), String> {
-        if api == interop_hash("System.Crypto.SHA256") {
-            let bytes = pop_byte_arg(stack, "System.Crypto.SHA256")?;
-            stack.push(StackValue::ByteString(Sha256::digest(&bytes).to_vec()));
-            return Ok(());
-        }
-
-        Err(format!("unsupported trace syscall 0x{api:08x}"))
-    }
 }
 
 // ============================================================================
