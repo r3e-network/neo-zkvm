@@ -16,21 +16,13 @@ use neo_vm_guest::ProofInput;
 #[cfg(target_os = "zkvm")]
 use neo_vm_guest::PublicInputs;
 
-/// SHA256 hash function
-fn sha256_hash(data: &[u8]) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hasher.finalize().into()
-}
-
 fn hash_with_bincode_limit<T: Serialize>(value: &T) -> [u8; 32] {
     match neo_vm_guest::bincode_serialize(value) {
-        Ok(bytes) => sha256_hash(&bytes),
+        Ok(bytes) => neo_vm_guest::hash_data(&bytes),
         Err(err) => {
             let mut marker = b"neo-zkvm-program:serialize-error:v1:".to_vec();
             marker.extend_from_slice(err.to_string().as_bytes());
-            sha256_hash(&marker)
+            neo_vm_guest::hash_data(&marker)
         }
     }
 }
@@ -44,8 +36,8 @@ pub fn zkvm_main() {
     // Compute input hash
     let input_hash = hash_with_bincode_limit(&input);
 
-    // Compute script hash
-    let script_hash = sha256_hash(&input.script);
+    // Compute script hash using canonical double-SHA256 (Hash256)
+    let script_hash = neo_vm_guest::hash_data(&input.script);
 
     let output = neo_vm_guest::execute(input);
 
@@ -127,7 +119,8 @@ mod tests {
             arguments: vec![],
             gas_limit: 123,
         };
-        let expected = sha256_hash(&bincode_serialize(&input).expect("serialize input"));
+        let expected =
+            neo_vm_guest::hash_data(&bincode_serialize(&input).expect("serialize input"));
         assert_eq!(hash_with_bincode_limit(&input), expected);
     }
 
@@ -140,6 +133,6 @@ mod tests {
         };
 
         let hash = hash_with_bincode_limit(&input);
-        assert_ne!(hash, sha256_hash(&[]));
+        assert_ne!(hash, neo_vm_guest::hash_data(&[]));
     }
 }

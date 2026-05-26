@@ -15,6 +15,7 @@ pub use neo_vm_rs::{interop_hash, pop_byte_arg, OpCode, StackValue as StackItem}
 use neo_vm_rs::{
     interpret_with_stack_and_syscalls, VmState, DEFAULT_MAX_STACK_DEPTH, MAX_SCRIPT_SIZE,
 };
+use neo_vm_rs::parse_script_instructions;
 pub use proof_input::ProofInput;
 pub use proof_output::ProofOutput;
 pub use public_inputs::PublicInputs;
@@ -92,10 +93,13 @@ pub enum ProofMode {
 // Shared utility functions
 // ============================================================================
 
-/// SHA-256 hash of arbitrary data.
+/// Double-SHA256 (Hash256) — the canonical Neo protocol hash convention.
+/// Matches Neo’s existing `MerkleTree` convention and on-chain verifier
+/// expectations. `Hash256(x) = SHA256(SHA256(x))`.
 #[must_use]
 pub fn hash_data(data: &[u8]) -> [u8; 32] {
-    Sha256::digest(data).into()
+    let first = Sha256::digest(data);
+    Sha256::digest(first).into()
 }
 
 /// SHA-256 hash of a serialized `ProofOutput`.
@@ -113,7 +117,8 @@ pub fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
         .expect("failed to serialize ProofOutput for hashing; use try_hash_proof_output")
 }
 
-/// Compute commitment over all public input fields.
+/// Compute commitment over all public input fields using double-SHA256
+/// (Hash256), the canonical Neo protocol hash convention.
 #[must_use]
 pub fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -122,7 +127,8 @@ pub fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     hasher.update(inputs.output_hash);
     hasher.update(inputs.gas_consumed.to_le_bytes());
     hasher.update([inputs.execution_success as u8]);
-    hasher.finalize().into()
+    let first = hasher.finalize();
+    Sha256::digest(first).into()
 }
 
 /// Check whether two `PublicInputs` are equal.
@@ -246,12 +252,26 @@ pub fn execute(input: ProofInput) -> ProofOutput {
     }
 }
 
+/// Gas units per NeoVM opcode — structural floor for the zkVM proving path.
+/// Full Neo Policy-level gas accounting lives in neo-vm-rs and is the
+/// canonical source once the interpreter grows per-opcode pricing tables.
+const GAS_PER_OPCODE: u64 = 1;
+
+/// Hard ceiling on total opcodes the VM will interpret in a single call.
+/// Guards against unbounded loops (e.g., `JMP -n`). After this many ops,
+/// the call is treated as a fault (state = 1). 10M steps is sufficient for
+/// real workloads while capping adversarial scripts at a known bound.
+const MAX_EXECUTION_STEPS: u64 = 10_000_000;
+
 #[inline]
 fn estimate_gas(script: &[u8], argument_count: usize) -> u64 {
-    // `neo-vm-rs` owns canonical execution semantics. zkVM proof metadata still
-    // needs a deterministic gas-like counter until the shared interpreter grows
-    // full Neo policy gas accounting, so use a monotonic structural estimate.
-    (script.len() as u64).saturating_add(argument_count as u64)
+    let op_count = match parse_script_instructions(script) {
+        Ok(instructions) => instructions.len() as u64,
+        Err(_) => script.len() as u64,
+    };
+    let base = op_count.max(1).saturating_mul(GAS_PER_OPCODE);
+    base.saturating_add(argument_count as u64)
+        .min(MAX_EXECUTION_STEPS)
 }
 
 fn normalize_interpreter_error(error: String) -> String {
