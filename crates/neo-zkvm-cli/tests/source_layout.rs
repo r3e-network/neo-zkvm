@@ -18,7 +18,10 @@ fn cli_opcode_decoding_uses_shared_opcode_enum() {
 
 #[test]
 fn cli_gas_estimation_uses_shared_opcode_enum() {
-    let source = read_source("src/main.rs");
+    // Gas estimation was refactored from src/main.rs to src/inspector.rs
+    // for separation of concerns. The inspector module contains the
+    // opcode classification logic that was previously inlined in main.
+    let source = read_source("src/inspector.rs");
 
     assert!(
         source.contains("OpCode::try_from"),

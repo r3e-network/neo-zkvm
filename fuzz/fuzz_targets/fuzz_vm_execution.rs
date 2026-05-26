@@ -20,9 +20,19 @@ fuzz_target!(|data: &[u8]| {
     }
     script.push(OpCode::RET.byte());
 
+    // Fuzz with non-empty arguments: extract 1-3 argument bytes from the tail
+    // of the fuzz input after the script portion.
+    let mut arguments = vec![];
+    if data.len() > 256 {
+        let arg_bytes: Vec<u8> = data[256..].to_vec();
+        if !arg_bytes.is_empty() {
+            arguments.push(arg_bytes);
+        }
+    }
+
     let _ = execute(ProofInput {
         script,
-        arguments: vec![],
+        arguments,
         gas_limit: 10_000,
     });
 });

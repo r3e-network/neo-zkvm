@@ -26,4 +26,8 @@ test = false
 doc = false
 bench = false
 
+# Standard cargo-fuzz pattern: the fuzz crate lives outside the parent workspace
+# so it can use nightly Rust (required by libfuzzer-sys) without forcing nightly
+# on the entire workspace. The empty [workspace] declaration prevents cargo from
+# ascending to the parent workspace and inheriting its resolver/edition constraints.
 [workspace]

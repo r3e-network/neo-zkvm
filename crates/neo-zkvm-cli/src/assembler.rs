@@ -7,8 +7,6 @@
 //! - Syntax sugar for common patterns
 //! - Comprehensive error messages
 
-#![allow(dead_code)]
-
 mod macro_definition;
 mod pending_label;
 
@@ -18,39 +16,22 @@ use std::collections::HashMap;
 use macro_definition::Macro;
 use pending_label::PendingLabel;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum AssemblerError {
+    #[error("Unknown opcode '{0}' at line {1}")]
     UnknownOpcode(String, usize),
+    #[error("Invalid operand at line {1}: {0}")]
     InvalidOperand(String, usize),
+    #[error("Undefined label '{0}' at line {1}")]
     UndefinedLabel(String, usize),
+    #[error("Duplicate label '{0}' at line {1}")]
     DuplicateLabel(String, usize),
+    #[error("Undefined macro '{0}' at line {1}")]
     UndefinedMacro(String, usize),
+    #[error("Invalid macro at line {1}: {0}")]
     InvalidMacroDefinition(String, usize),
+    #[error("Syntax error at line {1}: {0}")]
     SyntaxError(String, usize),
-}
-
-impl std::fmt::Display for AssemblerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnknownOpcode(op, line) => write!(f, "Unknown opcode '{}' at line {}", op, line),
-            Self::InvalidOperand(msg, line) => {
-                write!(f, "Invalid operand at line {}: {}", line, msg)
-            }
-            Self::UndefinedLabel(label, line) => {
-                write!(f, "Undefined label '{}' at line {}", label, line)
-            }
-            Self::DuplicateLabel(label, line) => {
-                write!(f, "Duplicate label '{}' at line {}", label, line)
-            }
-            Self::UndefinedMacro(name, line) => {
-                write!(f, "Undefined macro '{}' at line {}", name, line)
-            }
-            Self::InvalidMacroDefinition(msg, line) => {
-                write!(f, "Invalid macro at line {}: {}", line, msg)
-            }
-            Self::SyntaxError(msg, line) => write!(f, "Syntax error at line {}: {}", line, msg),
-        }
-    }
 }
 
 const MAX_MACRO_DEPTH: usize = 100;

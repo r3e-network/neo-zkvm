@@ -33,11 +33,11 @@ fn main() {
     println!("Proof B verifies: {}", verify(&proof_b));
     println!(
         "Input hash A: 0x{}",
-        hex_encode(&proof_a.public_inputs.input_hash)
+        hex::encode(&proof_a.public_inputs.input_hash)
     );
     println!(
         "Input hash B: 0x{}",
-        hex_encode(&proof_b.public_inputs.input_hash)
+        hex::encode(&proof_b.public_inputs.input_hash)
     );
     println!(
         "Different private inputs produce different commitments: {}",
@@ -46,10 +46,6 @@ fn main() {
 
     assert!(verify(&proof_a));
     assert!(verify(&proof_b));
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 #[cfg(test)]

@@ -47,6 +47,7 @@ path = "src/zk_dex_rollup.rs"
 neo-vm-guest = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 neo-zkvm-verifier = { workspace = true }
+hex.workspace = true
 
 [features]
 default = []

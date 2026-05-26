@@ -4,20 +4,21 @@
 //! including execution, debugging, assembly, and proof generation.
 
 use neo_vm_guest::{execute, ProofInput};
-use neo_vm_rs::{interpret_with_stack_and_syscalls, OpCode, MAX_SCRIPT_SIZE};
+use neo_vm_rs::{interpret_with_stack_and_syscalls, MAX_SCRIPT_SIZE};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 
 mod assembler;
 mod disassembler;
+mod inspector;
 mod trace_host;
 mod trace_step;
 
 use assembler::Assembler;
 use disassembler::Disassembler;
+use inspector::Inspector;
 use trace_host::TraceHost;
 
 const VERSION: &str = "0.2.2";
@@ -325,6 +326,9 @@ fn parse_script(input: &str) -> Result<Vec<u8>, String> {
         }
         let content =
             fs::read(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))?;
+        // Defense-in-depth: re-check after read in case the file was replaced
+        // between metadata() and read() (TOCTOU). The metadata check catches
+        // obviously-too-large files without reading them; this catches the race.
         if content.len() > MAX_SCRIPT_SIZE {
             return Err(format!(
                 "Script content exceeds maximum size of {} bytes",
@@ -333,6 +337,15 @@ fn parse_script(input: &str) -> Result<Vec<u8>, String> {
         }
         Ok(content)
     } else {
+        // If the input looks like a file path (contains '.' or '/') but
+        // doesn't end in .nef/.bin, the user may have mistyped a filename.
+        // Give a clearer error than "Invalid hex string".
+        if (input.contains('.') || input.contains('/')) && !input.starts_with("0x") {
+            return Err(format!(
+                "'{}' does not look like hex or a known script file — use a .nef/.bin file or hex bytes (optionally 0x-prefixed)",
+                input
+            ));
+        }
         let hex_str = input.trim_start_matches("0x");
         let decoded = hex::decode(hex_str).map_err(|e| format!("Invalid hex string: {}", e))?;
         if decoded.len() > MAX_SCRIPT_SIZE {
@@ -403,292 +416,6 @@ fn should_error_on_fallback(
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
         )
         && actual_mode != requested_mode
-}
-
-// ============================================================================
-// Inspector
-// ============================================================================
-
-struct Inspector<'a> {
-    script: &'a [u8],
-}
-
-impl<'a> Inspector<'a> {
-    fn new(script: &'a [u8]) -> Self {
-        Self { script }
-    }
-
-    fn analyze(&self) -> String {
-        let mut output = String::new();
-
-        output.push_str("═══════════════════════════════════════════════════════════════\n");
-        output.push_str("  SCRIPT ANALYSIS\n");
-        output.push_str("═══════════════════════════════════════════════════════════════\n\n");
-
-        // Basic info
-        output.push_str(&format!("  Size:         {} bytes\n", self.script.len()));
-        output.push_str(&format!("  Hash (hex):   {}\n", hex::encode(self.script)));
-
-        // Opcode statistics
-        let stats = self.collect_opcode_stats();
-        output.push_str("\n───────────────────────────────────────────────────────────────\n");
-        output.push_str("  OPCODE STATISTICS\n");
-        output.push_str("───────────────────────────────────────────────────────────────\n");
-
-        let mut sorted_stats: Vec<_> = stats.iter().collect();
-        sorted_stats.sort_by(|a, b| b.1.cmp(a.1));
-
-        for (name, count) in sorted_stats.iter().take(10) {
-            output.push_str(&format!("    {:12} {:3}\n", name, count));
-        }
-
-        // Control flow analysis
-        let jumps = self.find_jump_targets();
-        if !jumps.is_empty() {
-            output.push_str("\n───────────────────────────────────────────────────────────────\n");
-            output.push_str("  JUMP TARGETS\n");
-            output.push_str("───────────────────────────────────────────────────────────────\n");
-            for target in &jumps {
-                output.push_str(&format!("    0x{:04X}\n", target));
-            }
-        }
-
-        // Gas estimation
-        let estimated_gas = self.estimate_gas();
-        output.push_str("\n───────────────────────────────────────────────────────────────\n");
-        output.push_str("  GAS ESTIMATION\n");
-        output.push_str("───────────────────────────────────────────────────────────────\n");
-        output.push_str(&format!("    Minimum:    {}\n", estimated_gas.0));
-        output.push_str(&format!("    Maximum:    {}\n", estimated_gas.1));
-
-        // Disassembly
-        output.push_str("\n───────────────────────────────────────────────────────────────\n");
-        output.push_str("  DISASSEMBLY\n");
-        output.push_str("───────────────────────────────────────────────────────────────\n");
-        let disasm = Disassembler::new(self.script);
-        output.push_str(&disasm.disassemble());
-
-        output.push_str("\n═══════════════════════════════════════════════════════════════\n");
-
-        output
-    }
-
-    fn collect_opcode_stats(&self) -> HashMap<String, usize> {
-        let mut stats = HashMap::new();
-        let disasm = Disassembler::new(self.script);
-        let mut ip = 0;
-
-        while ip < self.script.len() {
-            let (name, size) = disasm.decode_instruction(ip);
-            let opcode_name = name.split_whitespace().next().unwrap_or(&name).to_string();
-            *stats.entry(opcode_name).or_insert(0) += 1;
-            ip += size;
-        }
-
-        stats
-    }
-
-    fn find_jump_targets(&self) -> Vec<usize> {
-        let mut targets = Vec::new();
-        let mut ip = 0;
-
-        while ip < self.script.len() {
-            let opcode_ip = ip;
-            let raw_opcode = self.script[ip];
-            let Ok(opcode) = OpCode::try_from(raw_opcode) else {
-                ip += 1;
-                continue;
-            };
-            ip += 1;
-
-            match opcode {
-                OpCode::JMP
-                | OpCode::JMPIF
-                | OpCode::JMPIFNOT
-                | OpCode::JMPEQ
-                | OpCode::JMPNE
-                | OpCode::JMPGT
-                | OpCode::JMPGE
-                | OpCode::JMPLT
-                | OpCode::JMPLE
-                | OpCode::CALL => {
-                    // 1-byte offset jumps
-                    if ip < self.script.len() {
-                        let offset = self.script[ip] as i8;
-                        let target = (opcode_ip as isize + offset as isize) as usize;
-                        if !targets.contains(&target) {
-                            targets.push(target);
-                        }
-                    }
-                    ip = self.advance_past_operands(opcode, ip);
-                }
-                OpCode::JMP_L
-                | OpCode::JMPIF_L
-                | OpCode::JMPIFNOT_L
-                | OpCode::JMPEQ_L
-                | OpCode::JMPNE_L
-                | OpCode::JMPGT_L
-                | OpCode::JMPGE_L
-                | OpCode::JMPLT_L
-                | OpCode::JMPLE_L
-                | OpCode::CALL_L => {
-                    // 4-byte offset jumps
-                    if ip + 3 < self.script.len() {
-                        let offset = i32::from_le_bytes([
-                            self.script[ip],
-                            self.script[ip + 1],
-                            self.script[ip + 2],
-                            self.script[ip + 3],
-                        ]);
-                        let target = (opcode_ip as isize + offset as isize) as usize;
-                        if !targets.contains(&target) {
-                            targets.push(target);
-                        }
-                    }
-                    ip = self.advance_past_operands(opcode, ip);
-                }
-                _ => {
-                    ip = self.advance_past_operands(opcode, ip);
-                }
-            }
-        }
-
-        targets.sort();
-        targets
-    }
-
-    fn estimate_gas(&self) -> (u64, u64) {
-        let mut min_gas = 0u64;
-        let mut max_gas = 0u64;
-        let mut ip = 0;
-
-        while ip < self.script.len() {
-            let op = self.script[ip];
-            let cost = OpCode::try_from(op).map_or(1, estimated_opcode_cost);
-            min_gas += cost;
-            max_gas += cost;
-            ip += 1;
-            // Skip operand bytes
-            if let Ok(opcode) = OpCode::try_from(op) {
-                ip = self.advance_past_operands(opcode, ip);
-            }
-        }
-
-        // Account for potential loops (rough estimate)
-        max_gas *= 10;
-
-        (min_gas, max_gas)
-    }
-
-    fn advance_past_operands(&self, opcode: OpCode, ip: usize) -> usize {
-        match opcode {
-            OpCode::PUSHDATA1 if ip < self.script.len() => ip
-                .saturating_add(1 + self.script[ip] as usize)
-                .min(self.script.len()),
-            OpCode::PUSHDATA2 if ip + 1 < self.script.len() => {
-                let len = u16::from_le_bytes([self.script[ip], self.script[ip + 1]]) as usize;
-                ip.saturating_add(2 + len).min(self.script.len())
-            }
-            OpCode::PUSHDATA4 if ip + 3 < self.script.len() => {
-                let len = u32::from_le_bytes([
-                    self.script[ip],
-                    self.script[ip + 1],
-                    self.script[ip + 2],
-                    self.script[ip + 3],
-                ]) as usize;
-                ip.saturating_add(4)
-                    .saturating_add(len)
-                    .min(self.script.len())
-            }
-            _ => ip
-                .saturating_add(opcode.operand_size())
-                .min(self.script.len()),
-        }
-    }
-}
-
-fn estimated_opcode_cost(opcode: OpCode) -> u64 {
-    match opcode {
-        OpCode::PUSHINT8
-        | OpCode::PUSHINT16
-        | OpCode::PUSHINT32
-        | OpCode::PUSHINT64
-        | OpCode::PUSHINT128
-        | OpCode::PUSHINT256
-        | OpCode::PUSHT
-        | OpCode::PUSHF
-        | OpCode::PUSHA
-        | OpCode::PUSHNULL
-        | OpCode::PUSHDATA1
-        | OpCode::PUSHDATA2
-        | OpCode::PUSHDATA4
-        | OpCode::PUSHM1
-        | OpCode::PUSH0
-        | OpCode::PUSH1
-        | OpCode::PUSH2
-        | OpCode::PUSH3
-        | OpCode::PUSH4
-        | OpCode::PUSH5
-        | OpCode::PUSH6
-        | OpCode::PUSH7
-        | OpCode::PUSH8
-        | OpCode::PUSH9
-        | OpCode::PUSH10
-        | OpCode::PUSH11
-        | OpCode::PUSH12
-        | OpCode::PUSH13
-        | OpCode::PUSH14
-        | OpCode::PUSH15
-        | OpCode::PUSH16 => 1,
-        OpCode::SYSCALL => 512,
-        OpCode::MUL
-        | OpCode::DIV
-        | OpCode::MOD
-        | OpCode::POW
-        | OpCode::SQRT
-        | OpCode::MODMUL
-        | OpCode::MODPOW
-        | OpCode::SHL
-        | OpCode::SHR
-        | OpCode::NOT
-        | OpCode::BOOLAND
-        | OpCode::BOOLOR
-        | OpCode::NZ
-        | OpCode::NUMEQUAL
-        | OpCode::NUMNOTEQUAL
-        | OpCode::LT
-        | OpCode::LE
-        | OpCode::GT
-        | OpCode::GE
-        | OpCode::MIN
-        | OpCode::MAX
-        | OpCode::WITHIN
-        | OpCode::PACKMAP
-        | OpCode::PACKSTRUCT
-        | OpCode::PACK
-        | OpCode::UNPACK
-        | OpCode::NEWARRAY0
-        | OpCode::NEWARRAY
-        | OpCode::NEWARRAY_T
-        | OpCode::NEWSTRUCT0
-        | OpCode::NEWSTRUCT
-        | OpCode::NEWMAP
-        | OpCode::SIZE
-        | OpCode::HASKEY
-        | OpCode::KEYS
-        | OpCode::VALUES
-        | OpCode::PICKITEM
-        | OpCode::APPEND
-        | OpCode::SETITEM
-        | OpCode::REVERSEITEMS
-        | OpCode::REMOVE
-        | OpCode::CLEARITEMS
-        | OpCode::POPITEM
-        | OpCode::ISNULL
-        | OpCode::ISTYPE
-        | OpCode::CONVERT => 8,
-        _ => 2,
-    }
 }
 
 #[cfg(test)]

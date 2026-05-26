@@ -61,7 +61,7 @@ fn main() {
     println!("Proof size: {} bytes", proof.proof_bytes.len());
     println!(
         "Script hash: 0x{}",
-        hex_encode(&proof.public_inputs.script_hash[..8])
+        hex::encode(&proof.public_inputs.script_hash[..8])
     );
 
     // Verify the proof
@@ -140,15 +140,15 @@ fn main() {
     println!("Public inputs for verification:");
     println!(
         "  Script hash:       0x{}",
-        hex_encode(&proof.public_inputs.script_hash)
+        hex::encode(&proof.public_inputs.script_hash)
     );
     println!(
         "  Input hash:        0x{}",
-        hex_encode(&proof.public_inputs.input_hash)
+        hex::encode(&proof.public_inputs.input_hash)
     );
     println!(
         "  Output hash:       0x{}",
-        hex_encode(&proof.public_inputs.output_hash)
+        hex::encode(&proof.public_inputs.output_hash)
     );
     println!("  Gas consumed:      {}", proof.public_inputs.gas_consumed);
     println!(
@@ -157,9 +157,4 @@ fn main() {
     );
 
     println!("\n=== Proof Generation Example Complete ===");
-}
-
-/// Helper function to encode bytes as hex string
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

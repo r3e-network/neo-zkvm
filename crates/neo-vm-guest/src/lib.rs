@@ -112,6 +112,7 @@ pub fn try_hash_proof_output(output: &ProofOutput) -> Result<[u8; 32], BincodeEn
 ///
 /// This panics if serialization fails; prefer `try_hash_proof_output` in fallible paths.
 #[must_use]
+#[deprecated(since = "0.2.3", note = "use `try_hash_proof_output` instead to avoid panics")]
 pub fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
     try_hash_proof_output(output)
         .expect("failed to serialize ProofOutput for hashing; use try_hash_proof_output")

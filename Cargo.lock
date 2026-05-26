@@ -2043,12 +2043,14 @@ dependencies = [
  "neo-zkvm-prover",
  "neo-zkvm-verifier",
  "sha2 0.11.0",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "neo-zkvm-examples"
 version = "0.2.2"
 dependencies = [
+ "hex",
  "neo-vm-guest",
  "neo-zkvm-prover",
  "neo-zkvm-verifier",

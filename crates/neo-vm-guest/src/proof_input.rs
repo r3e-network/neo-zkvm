@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::StackItem;
 
 /// Input for zkVM proving.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProofInput {
     /// Raw bytecode to execute.
     pub script: Vec<u8>,

@@ -44,15 +44,11 @@ fn main() {
     // Read the output
     let output_item = proof.output.result.as_ref().unwrap();
     if let StackItem::ByteString(hash_bytes) = output_item {
-        println!("Public Output (Computed Hash): {}", hex_encode(hash_bytes));
+        println!("Public Output (Computed Hash): {}", hex::encode(hash_bytes));
         println!("The verifier confirms this matches the expected hash!");
         println!(
             "\nSuccess! The secret '{}' is NEVER revealed to the blockchain!",
             String::from_utf8_lossy(&secret_password)
         );
     }
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

@@ -253,14 +253,21 @@ pub fn verify_with_vkey_for_mode(
     verify_with_vkey(proof, vkey)
 }
 
-/// Setup the ELF and return verification key
+/// Setup the ELF and return verification key, or an error if SP1 setup fails.
 #[cfg(feature = "sp1")]
-pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
+pub fn try_setup_elf() -> Result<sp1_sdk::SP1VerifyingKey, String> {
     let prover = ProverClient::from_env();
-    let pk = prover
+    let (_, vk) = prover
         .setup(Elf::Static(NEO_ZKVM_ELF))
-        .expect("SP1 setup should succeed");
-    pk.verifying_key().clone()
+        .map_err(|e| format!("SP1 setup failed: {e}"))?;
+    Ok(vk)
+}
+
+/// Setup the ELF and return verification key.
+#[cfg(feature = "sp1")]
+#[deprecated(since = "0.2.2", note = "use `try_setup_elf` instead to handle SP1 setup failures gracefully")]
+pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
+    try_setup_elf().expect("SP1 setup should succeed")
 }
 
 #[cfg(feature = "sp1")]

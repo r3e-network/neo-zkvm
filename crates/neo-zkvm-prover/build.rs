@@ -17,7 +17,12 @@ fn write_dummy_elf(elf_path: &Path, marker: &[u8]) {
 }
 
 fn enable_mock_elf() {
-    println!("cargo:rustc-cfg=feature=\"mock-elf\"");
+    // Use a non-colliding cfg name to avoid bypassing Cargo's feature
+    // resolution. Source code that supports mock ELF mode should gate
+    // on `#[cfg(any(feature = "mock-elf", mock_elf_available))]` so the
+    // feature can be enabled via Cargo.toml or detected from the build
+    // script's runtime environment.
+    println!("cargo:rustc-cfg=mock_elf_available");
 }
 
 #[cfg(feature = "sp1")]
@@ -60,13 +65,18 @@ fn has_sp1_toolchain() -> bool {
         return true;
     }
 
-    if std::process::Command::new("sp1up")
+    let sp1up_version = std::process::Command::new("sp1up")
         .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return true;
+        .output();
+    match sp1up_version {
+        Ok(o) if o.status.success() => return true,
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            println!("cargo:warning=sp1up --version exited with status {}: {}", o.status, stderr.trim());
+        }
+        Err(e) => {
+            println!("cargo:warning=sp1up --version failed: {e}");
+        }
     }
 
     std::process::Command::new("rustup")

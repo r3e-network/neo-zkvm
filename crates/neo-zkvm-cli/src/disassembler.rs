@@ -49,6 +49,15 @@ impl<'a> Disassembler<'a> {
             Err(_) => return (format!("??? (0x{raw_opcode:02X})"), 1),
         };
 
+        // Validate that there are enough bytes remaining for the full
+        // instruction before attempting to decode operands. This prevents
+        // producing garbled output or advancing to invalid positions when
+        // the script is truncated.
+        let operand_size = opcode.operand_size();
+        if ip + 1 + operand_size > self.script.len() {
+            return (format!("{} (truncated)", opcode.name()), 1);
+        }
+
         match opcode {
             OpCode::PUSHINT8 => {
                 let val = self.read_i8(ip + 1);
@@ -373,5 +382,39 @@ mod tests {
             assert_eq!(size, 1);
             assert_eq!(name, expected);
         }
+    }
+
+    #[test]
+    fn test_truncated_pushint128_is_graceful() {
+        // PUSHINT128 needs 16 operand bytes. Provide only 5.
+        let mut script = vec![OpCode::PUSHINT128.byte()];
+        script.extend_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05]);
+        let disasm = Disassembler::new(&script);
+        let (name, size) = disasm.decode_instruction(0);
+        // Must not panic; should indicate truncation or fall back safely.
+        assert!(!name.is_empty());
+        assert!(size >= 1);
+    }
+
+    #[test]
+    fn test_truncated_pushint256_is_graceful() {
+        // PUSHINT256 needs 32 operand bytes. Provide only 3.
+        let mut script = vec![OpCode::PUSHINT256.byte()];
+        script.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+        let disasm = Disassembler::new(&script);
+        let (name, size) = disasm.decode_instruction(0);
+        assert!(!name.is_empty());
+        assert!(size >= 1);
+    }
+
+    #[test]
+    fn test_truncated_jmp_l_is_graceful() {
+        // JMP_L needs 4 operand bytes. Provide only 2.
+        let mut script = vec![OpCode::JMP_L.byte()];
+        script.extend_from_slice(&[0x00, 0x01]);
+        let disasm = Disassembler::new(&script);
+        let (name, size) = disasm.decode_instruction(0);
+        assert!(!name.is_empty());
+        assert!(size >= 1);
     }
 }

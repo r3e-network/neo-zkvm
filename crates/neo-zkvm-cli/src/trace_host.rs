@@ -36,6 +36,9 @@ impl SyscallProvider for TraceHost {
     fn on_instruction(&mut self, opcode: u8) -> Result<(), String> {
         let ip = last_interpreter_ip() as usize;
         let instruction = if ip < self.script.len() {
+            // Disassembler::new is cheap (reference-only); decode_instruction
+            // does the actual work. For the trace/debug path this is fine —
+            // production execution doesn't use TraceHost.
             Disassembler::new(&self.script).decode_instruction(ip).0
         } else {
             format!("??? (0x{opcode:02X})")

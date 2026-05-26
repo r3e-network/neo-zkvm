@@ -18,7 +18,7 @@ struct FuzzInput {
 }
 
 fuzz_target!(|input: FuzzInput| {
-    let gas_limit = (input.gas_limit % 10_000) as u64 + 100;
+    let gas_limit = (input.gas_limit as u64 % 1_000_000) + 1;
 
     let arguments: Vec<StackItem> = input
         .initial_stack
