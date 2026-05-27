@@ -6,7 +6,6 @@
 
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)]
 #[path = "src/elf_markers.rs"]
 mod elf_markers;
 
