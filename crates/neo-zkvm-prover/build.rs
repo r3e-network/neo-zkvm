@@ -102,10 +102,13 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SP1_FORCE_DUMMY");
     println!("cargo:rerun-if-env-changed=SP1_TOOLCHAIN_AVAILABLE");
     println!("cargo:rerun-if-env-changed=NEO_ZKVM_PROGRAM_DIR");
+    println!("cargo:rerun-if-env-changed=SP1_ALLOW_DUMMY");
 
     #[cfg(not(feature = "sp1"))]
     {
-        println!("cargo:warning=neo-zkvm-prover built without the 'sp1' feature; using dummy ELF");
+        if std::env::var("SP1_ALLOW_DUMMY").as_deref() != Ok("1") {
+            println!("cargo:warning=neo-zkvm-prover built without the 'sp1' feature; using dummy ELF. Set SP1_ALLOW_DUMMY=1 to suppress this warning.");
+        }
         write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_NOT_FOR_PRODUCTION);
         enable_mock_elf();
     }
