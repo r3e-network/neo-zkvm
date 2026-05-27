@@ -38,15 +38,12 @@ impl<'de> Deserialize<'de> for ProofOutput {
 
         let raw = Raw::deserialize(deserializer)?;
 
-        // In debug builds, validate that state is only 0 or 1.
-        #[cfg(debug_assertions)]
-        {
-            if raw.state > 1 {
-                return Err(de::Error::invalid_value(
-                    serde::de::Unexpected::Unsigned(raw.state as u64),
-                    &"0 (Halt) or 1 (Fault)",
-                ));
-            }
+        // Always validate that state is only 0 or 1.
+        if raw.state > 1 {
+            return Err(de::Error::invalid_value(
+                serde::de::Unexpected::Unsigned(raw.state as u64),
+                &"0 (Halt) or 1 (Fault)",
+            ));
         }
 
         Ok(ProofOutput {
