@@ -33,11 +33,11 @@ fn main() {
     println!("Proof B verifies: {}", verify(&proof_b));
     println!(
         "Input hash A: 0x{}",
-        hex::encode(&proof_a.public_inputs.input_hash)
+        hex::encode(proof_a.public_inputs.input_hash)
     );
     println!(
         "Input hash B: 0x{}",
-        hex::encode(&proof_b.public_inputs.input_hash)
+        hex::encode(proof_b.public_inputs.input_hash)
     );
     println!(
         "Different private inputs produce different commitments: {}",

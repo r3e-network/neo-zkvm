@@ -65,10 +65,16 @@ pub struct NeoProver {
 impl NeoProver {
     /// Check if the SP1 ELF is available and valid
     pub fn is_elf_available() -> bool {
-        cfg!(feature = "sp1")
-            && !NEO_ZKVM_ELF.is_empty()
-            && NEO_ZKVM_ELF.len() > 100
-            && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
+        #[cfg(not(feature = "sp1"))]
+        {
+            false
+        }
+        #[cfg(feature = "sp1")]
+        {
+            !NEO_ZKVM_ELF.is_empty()
+                && NEO_ZKVM_ELF.len() > 100
+                && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
+        }
     }
 
     fn sp1_unavailable_reason() -> &'static str {

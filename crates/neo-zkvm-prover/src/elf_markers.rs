@@ -1,6 +1,9 @@
 //! Shared dummy ELF markers and diagnostics.
 
+#[allow(dead_code)]
 pub const DUMMY_ELF_NO_PROGRAM_SOURCE: &[u8] = b"DUMMY_ELF_NO_PROGRAM_SOURCE";
 pub const DUMMY_ELF_NOT_FOR_PRODUCTION: &[u8] = b"DUMMY_ELF_NOT_FOR_PRODUCTION";
+#[allow(dead_code)]
 pub const DUMMY_ELF_FOR_CLIPPY: &[u8] = b"DUMMY_ELF_FOR_CLIPPY";
+#[allow(dead_code)]
 pub const DUMMY_ELF_BUILD_FAILED: &[u8] = b"DUMMY_ELF_BUILD_FAILED";

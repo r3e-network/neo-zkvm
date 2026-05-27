@@ -140,15 +140,15 @@ fn main() {
     println!("Public inputs for verification:");
     println!(
         "  Script hash:       0x{}",
-        hex::encode(&proof.public_inputs.script_hash)
+        hex::encode(proof.public_inputs.script_hash)
     );
     println!(
         "  Input hash:        0x{}",
-        hex::encode(&proof.public_inputs.input_hash)
+        hex::encode(proof.public_inputs.input_hash)
     );
     println!(
         "  Output hash:       0x{}",
-        hex::encode(&proof.public_inputs.output_hash)
+        hex::encode(proof.public_inputs.output_hash)
     );
     println!("  Gas consumed:      {}", proof.public_inputs.gas_consumed);
     println!(
