@@ -66,21 +66,27 @@ fn has_sp1_toolchain() -> bool {
 
     // Check for cargo-prove binary at standard SP1 install locations
     let home = std::env::var("HOME").unwrap_or_default();
-    let paths = [format!("{home}/.sp1/bin/cargo-prove"), "cargo-prove".to_string()];
-    for p in &paths {
-        if std::path::Path::new(p).exists() {
-            return true;
-        }
+    let cargo_prove = [format!("{home}/.sp1/bin/cargo-prove"), "cargo-prove".to_string()]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists());
+
+    if cargo_prove.is_none() {
+        return false;
     }
 
-    // Fallback: check rustup for succinct toolchain
-    std::process::Command::new("rustup")
+    // Verify the succinct Rust toolchain is actually installed (cargo-prove
+    // binary can be present without the RISC-V target having been downloaded)
+    if let Ok(o) = std::process::Command::new("rustup")
         .args(["toolchain", "list"])
         .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|output| output.contains("succinct"))
-        .unwrap_or(false)
+    {
+        if let Ok(output) = String::from_utf8(o.stdout) {
+            if output.contains("succinct") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn main() {
