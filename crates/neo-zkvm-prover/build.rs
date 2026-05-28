@@ -64,20 +64,16 @@ fn has_sp1_toolchain() -> bool {
         return true;
     }
 
-    let sp1up_version = std::process::Command::new("sp1up")
-        .arg("--version")
-        .output();
-    match sp1up_version {
-        Ok(o) if o.status.success() => return true,
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            println!("cargo:warning=sp1up --version exited with status {}: {}", o.status, stderr.trim());
-        }
-        Err(e) => {
-            println!("cargo:warning=sp1up --version failed: {e}");
+    // Check for cargo-prove binary at standard SP1 install locations
+    let home = std::env::var("HOME").unwrap_or_default();
+    let paths = [format!("{home}/.sp1/bin/cargo-prove"), "cargo-prove".to_string()];
+    for p in &paths {
+        if std::path::Path::new(p).exists() {
+            return true;
         }
     }
 
+    // Fallback: check rustup for succinct toolchain
     std::process::Command::new("rustup")
         .args(["toolchain", "list"])
         .output()

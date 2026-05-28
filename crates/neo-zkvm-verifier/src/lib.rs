@@ -257,10 +257,10 @@ pub fn verify_with_vkey_for_mode(
 #[cfg(feature = "sp1")]
 pub fn try_setup_elf() -> Result<sp1_sdk::SP1VerifyingKey, String> {
     let prover = ProverClient::from_env();
-    let (_, vk) = prover
+    let pk = prover
         .setup(Elf::Static(NEO_ZKVM_ELF))
         .map_err(|e| format!("SP1 setup failed: {e}"))?;
-    Ok(vk)
+    Ok(pk.verifying_key().clone())
 }
 
 /// Setup the ELF and return verification key.
