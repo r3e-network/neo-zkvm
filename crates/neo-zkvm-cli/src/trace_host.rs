@@ -1,4 +1,4 @@
-use neo_vm_rs::{interop_hash, last_interpreter_ip, pop_byte_arg, StackValue, SyscallProvider};
+use neo_vm_rs::{StackValue, SyscallProvider, interop_hash, last_interpreter_ip, pop_byte_arg};
 use sha2::{Digest, Sha256};
 
 use crate::{disassembler::Disassembler, trace_step::TraceStep};

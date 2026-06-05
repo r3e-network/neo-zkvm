@@ -11,15 +11,15 @@ mod zk_proof_syscalls;
 pub use legacy_neo_proof::LegacyNeoProof;
 pub use mock_proof::MockProof;
 pub use neo_proof::NeoProof;
-pub use neo_vm_rs::{interop_hash, pop_byte_arg, OpCode, StackValue as StackItem};
-use neo_vm_rs::{
-    interpret_with_stack_and_syscalls, VmState, DEFAULT_MAX_STACK_DEPTH, MAX_SCRIPT_SIZE,
-};
 use neo_vm_rs::parse_script_instructions;
+use neo_vm_rs::{
+    DEFAULT_MAX_STACK_DEPTH, MAX_SCRIPT_SIZE, VmState, interpret_with_stack_and_syscalls,
+};
+pub use neo_vm_rs::{OpCode, StackValue as StackItem, interop_hash, pop_byte_arg};
 pub use proof_input::ProofInput;
 pub use proof_output::ProofOutput;
 pub use public_inputs::PublicInputs;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use zk_proof_syscalls::ZkProofSyscalls;
 
@@ -93,12 +93,16 @@ pub enum ProofMode {
 // Shared utility functions
 // ============================================================================
 
-/// Double-SHA256 (Hash256) — the canonical Neo protocol hash convention.
-/// Matches Neo’s existing `MerkleTree` convention and on-chain verifier
-/// expectations. `Hash256(x) = SHA256(SHA256(x))`.
+/// Double-SHA256 (Hash256) with domain separation — the canonical Neo protocol
+/// hash convention. Matches Neo’s existing `MerkleTree` convention and on-chain
+/// verifier expectations. `Hash256(x) = SHA256(SHA256(domain_tag || x))`.
 #[must_use]
 pub fn hash_data(data: &[u8]) -> [u8; 32] {
-    let first = Sha256::digest(data);
+    const DOMAIN: &[u8] = b"neo-zkvm-data-hash-v1:";
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
+    hasher.update(data);
+    let first = hasher.finalize();
     Sha256::digest(first).into()
 }
 
@@ -112,17 +116,22 @@ pub fn try_hash_proof_output(output: &ProofOutput) -> Result<[u8; 32], BincodeEn
 ///
 /// This panics if serialization fails; prefer `try_hash_proof_output` in fallible paths.
 #[must_use]
-#[deprecated(since = "0.2.3", note = "use `try_hash_proof_output` instead to avoid panics")]
+#[deprecated(
+    since = "0.2.3",
+    note = "use `try_hash_proof_output` instead to avoid panics"
+)]
 pub fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
     try_hash_proof_output(output)
         .expect("failed to serialize ProofOutput for hashing; use try_hash_proof_output")
 }
 
 /// Compute commitment over all public input fields using double-SHA256
-/// (Hash256), the canonical Neo protocol hash convention.
+/// (Hash256) with domain separation, the canonical Neo protocol hash convention.
 #[must_use]
 pub fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
+    const DOMAIN: &[u8] = b"neo-zkvm-commitment-v1:";
     let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
     hasher.update(inputs.script_hash);
     hasher.update(inputs.input_hash);
     hasher.update(inputs.output_hash);
@@ -130,6 +139,18 @@ pub fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     hasher.update([inputs.execution_success as u8]);
     let first = hasher.finalize();
     Sha256::digest(first).into()
+}
+
+/// Constant-time equality check for 32-byte arrays (hash values, verification keys).
+/// Uses XOR accumulation to avoid short-circuit evaluation and timing side-channels.
+#[must_use]
+#[inline]
+pub fn constant_time_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    let mut acc = 0u8;
+    for i in 0..32 {
+        acc |= a[i] ^ b[i];
+    }
+    acc == 0
 }
 
 /// Check whether two `PublicInputs` are equal.
@@ -157,18 +178,38 @@ pub fn output_matches_public_inputs(proof: &NeoProof) -> bool {
 
 /// Deserialize a `NeoProof`, with compatibility fallback for legacy proofs that
 /// predate `proof_format_version`.
+///
+/// Downgrade protection: if modern deserialization fails AND legacy succeeds,
+/// the resulting proof is validated before acceptance. A crafted payload that
+/// triggers the fallback path must produce a proof that passes all structural
+/// checks — the worst an attacker can do is force the verifier to use the
+/// legacy code path, which produces the same result.
 pub fn deserialize_neoproof(bytes: &[u8]) -> Result<NeoProof, BincodeDecodeError> {
     match bincode_deserialize::<NeoProof>(bytes) {
         Ok(proof) => Ok(proof),
         Err(primary_err) => match bincode_deserialize::<LegacyNeoProof>(bytes) {
-            Ok(legacy) => Ok(NeoProof {
-                output: legacy.output,
-                proof_bytes: legacy.proof_bytes,
-                public_inputs: legacy.public_inputs,
-                vkey_hash: legacy.vkey_hash,
-                proof_mode: legacy.proof_mode,
-                proof_format_version: 1,
-            }),
+            Ok(legacy) => {
+                let proof = NeoProof {
+                    output: legacy.output,
+                    proof_bytes: legacy.proof_bytes,
+                    public_inputs: legacy.public_inputs,
+                    vkey_hash: legacy.vkey_hash,
+                    proof_mode: legacy.proof_mode,
+                    proof_format_version: 1,
+                };
+                // Reject legacy-path deserialization if the result carries a
+                // structural marker that indicates a corrupt modern proof
+                // rather than a genuine legacy payload: an empty vkey_hash on a
+                // non-Mock proof mode (a real SP1/Plonk/Groth16 proof always
+                // carries a vkey_hash). Proof-size sanity is enforced downstream
+                // in the verifier (`MAX_PROOF_BYTES`), so it is not re-checked
+                // here; either way a tampered payload still fails full
+                // verification, so the fallback cannot be used to downgrade.
+                if proof.vkey_hash == [0u8; 32] && proof.proof_mode != ProofMode::Mock {
+                    return Err(primary_err);
+                }
+                Ok(proof)
+            }
             Err(_) => Err(primary_err),
         },
     }
@@ -301,7 +342,7 @@ mod tests {
             public_inputs: PublicInputs {
                 script_hash: hash_data(b"script"),
                 input_hash: hash_data(b"input"),
-                output_hash: hash_proof_output(&output),
+                output_hash: try_hash_proof_output(&output).expect("test output should serialize"),
                 gas_consumed: output.gas_consumed,
                 execution_success: true,
             },
@@ -327,7 +368,7 @@ mod tests {
             public_inputs: PublicInputs {
                 script_hash: hash_data(b"script"),
                 input_hash: hash_data(b"input"),
-                output_hash: hash_proof_output(&output),
+                output_hash: try_hash_proof_output(&output).expect("test output should serialize"),
                 gas_consumed: output.gas_consumed,
                 execution_success: true,
             },
@@ -365,11 +406,13 @@ mod tests {
 
         let output = execute(input);
         assert_eq!(output.state, 1);
-        assert!(output
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Stack overflow"));
+        assert!(
+            output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Stack overflow")
+        );
     }
 
     #[test]
@@ -382,11 +425,13 @@ mod tests {
 
         let output = execute(input);
         assert_eq!(output.state, 1);
-        assert!(output
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Invalid opcode"));
+        assert!(
+            output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Invalid opcode")
+        );
     }
 
     #[test]

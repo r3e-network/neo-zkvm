@@ -66,9 +66,12 @@ fn has_sp1_toolchain() -> bool {
 
     // Check for cargo-prove binary at standard SP1 install locations
     let home = std::env::var("HOME").unwrap_or_default();
-    let cargo_prove = [format!("{home}/.sp1/bin/cargo-prove"), "cargo-prove".to_string()]
-        .into_iter()
-        .find(|p| std::path::Path::new(p).exists());
+    let cargo_prove = [
+        format!("{home}/.sp1/bin/cargo-prove"),
+        "cargo-prove".to_string(),
+    ]
+    .into_iter()
+    .find(|p| std::path::Path::new(p).exists());
 
     if cargo_prove.is_none() {
         return false;
@@ -79,12 +82,10 @@ fn has_sp1_toolchain() -> bool {
     if let Ok(o) = std::process::Command::new("rustup")
         .args(["toolchain", "list"])
         .output()
+        && let Ok(output) = String::from_utf8(o.stdout)
+        && output.contains("succinct")
     {
-        if let Ok(output) = String::from_utf8(o.stdout) {
-            if output.contains("succinct") {
-                return true;
-            }
-        }
+        return true;
     }
     false
 }
@@ -108,7 +109,9 @@ fn main() {
     #[cfg(not(feature = "sp1"))]
     {
         if std::env::var("SP1_ALLOW_DUMMY").as_deref() != Ok("1") {
-            println!("cargo:warning=neo-zkvm-prover built without the 'sp1' feature; using dummy ELF. Set SP1_ALLOW_DUMMY=1 to suppress this warning.");
+            println!(
+                "cargo:warning=neo-zkvm-prover built without the 'sp1' feature; using dummy ELF. Set SP1_ALLOW_DUMMY=1 to suppress this warning."
+            );
         }
         write_dummy_elf(&elf_path, elf_markers::DUMMY_ELF_NOT_FOR_PRODUCTION);
         enable_mock_elf();

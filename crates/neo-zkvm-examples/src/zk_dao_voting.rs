@@ -47,7 +47,11 @@ fn main() {
     );
 
     println!("\n--- DAO Smart Contract (On-Chain) Side ---");
-    let is_valid = verify_for_mode(&proof, proof.proof_mode);
+    // Pin the expected mode to a constant — never `proof.proof_mode`, which
+    // would make the check a tautology and accept forgeable Mock proofs.
+    // DEMO ONLY: Mock proofs are not cryptographically secure; a production
+    // DAO MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`).
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
     println!(
         "DAO verifies the proof... Is the vote mathematically valid? {}",
         is_valid

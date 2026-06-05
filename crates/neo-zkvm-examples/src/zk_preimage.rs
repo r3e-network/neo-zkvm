@@ -1,4 +1,4 @@
-use neo_vm_guest::{interop_hash, OpCode, ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem, interop_hash};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
 
@@ -37,8 +37,12 @@ fn main() {
     // Verifier side
     println!("\n--- Verifier (On-Chain) Side ---");
 
-    // Verify the proof mathematically
-    let is_valid = verify_for_mode(&proof, proof.proof_mode);
+    // Verify the proof mathematically.
+    // Pin the expected mode to a constant — never `proof.proof_mode`, which
+    // would make the check a tautology and accept forgeable Mock proofs.
+    // DEMO ONLY: Mock proofs are not cryptographically secure; a production
+    // verifier MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`).
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
     println!("Verifier checks the proof... Valid? {}", is_valid);
 
     // Read the output

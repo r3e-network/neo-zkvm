@@ -1,5 +1,5 @@
 //! Basic shared VM usage example
-use neo_vm_guest::{execute, OpCode, ProofInput};
+use neo_vm_guest::{OpCode, ProofInput, execute};
 
 fn main() {
     // 2 + 3 = 5

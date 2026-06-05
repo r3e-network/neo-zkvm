@@ -34,18 +34,18 @@ mod elf_markers;
 mod prover_config;
 
 use neo_vm_guest::{
+    BincodeEncodeError, PROOF_MAX_SCRIPT_SIZE, ProofInput, ProofOutput, StackItem,
     bincode_deserialize, bincode_serialize, compute_commitment, execute, hash_data,
-    output_matches_public_inputs, public_inputs_equal, try_hash_proof_output, BincodeEncodeError,
-    ProofInput, ProofOutput, StackItem, PROOF_MAX_SCRIPT_SIZE,
+    output_matches_public_inputs, public_inputs_equal, try_hash_proof_output,
 };
 #[cfg(feature = "sp1")]
 use sp1_sdk::{
-    blocking::{Elf, ProveRequest, Prover, ProverClient, SP1ProofMode, SP1PublicValues, SP1Stdin},
     ProvingKey, SP1ProofWithPublicValues,
+    blocking::{Elf, ProveRequest, Prover, ProverClient, SP1ProofMode, SP1PublicValues, SP1Stdin},
 };
 
 // Re-export shared types so downstream crates (CLI, examples) keep compiling.
-pub use neo_vm_guest::{MockProof, NeoProof, ProofMode, PublicInputs, PROOF_FORMAT_VERSION};
+pub use neo_vm_guest::{MockProof, NeoProof, PROOF_FORMAT_VERSION, ProofMode, PublicInputs};
 pub use prover_config::ProverConfig;
 
 /// SP1 ELF binary - embedded at compile time.
@@ -71,9 +71,7 @@ impl NeoProver {
         }
         #[cfg(feature = "sp1")]
         {
-            !NEO_ZKVM_ELF.is_empty()
-                && NEO_ZKVM_ELF.len() > 100
-                && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
+            NEO_ZKVM_ELF.len() > 100 && !NEO_ZKVM_ELF.starts_with(b"DUMMY")
         }
     }
 
@@ -522,7 +520,9 @@ impl NeoProver {
         let pk = prover.setup(Elf::Static(NEO_ZKVM_ELF))?;
         let vk = pk.verifying_key().clone();
         let expected_vkey_hash = hash_data(&bincode_serialize(&vk)?);
-        if expected_vkey_hash != proof.vkey_hash {
+        // Constant-time comparison prevents timing side-channel leakage
+        // of the expected verification key hash.
+        if !neo_vm_guest::constant_time_eq_32(&expected_vkey_hash, &proof.vkey_hash) {
             return Ok(false);
         }
 
@@ -764,12 +764,14 @@ mod tests {
 
         let proof = prover.prove(input);
         assert_ne!(proof.output.state, 0);
-        assert!(proof
-            .output
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Failed to serialize proof input"));
+        assert!(
+            proof
+                .output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Failed to serialize proof input")
+        );
     }
 
     #[test]
@@ -956,12 +958,14 @@ mod tests {
         assert_eq!(proof.output.state, 1);
         assert_eq!(proof.public_inputs.gas_consumed, 0);
         assert!(!proof.public_inputs.execution_success);
-        assert!(proof
-            .output
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("truncated"));
+        assert!(
+            proof
+                .output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("truncated")
+        );
     }
 
     #[test]

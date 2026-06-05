@@ -68,9 +68,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_vm_guest::OpCode;
     use neo_vm_guest::bincode_serialize;
     use neo_vm_guest::execute;
-    use neo_vm_guest::OpCode;
 
     #[test]
     fn test_basic_execution() {

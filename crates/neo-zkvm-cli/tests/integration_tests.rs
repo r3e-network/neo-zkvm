@@ -1,7 +1,7 @@
 //! Integration tests for Neo zkVM
 
 use neo_vm_guest::{
-    bincode_deserialize, bincode_serialize, execute, interop_hash, OpCode, ProofInput, StackItem,
+    OpCode, ProofInput, StackItem, bincode_deserialize, bincode_serialize, execute, interop_hash,
 };
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
@@ -522,9 +522,11 @@ fn test_throwifnot_byte_is_rejected_as_non_canonical() {
     };
     let output = execute(input);
     assert_eq!(output.state, 1);
-    assert!(output
-        .error
-        .as_deref()
-        .unwrap_or_default()
-        .contains("Invalid opcode: 0xf1"));
+    assert!(
+        output
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Invalid opcode: 0xf1")
+    );
 }

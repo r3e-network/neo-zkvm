@@ -1,4 +1,4 @@
-use neo_vm_guest::{execute, ProofInput, StackItem};
+use neo_vm_guest::{ProofInput, StackItem, execute};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
 
@@ -54,7 +54,13 @@ fn main() {
     println!("[Sequencer] Proof generated! Sequencer submits Proof to L1.");
 
     println!("\n--- DEX Smart Contract (On-Chain) Side ---");
-    let is_valid = verify_for_mode(&proof, proof.proof_mode);
+    // Pin the expected mode to a constant — never `proof.proof_mode`, which
+    // would make the check a tautology and accept forgeable Mock proofs.
+    // DEMO ONLY: this demonstration proves in Mock mode for speed. Mock proofs
+    // are NOT cryptographically secure (anyone can forge one), so a real
+    // rollup MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`) here and
+    // reject everything else.
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
     println!(
         "L1 verifies the succinct mathematical proof... Valid? {}",
         is_valid

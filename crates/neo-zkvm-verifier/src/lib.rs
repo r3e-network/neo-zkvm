@@ -27,19 +27,29 @@
 //! let proof = prover.prove(input);
 //! assert!(verify(&proof));
 //! ```
+//!
+//! ## Security
+//!
+//! The bare [`verify`] entry point dispatches on the attacker-controlled
+//! `proof.proof_mode` and accepts `Mock`/`Execute` proofs, which are **not**
+//! cryptographically secure (a `MockProof` is forgeable by anyone). Quick Start
+//! uses Mock for illustration only. Production consumers that gate value on a
+//! proof MUST pin a succinct mode (`Sp1`/`Plonk`/`Groth16`) via
+//! [`verify_for_mode`] with a constant, or use `verify_with_vkey`. See the
+//! [`verify`] docs for the full trust model.
 
 use neo_vm_guest::{
-    bincode_deserialize, compute_commitment, output_matches_public_inputs, public_inputs_equal,
-    MockProof, NeoProof, ProofMode, PROOF_FORMAT_VERSION,
+    MockProof, NeoProof, PROOF_FORMAT_VERSION, ProofMode, bincode_deserialize, compute_commitment,
+    output_matches_public_inputs, public_inputs_equal,
 };
 #[cfg(feature = "sp1")]
-use neo_vm_guest::{bincode_serialize, hash_data, PublicInputs};
+use neo_vm_guest::{PublicInputs, bincode_serialize, hash_data};
 #[cfg(feature = "sp1")]
-use neo_zkvm_prover::{NeoProver, NEO_ZKVM_ELF};
+use neo_zkvm_prover::{NEO_ZKVM_ELF, NeoProver};
 #[cfg(feature = "sp1")]
 use sp1_sdk::{
-    blocking::{Elf, Prover, ProverClient, SP1PublicValues},
     ProvingKey, SP1ProofWithPublicValues,
+    blocking::{Elf, Prover, ProverClient, SP1PublicValues},
 };
 
 /// Verification result returned by detailed verification functions.
@@ -70,19 +80,52 @@ pub enum ProofType {
     Unknown,
 }
 
-/// Verify a Neo zkVM proof (simple interface)
+/// Verify a Neo zkVM proof (simple interface).
+///
+/// # Security
+///
+/// This function dispatches on `proof.proof_mode`, which is an
+/// **attacker-controlled** field. `ProofMode::Mock` and `ProofMode::Execute`
+/// carry **no cryptographic guarantee**: a `MockProof` can be forged by anyone
+/// (the commitment is just [`compute_commitment`] over public, caller-chosen
+/// inputs), and `Execute` mode only checks that the VM halted. Accepting a
+/// proof through this entry point therefore lets a caller "downgrade" any claim
+/// to an unauthenticated Mock/Execute proof.
+///
+/// Any consumer making a value-bearing decision (bridge release, rollup state
+/// acceptance, vote tally, etc.) MUST instead pin a succinct mode with
+/// [`verify_for_mode`] / [`verify_detailed_for_mode`] using a **constant**
+/// `expected_mode` of `Sp1`, `Plonk`, or `Groth16` — never `proof.proof_mode` —
+/// or use `verify_with_vkey`. Bare `verify` is appropriate only for tests and
+/// non-adversarial tooling.
 #[must_use]
 pub fn verify(proof: &NeoProof) -> bool {
     verify_detailed(proof).valid
 }
 
 /// Verify a proof and require an expected proof mode.
+///
+/// # Security
+///
+/// `expected_mode` is the mode *you, the verifier,* demand. It MUST be a
+/// compile-time constant chosen from your threat model (e.g.
+/// `ProofMode::Groth16`). Passing `proof.proof_mode` defeats the entire purpose
+/// of this function — the equality check becomes a tautology and verification
+/// silently degrades to the [`verify`] trust model, accepting forgeable Mock
+/// proofs. See [`verify`] for the full rationale.
 #[must_use]
 pub fn verify_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> bool {
     verify_detailed_for_mode(proof, expected_mode).valid
 }
 
-/// Verify with detailed result
+/// Verify with detailed result.
+///
+/// # Security
+///
+/// Shares the [`verify`] trust model: dispatch is keyed on the
+/// attacker-controlled `proof.proof_mode`, so `Mock`/`Execute` results are not
+/// cryptographically authenticated. Pin a succinct mode via
+/// [`verify_detailed_for_mode`] for adversarial inputs.
 #[must_use]
 pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
     if proof.proof_format_version != PROOF_FORMAT_VERSION {
@@ -187,6 +230,11 @@ pub fn verify_detailed(proof: &NeoProof) -> VerificationResult {
 }
 
 /// Verify with detailed result and require an expected proof mode.
+///
+/// # Security
+///
+/// `expected_mode` must be a verifier-chosen constant, never
+/// `proof.proof_mode`. See [`verify_for_mode`] and [`verify`].
 #[must_use]
 pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> VerificationResult {
     if proof.proof_mode != expected_mode {
@@ -265,7 +313,10 @@ pub fn try_setup_elf() -> Result<sp1_sdk::SP1VerifyingKey, String> {
 
 /// Setup the ELF and return verification key.
 #[cfg(feature = "sp1")]
-#[deprecated(since = "0.2.2", note = "use `try_setup_elf` instead to handle SP1 setup failures gracefully")]
+#[deprecated(
+    since = "0.2.2",
+    note = "use `try_setup_elf` instead to handle SP1 setup failures gracefully"
+)]
 pub fn setup_elf() -> sp1_sdk::SP1VerifyingKey {
     try_setup_elf().expect("SP1 setup should succeed")
 }
@@ -283,7 +334,7 @@ fn verify_claimed_vkey_hash(
     vkey: &sp1_sdk::SP1VerifyingKey,
 ) -> Result<(), String> {
     let expected = compute_vkey_hash(vkey)?;
-    if &expected != claimed {
+    if !neo_vm_guest::constant_time_eq_32(&expected, claimed) {
         return Err(
             "Verifying key hash mismatch: proof was generated with a different key".to_string(),
         );
@@ -322,7 +373,7 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
                 valid: false,
                 error: Some(format!("SP1 setup failed: {err}")),
                 proof_type: expected_proof_type(proof.proof_mode),
-            }
+            };
         }
     };
     let vk = pk.verifying_key().clone();
@@ -338,6 +389,23 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
         return VerificationResult {
             valid: false,
             error: Some("SP1 proof bytes are empty".to_string()),
+            proof_type: ProofType::Unknown,
+        };
+    }
+
+    // Reject oversized proof bytes before deserialization to prevent
+    // memory exhaustion. SP1 Groth16 proofs are ~256 bytes, Plonk ~3KB,
+    // and compressed proofs ~2-4KB. 1MB is a conservative ceiling that
+    // accommodates any future proof format without enabling DoS.
+    const MAX_PROOF_BYTES: usize = 1024 * 1024;
+    if proof.proof_bytes.len() > MAX_PROOF_BYTES {
+        return VerificationResult {
+            valid: false,
+            error: Some(format!(
+                "SP1 proof bytes exceed maximum size ({} > {})",
+                proof.proof_bytes.len(),
+                MAX_PROOF_BYTES
+            )),
             proof_type: ProofType::Unknown,
         };
     }
@@ -369,7 +437,7 @@ fn verify_sp1_proof(proof: &NeoProof) -> VerificationResult {
                     e
                 )),
                 proof_type,
-            }
+            };
         }
     };
 
@@ -569,10 +637,12 @@ mod tests {
 
         let result = verify_detailed(&proof);
         assert!(!result.valid);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("Verifying key hash mismatch"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("Verifying key hash mismatch")
+        );
     }
 
     #[test]
@@ -655,10 +725,12 @@ mod tests {
         proof.proof_format_version = proof.proof_format_version.saturating_add(1);
         let result = verify_detailed(&proof);
         assert!(!result.valid);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("Unsupported proof format version"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("Unsupported proof format version")
+        );
     }
 
     #[test]
@@ -676,10 +748,12 @@ mod tests {
 
         let result = verify_detailed_for_mode(&proof, ProofMode::Sp1);
         assert!(!result.valid);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("Proof mode mismatch"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("Proof mode mismatch")
+        );
     }
 
     #[test]

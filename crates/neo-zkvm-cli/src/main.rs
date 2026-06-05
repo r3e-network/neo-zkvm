@@ -3,8 +3,8 @@
 //! A comprehensive command-line interface for Neo zkVM development,
 //! including execution, debugging, assembly, and proof generation.
 
-use neo_vm_guest::{execute, ProofInput};
-use neo_vm_rs::{interpret_with_stack_and_syscalls, MAX_SCRIPT_SIZE};
+use neo_vm_guest::{ProofInput, execute};
+use neo_vm_rs::{MAX_SCRIPT_SIZE, interpret_with_stack_and_syscalls};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify;
 use std::env;

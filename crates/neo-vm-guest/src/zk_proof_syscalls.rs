@@ -1,7 +1,7 @@
 use neo_vm_rs::SyscallProvider;
 use sha2::{Digest, Sha256};
 
-use super::{interop_hash, pop_byte_arg, StackItem};
+use super::{StackItem, interop_hash, pop_byte_arg};
 
 pub(super) struct ZkProofSyscalls;
 

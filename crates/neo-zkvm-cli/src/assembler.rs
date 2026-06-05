@@ -10,7 +10,7 @@
 mod macro_definition;
 mod pending_label;
 
-use neo_vm_rs::{interop_hash, OpCode};
+use neo_vm_rs::{OpCode, interop_hash};
 use std::collections::HashMap;
 
 use macro_definition::Macro;
@@ -960,7 +960,7 @@ impl Assembler {
 #[cfg(test)]
 mod tests {
     use super::Assembler;
-    use neo_vm_rs::{interop_hash, OpCode, StackItemType};
+    use neo_vm_rs::{OpCode, StackItemType, interop_hash};
 
     #[test]
     fn test_pushint8_out_of_range_returns_error() {

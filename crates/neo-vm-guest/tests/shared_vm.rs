@@ -1,4 +1,4 @@
-use neo_vm_guest::{execute, OpCode, ProofInput, StackItem};
+use neo_vm_guest::{OpCode, ProofInput, StackItem, execute};
 
 fn syscall(name: &str) -> Vec<u8> {
     let mut script = vec![OpCode::SYSCALL.byte()];
@@ -40,11 +40,13 @@ fn proof_execution_rejects_non_canonical_throwifnot_byte() {
     });
 
     assert_eq!(output.state, 1);
-    assert!(output
-        .error
-        .as_deref()
-        .unwrap_or_default()
-        .contains("Invalid opcode: 0xf1"));
+    assert!(
+        output
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Invalid opcode: 0xf1")
+    );
 }
 
 #[test]

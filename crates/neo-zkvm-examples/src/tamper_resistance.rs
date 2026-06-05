@@ -75,9 +75,11 @@ mod tests {
 
         let result = verify_detailed(&tampered);
         assert!(!result.valid);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("Unsupported proof format version"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("Unsupported proof format version")
+        );
     }
 }

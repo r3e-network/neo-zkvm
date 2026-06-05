@@ -36,7 +36,11 @@ fn main() {
     );
 
     println!("\n--- Verifier (On-Chain) Side ---");
-    let is_valid = verify_for_mode(&proof, proof.proof_mode);
+    // Pin the expected mode to a constant — never `proof.proof_mode`, which
+    // would make the check a tautology and accept forgeable Mock proofs.
+    // DEMO ONLY: Mock proofs are not cryptographically secure; a production
+    // verifier MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`).
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
     println!("Verifier checks the proof... Valid? {}", is_valid);
 
     let result = proof.output.result.as_ref().unwrap();

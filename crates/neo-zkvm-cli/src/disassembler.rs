@@ -6,7 +6,7 @@
 //! - Jump target annotations
 //! - Operand decoding
 
-use neo_vm_rs::{interop_hash, OpCode, StackItemType};
+use neo_vm_rs::{OpCode, StackItemType, interop_hash};
 
 pub struct Disassembler<'a> {
     script: &'a [u8],
