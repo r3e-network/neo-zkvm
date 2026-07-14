@@ -6,6 +6,7 @@ ignore = [
     { id = "RUSTSEC-2025-0134", reason = "Optional SP1 6.2.1 proving stack pulls rustls-pemfile through tonic/sp1-prover-types; replacement must happen upstream." },
     { id = "RUSTSEC-2025-0141", reason = "Direct use is pinned to bincode 2.0.1 with explicit size/trailing-byte checks; bincode 3.0.0 is currently a compile-error placeholder, and SP1 still pulls bincode 1.3.3 transitively." },
     { id = "RUSTSEC-2026-0002", reason = "Optional SP1 6.2.1 proving stack pulls lru 0.12.5; no patched version is available under current upstream constraints." },
+    { id = "RUSTSEC-2026-0173", reason = "Optional SP1 6.2.1 JIT stack pulls proc-macro-error2 through dynasm; upstream exposes no maintained compatible replacement and neo-zkvm does not invoke the proc macro directly." },
 ]
 
 [bans]

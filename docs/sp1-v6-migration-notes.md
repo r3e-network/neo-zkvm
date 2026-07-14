@@ -83,6 +83,9 @@ The shared codec wrapper in `neo-vm-guest` now provides:
 
 The all-feature dependency graph is accepted by `cargo deny` with explicit documented ignores for upstream advisories that cannot be fixed inside this workspace.
 
+The lockfile updates `serial_test` to 3.5.0, removing the transitive `scc 2.4.0`
+and RUSTSEC-2026-0205 from the all-feature graph.
+
 Known accepted advisories:
 
 - `RUSTSEC-2021-0139`: `ansi_term`, transitive through the optional SP1 tracing stack
@@ -91,11 +94,14 @@ Known accepted advisories:
 - `RUSTSEC-2025-0134`: `rustls-pemfile`, transitive through `tonic` in SP1
 - `RUSTSEC-2025-0141`: `bincode`, direct 2.0.1 plus SP1 transitive 1.3.3
 - `RUSTSEC-2026-0002`: `lru`, transitive through SP1
+- `RUSTSEC-2026-0173`: `proc-macro-error2`, transitive through SP1 JIT and `dynasm`
 
 Risk boundary:
 
 - Direct bincode usage is guarded by the workspace codec wrapper.
 - SP1 advisories are confined to the optional `sp1` proving/verifying feature.
+- `proc-macro-error2` is not invoked by neo-zkvm code and has no maintained
+  compatible replacement in the pinned SP1 dependency graph.
 - Replacement of SP1 transitive crates must come from upstream SP1 releases.
 
 ## Validation Commands
