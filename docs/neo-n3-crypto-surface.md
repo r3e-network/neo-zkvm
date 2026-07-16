@@ -91,15 +91,23 @@ Same as A, but attestors use **BLS12-381 signatures** and the contract verifies 
 - Better gas/ops than many ECDSA checks **if** the native is efficient.
 - **Roadmap:** implement when CryptoLib API is confirmed on target Neo version.
 
-### Path B — On-chain SNARK verify on **BN254** (**if** Neo exposes BN254 pairings)
+### Path B — On-chain SNARK verify on **BN254** (**target — Neo will add BN254**)
 
 ```text
-SP1 Groth16 (BN254) → Neo contract multi-pairing check + public inputs
+SP1 Groth16 (BN254) → Neo CryptoLib BN254 pairings → contract verifies proof + public inputs
 ```
 
-- Matches **default SP1 EVM** curve family.
-- **Most trustless** settle if available.
-- **Not** available on stock Neo CryptoLib as of common docs.
+- Matches **default SP1 EVM** curve family (Succinct / Ethereum Groth16 path).
+- **Most trustless** settle: **no ECDSA council**.
+- Requires Neo natives (minimum): G1 add/mul, **multi-pairing** check, stable point/field encoding, gas schedule.
+- Reference designs: Ethereum EIP-196/197-style ops; SP1 / Succinct EVM verifier layout; Solana BN254 verifier patterns.
+
+**neo-zkvm work after natives land:**
+
+1. Port SP1 Groth16 verifier to Neo contract.  
+2. Bind `PublicInputs` (script_hash, input_hash, output_hash, gas, success) into field elements.  
+3. On-chain VK storage keyed by `program_id` / vkey hash.  
+4. Dual-run Path A fallback until Path B is audited.
 
 ### Path C — On-chain SNARK verify on **BLS12-381** (**if** Neo exposes BLS12-381 **pairings**)
 
@@ -114,19 +122,22 @@ Custom / alternate wrapper: Groth16 or PLONK-KZG on BLS12-381
 
 ---
 
-## 5. Recommendation for neo-zkvm (locked)
+## 5. Recommendation for neo-zkvm (updated)
+
+**Product direction:** Neo will add **BN254** support → **Path B is the target** trustless settlement (on-chain SP1 Groth16). Path A remains the **interim** path until BN254 pairings are live and the verifier contract is audited.
 
 | Priority | Path | Status |
 | --- | --- | --- |
-| **P0 ship** | Path A (ECDSA N-of-M) | Implemented |
-| **P1 improve** | Path A′ (BLS-sig attestors) when Neo version exposes it | Spec’d below |
-| **P2 research** | Path B/C (true on-chain SNARK) when pairings exist | Spec’d in ROADMAP |
+| **P0 interim** | Path A (ECDSA N-of-M) | Implemented + T5 validated |
+| **P0 target** | Path B (BN254 pairings + SP1 Groth16 verify on Neo) | **Planned** — Neo ships BN254 natives |
+| **P1 optional** | Path A′ (BLS-sig attestors) | Spec’d below; ops improvement only |
+| **P2 fallback** | Path C (BLS12-381 SNARK) | Only if BN254 unavailable |
 
 **Do not** market “Neo has BLS ⇒ SP1 Groth16 verifies on-chain” without verifying:
 
 1. Native is **pairing**, not only BLS-sig.  
-2. Curve matches the proof (**BN254 vs BLS12-381**).  
-3. Gas allows full verify.
+2. Curve is **BN254** for stock SP1 EVM Groth16 (BLS12-381 alone is Path C).  
+3. Gas allows full verify in one transaction.
 
 ---
 

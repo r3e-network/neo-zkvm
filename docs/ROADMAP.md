@@ -1,29 +1,31 @@
-# Neo zkVM Roadmap — Neo N3 settlement (contracts only)
+# Neo zkVM Roadmap — Neo N3 settlement
 
 ## Goal
 
 Ship a stack that:
 
 1. Proves **NeoVM** execution (`neo-vm-rs`) with mature **SP1** proving.
-2. Settles on **current Neo N3** by **deploying smart contracts only** (no node/protocol changes).
-3. Uses **N-of-M ECDSA attestations** on-chain because Neo N3 has no pairing precompile for cheap Groth16 verify.
+2. Settles on Neo N3 by **deploying smart contracts** (and, where required, **consuming new CryptoLib natives** Neo ships).
+3. **Target settlement (Path B):** on-chain **BN254** verify of SP1 Groth16/PLONK — same curve family as Ethereum / default SP1 EVM wrappers. **No ECDSA council** once pairings are live and gas is acceptable.
+4. **Interim settlement (Path A):** N-of-M ECDSA attestation (implemented today) until BN254 pairings ship and the on-chain verifier is audited.
 
 ```text
-Off-chain                              On-chain Neo N3
-─────────                              ───────────────
+Target (Path B — after Neo BN254 pairings)
+──────────────────────────────────────────
 NeoVM script + private args
         │
         ▼
-neo-zkvm prove (Mock dev | SP1/Groth16 prod)
+neo-zkvm prove -m groth16   (SP1 → BN254)
         │
         ▼
-verify_for_mode (SP1) ──► attestors sign digest
-        │
-        ▼
-AttestationBundle ──────────────────► Contract:
-                                      • check N-of-M ECDSA
-                                      • check public inputs / app claim
-                                      • mint / store / vote
+Neo contract: BN254 multi-pairing + public inputs
+        • store VK / program_id
+        • verify proof
+        • bind app claim, settle
+
+Interim (Path A — live now)
+───────────────────────────
+SP1 verify off-chain → ECDSA N-of-M → NeoZkAttestation
 ```
 
 ## Phases
@@ -68,15 +70,33 @@ AttestationBundle ──────────────────► Cont
 - [ ] Neo contract variant: one aggregate BLS verify instead of N× ECDSA
 - [ ] Gas comparison ECDSA N-of-M vs BLS aggregate
 
-### Phase 6 — On-chain SNARK verify (Path B/C)
+### Phase 6 — Neo **BN254** natives + on-chain SP1 verify (Path B) — **target**
 
-*Only if Neo exposes **pairings** (multi-pair check), not merely BLS signatures.*
+*Product decision: Neo will add **BN254** (not only BLS12-381). That matches default SP1 EVM Groth16.*
 
-- [ ] Confirm curve: **BN254** (Path B, matches default SP1 EVM Groth16) vs **BLS12-381** (Path C)
-- [ ] If BN254 pairings: wire SP1 Groth16/PLONK verifier contract on Neo
-- [ ] If BLS12-381 pairings only: evaluate BLS12-381 SNARK wrapper (not stock SP1→BN254)
-- [ ] Public-input field encoding + VK storage + gas benchmarking
-- [ ] Keep Path A as fallback until Path B/C is audited
+**6a — Neo / CryptoLib surface (upstream Neo)**
+
+Minimum useful surface (Ethereum-compatible mental model):
+
+- [ ] `Bn254Add` / `Bn254Mul` (G1) — or equivalent
+- [ ] `Bn254Pairing` / multi-pairing check \(e(P_i,Q_i)\cdots=1\)
+- [ ] Documented encoding: compressed vs uncompressed G1/G2, field element endianness
+- [ ] Gas schedule published (target: full Groth16 verify practical in one tx)
+- [ ] Negative tests: infinity, wrong subgroup, malformed points
+
+**6b — neo-zkvm verifier contract (this repo)**
+
+- [ ] Port SP1 BN254 Groth16 verifier (Succinct / EVM verifier layout) to Neo C# (or NeoVM script)
+- [ ] Store verification key + `program_id` / vkey hash on-chain
+- [ ] Map `PublicInputs` → BN254 scalar field elements (fixed layout)
+- [ ] `SubmitProof(proof, public_inputs, app_claim…)` — no attestors
+- [ ] Nonce / replay / app-claim binding (reuse Path A lessons)
+- [ ] Gas benchmark on testnet vs Path A ECDSA N-of-M
+- [ ] Keep Path A as fallback / dual-mode until Path B audited
+
+**6c — Path C (BLS12-381 pairings only) — secondary**
+
+- [ ] Only if BN254 slips; requires non-stock SP1→BN254 pipeline
 
 See [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md) for the decision matrix.
 

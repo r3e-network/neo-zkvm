@@ -4,7 +4,9 @@
 
 **Target: today’s Neo N3 platform** — **no node/protocol changes**, only **deploy smart contracts**.
 
-> Prove **NeoVM** (`neo-vm-rs`) with mature **SP1** off-chain; settle on Neo with **N-of-M ECDSA attestations** (Neo has no pairing precompile for cheap Groth16).
+> Prove **NeoVM** (`neo-vm-rs`) with mature **SP1** off-chain.  
+> **Today (interim):** settle with **N-of-M ECDSA** (Path A).  
+> **Target:** Neo adds **BN254 pairings** → settle by **on-chain SP1 Groth16 verify** (Path B, no council).
 
 ```text
 Off-chain (mature ZK)                    On-chain Neo N3 (contracts only)
@@ -62,8 +64,10 @@ Contract sketch: `contracts/neo-n3/NeoZkAttestation/`
 
 ## Summary
 
-**Best stack for current Neo N3 without system changes:**
+**Interim stack (live today):**  
+`neo-vm-rs` + SP1 Groth16 (off-chain verify) + `neo-zkvm-attestation` + Neo N-of-M ECDSA.
 
-`neo-vm-rs` + SP1 Groth16 (off-chain) + `neo-zkvm-attestation` + Neo contract N-of-M ECDSA.
+**Target stack (Neo ships BN254 pairings):**  
+`neo-vm-rs` + SP1 Groth16 → **Neo on-chain BN254 verifier** (no attestor council).
 
-**About BLS12-381 on Neo:** useful for **attestor aggregation** or future **pairing-based SNARK verify** only if CryptoLib exposes the right ops and the proof curve matches. Default SP1 EVM Groth16 is **BN254**. Details: [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md).
+**About BLS12-381:** still useful for BLS **signatures** (Path A′) or BLS12-381 SNARKs (Path C). Default SP1 EVM Groth16 is **BN254** — that is why Neo BN254 is the right product move. Details: [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md).
