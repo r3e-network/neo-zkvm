@@ -62,6 +62,8 @@ jobs:
           shared-key: "ci-sp1"
       - name: SP1 feature clippy
         run: SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
+      - name: SP1 feature tests (dummy ELF)
+        run: SP1_FORCE_DUMMY=true cargo test -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked
 
   # Build the project
   build:
@@ -138,11 +140,27 @@ jobs:
       - name: Fuzz VM execution (smoke)
         run: |
           cd fuzz
-          cargo +nightly fuzz run --sanitizer none fuzz_vm_execution -- -runs=128 -max_len=512
+          cargo +nightly fuzz run --sanitizer none fuzz_vm_execution -- -runs=256 -max_len=512
       - name: Fuzz script parser (smoke)
         run: |
           cd fuzz
-          cargo +nightly fuzz run --sanitizer none fuzz_script_parser -- -runs=128 -max_len=512
+          cargo +nightly fuzz run --sanitizer none fuzz_script_parser -- -runs=256 -max_len=512
+      - name: Fuzz raw scripts (smoke)
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run --sanitizer none fuzz_raw_script -- -runs=256 -max_len=512
+      - name: Fuzz proof pipeline (smoke)
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run --sanitizer none fuzz_proof_pipeline -- -runs=128 -max_len=256
+      - name: Fuzz bincode (smoke)
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run --sanitizer none fuzz_bincode -- -runs=256 -max_len=1024
+      - name: Fuzz assembler (smoke)
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run --sanitizer none fuzz_assembler -- -runs=256 -max_len=512
 
   # Build and test documentation
   doc:

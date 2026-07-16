@@ -6,7 +6,7 @@
 //!
 //! ```rust
 //! use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
-//! use neo_zkvm_verifier::verify;
+//! use neo_zkvm_verifier::verify_for_mode;
 //! use neo_vm_guest::{OpCode, ProofInput};
 //!
 //! let prover = NeoProver::new(ProverConfig {
@@ -25,7 +25,8 @@
 //! };
 //!
 //! let proof = prover.prove(input);
-//! assert!(verify(&proof));
+//! // Pin a constant mode — never proof.proof_mode.
+//! assert!(verify_for_mode(&proof, ProofMode::Mock));
 //! ```
 //!
 //! ## Security

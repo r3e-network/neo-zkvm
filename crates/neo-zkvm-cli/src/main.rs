@@ -3,21 +3,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use neo_vm_guest::{ProofInput, bincode_serialize, deserialize_neoproof, execute};
 use neo_vm_rs::{MAX_SCRIPT_SIZE, interpret_with_stack_and_syscalls};
+use neo_zkvm_cli::{Assembler, Disassembler, Inspector, trace_host::TraceHost};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::{verify_detailed_for_mode, verify_for_mode};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-mod assembler;
-mod disassembler;
-mod inspector;
-mod trace_host;
-mod trace_step;
-
-use assembler::Assembler;
-use disassembler::Disassembler;
-use inspector::Inspector;
-use trace_host::TraceHost;
 
 const DEFAULT_GAS: u64 = 1_000_000;
 

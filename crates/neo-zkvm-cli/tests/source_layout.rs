@@ -108,9 +108,8 @@ fn workspace_examples_build_scripts_from_shared_opcode_enum() {
         "crates/neo-zkvm-examples/src/proof_generation.rs",
         "crates/neo-zkvm-examples/src/tamper_resistance.rs",
         "crates/neo-zkvm-examples/src/zk_preimage.rs",
+        // Structured fuzz generators live in common.rs; individual targets call helpers.
         "fuzz/fuzz_targets/common.rs",
-        "fuzz/fuzz_targets/fuzz_vm_execution.rs",
-        "fuzz/fuzz_targets/fuzz_script_parser.rs",
     ] {
         let source = read_workspace_source(relative_path);
 

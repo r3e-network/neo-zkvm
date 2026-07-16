@@ -3,7 +3,7 @@ use neo_vm_rs::{StackValue, SyscallProvider, last_interpreter_ip};
 
 use crate::{disassembler::Disassembler, trace_step::TraceStep};
 
-pub(crate) struct TraceHost {
+pub struct TraceHost {
     script: Vec<u8>,
     steps: Vec<TraceStep>,
     gas_limit: u64,
@@ -11,7 +11,7 @@ pub(crate) struct TraceHost {
 }
 
 impl TraceHost {
-    pub(crate) fn new(script: Vec<u8>, gas_limit: u64) -> Self {
+    pub fn new(script: Vec<u8>, gas_limit: u64) -> Self {
         Self {
             script,
             steps: Vec::new(),
@@ -20,11 +20,11 @@ impl TraceHost {
         }
     }
 
-    pub(crate) fn steps_executed(&self) -> u64 {
+    pub fn steps_executed(&self) -> u64 {
         self.steps_executed
     }
 
-    pub(crate) fn print_trace(&self) {
+    pub fn print_trace(&self) {
         println!("Executed instructions:");
         if self.steps.is_empty() {
             println!("  <none>");

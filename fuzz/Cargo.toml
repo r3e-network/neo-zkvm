@@ -11,6 +11,9 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 neo-vm-guest = { path = "../crates/neo-vm-guest" }
+neo-zkvm-prover = { path = "../crates/neo-zkvm-prover" }
+neo-zkvm-verifier = { path = "../crates/neo-zkvm-verifier" }
+neo-zkvm-cli = { path = "../crates/neo-zkvm-cli" }
 
 [[bin]]
 name = "fuzz_vm_execution"
@@ -22,6 +25,34 @@ bench = false
 [[bin]]
 name = "fuzz_script_parser"
 path = "fuzz_targets/fuzz_script_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_raw_script"
+path = "fuzz_targets/fuzz_raw_script.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proof_pipeline"
+path = "fuzz_targets/fuzz_proof_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_bincode"
+path = "fuzz_targets/fuzz_bincode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_assembler"
+path = "fuzz_targets/fuzz_assembler.rs"
 test = false
 doc = false
 bench = false

@@ -19,7 +19,12 @@ impl Default for ProverConfig {
     fn default() -> Self {
         Self {
             max_cycles: 10_000_000,
-            proof_mode: ProofMode::Sp1,
+            // Align with CLI: Sp1 only when the crate is built with the sp1 feature.
+            proof_mode: if cfg!(feature = "sp1") {
+                ProofMode::Sp1
+            } else {
+                ProofMode::Mock
+            },
             allow_mock_fallback: false,
             deterministic_mock_timestamp: None,
         }

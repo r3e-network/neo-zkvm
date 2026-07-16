@@ -29,6 +29,33 @@ Full technical explanation: [docs/learning-guide.md](docs/learning-guide.md).
 - **Outputs:** crash corpus | regression case | coverage signal
 - **Consumers:** zkVM users | L2 prover service | L1 verification adapter
 
+## Targets
+
+| Target | What it stresses |
+| --- | --- |
+| `fuzz_vm_execution` | Structured Neo opcode fragments + stack args |
+| `fuzz_script_parser` | Arbitrary gas + integer args over structured scripts |
+| `fuzz_raw_script` | Raw/unstructured bytecode under tight gas budgets |
+| `fuzz_proof_pipeline` | Mock prove → verify → bincode round-trip → tamper |
+| `fuzz_bincode` | Deserialize NeoProof/ProofInput/StackItem (no panic) |
+| `fuzz_assembler` | Arbitrary NeoASM source + CHECKSIG/macro paths |
+
+## Run
+
+```bash
+# Full campaign (default 10k runs / target)
+./scripts/fuzz-all.sh
+
+# Longer campaign
+RUNS=100000 ./scripts/fuzz-all.sh
+
+# Single target
+cd fuzz
+cargo +nightly fuzz run --sanitizer none fuzz_raw_script -- -runs=50000 -max_len=1024
+```
+
+CI runs a short smoke of every target on each PR (`fuzz-smoke` job).
+
 ### Reading Order
 
 1. Start with system position and conceptual architecture.

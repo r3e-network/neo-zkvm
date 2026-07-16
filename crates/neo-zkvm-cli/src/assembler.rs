@@ -36,12 +36,68 @@ pub enum AssemblerError {
 
 const MAX_MACRO_DEPTH: usize = 100;
 
+/// Replace macro parameters with arguments using whole-token matching only.
+///
+/// Avoids naive substring replace so that param `x` does not rewrite `max` or `hex`.
+fn substitute_macro_params(body_line: &str, params: &[String], args: &[&str]) -> String {
+    // Longer params first so `xx` wins over `x` when both exist.
+    let mut pairs: Vec<(&str, &str)> = params
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| args.get(i).map(|a| (p.as_str(), *a)))
+        .collect();
+    pairs.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+
+    let mut out = String::with_capacity(body_line.len());
+    let chars: Vec<char> = body_line.chars().collect();
+    let mut i = 0usize;
+    while i < chars.len() {
+        if is_ident_start(chars[i]) {
+            let start = i;
+            i += 1;
+            while i < chars.len() && is_ident_continue(chars[i]) {
+                i += 1;
+            }
+            let token: String = chars[start..i].iter().collect();
+            let mut replaced = false;
+            for (param, arg) in &pairs {
+                if token == *param {
+                    out.push_str(arg);
+                    replaced = true;
+                    break;
+                }
+            }
+            if !replaced {
+                out.push_str(&token);
+            }
+        } else {
+            out.push(chars[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn is_ident_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_' || c == '%' || c == '.'
+}
+
+fn is_ident_continue(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '%' || c == '.'
+}
+
 pub struct Assembler {
     labels: HashMap<String, usize>,
     macros: HashMap<String, Macro>,
     pending_labels: Vec<PendingLabel>,
     warnings: Vec<String>,
     macro_depth: usize,
+}
+
+impl Default for Assembler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Assembler {
@@ -158,7 +214,12 @@ impl Assembler {
             // Macro invocation
             if trimmed.starts_with('%') && !trimmed.starts_with("%macro") {
                 let expanded = self.expand_macro(trimmed, line_num + 1)?;
-                result.extend(expanded);
+                // Re-run sugar expansion on each expanded body line so macros
+                // can use PUSH <n> and other sugar the same as free-standing lines.
+                for body_line in expanded {
+                    let sugared = self.expand_sugar(body_line.trim(), line_num + 1)?;
+                    result.extend(sugared);
+                }
                 continue;
             }
 
@@ -212,12 +273,7 @@ impl Assembler {
         let mut result = Vec::new();
 
         for body_line in &macro_def.body {
-            let mut expanded = body_line.clone();
-            for (i, param) in macro_def.params.iter().enumerate() {
-                if i < args.len() {
-                    expanded = expanded.replace(param, args[i]);
-                }
-            }
+            let expanded = substitute_macro_params(body_line, &macro_def.params, &args);
             result.push(expanded);
         }
 
@@ -983,6 +1039,39 @@ mod tests {
         let mut assembler = Assembler::new();
         let err = assembler.assemble("PUSHINT8 128").unwrap_err();
         assert!(err.contains("out of i8 range"));
+    }
+
+    #[test]
+    fn test_macro_params_do_not_rewrite_substrings() {
+        let mut assembler = Assembler::new();
+        // Invocations use `%name`. Param `x` must not rewrite unrelated tokens.
+        let bytes = assembler
+            .assemble(
+                "
+                .macro push_x x
+                    PUSH x
+                .endmacro
+                %push_x 5
+                RET
+                ",
+            )
+            .expect("macro should assemble");
+        assert_eq!(bytes, vec![OpCode::PUSH5.byte(), OpCode::RET.byte()]);
+    }
+
+    #[test]
+    fn test_substitute_macro_params_token_boundary() {
+        let out = super::substitute_macro_params("PUSH max", &["x".into()], &["1"]);
+        assert_eq!(out, "PUSH max");
+        let out = super::substitute_macro_params("PUSH x", &["x".into()], &["5"]);
+        assert_eq!(out, "PUSH 5");
+    }
+
+    #[test]
+    fn test_checksig_is_rejected_at_assemble_time() {
+        let mut assembler = Assembler::new();
+        let err = assembler.assemble("CHECKSIG").unwrap_err();
+        assert!(err.contains("not supported"), "unexpected: {err}");
     }
 
     #[test]

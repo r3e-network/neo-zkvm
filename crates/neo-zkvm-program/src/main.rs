@@ -36,7 +36,8 @@ pub fn zkvm_main() {
     // Compute input hash
     let input_hash = hash_with_bincode_limit(&input);
 
-    // Compute script hash using canonical double-SHA256 (Hash256)
+    // Script hash uses the workspace domain-separated digest (hash_data), not
+    // Neo protocol Hash256. See neo_vm_guest::hash_data docs.
     let script_hash = neo_vm_guest::hash_data(&input.script);
 
     let output = neo_vm_guest::execute(input);
@@ -53,8 +54,19 @@ pub fn zkvm_main() {
         execution_success: output.state == 0,
     };
 
-    // Commit public values to the proof
-    sp1_zkvm::io::commit(&public_inputs);
+    // Commit with the workspace bincode codec (bincode 2 + size limit) so host
+    // decode via neo_vm_guest::bincode_deserialize matches exactly. Do not use
+    // sp1_zkvm::io::commit (bincode 1) for this struct.
+    match neo_vm_guest::bincode_serialize(&public_inputs) {
+        Ok(bytes) => sp1_zkvm::io::commit_slice(&bytes),
+        Err(err) => {
+            // Still commit a deterministic error marker so the host can fail
+            // closed rather than hang on empty public values.
+            let mut marker = b"neo-zkvm-program:public-inputs-serialize-error:v1:".to_vec();
+            marker.extend_from_slice(err.to_string().as_bytes());
+            sp1_zkvm::io::commit_slice(&marker);
+        }
+    }
 }
 
 /// Main function for non-zkVM targets

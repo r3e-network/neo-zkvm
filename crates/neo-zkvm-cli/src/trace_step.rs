@@ -1,5 +1,5 @@
-pub(crate) struct TraceStep {
-    pub(crate) ip: usize,
-    pub(crate) opcode: u8,
-    pub(crate) instruction: String,
+pub struct TraceStep {
+    pub ip: usize,
+    pub opcode: u8,
+    pub instruction: String,
 }

@@ -1,6 +1,4 @@
-//! Fuzz target for script parsing
-//!
-//! Tests script parsing with arbitrary input.
+//! Fuzz structured scripts with Arbitrary-derived gas + integer stack args.
 
 #![no_main]
 
@@ -8,7 +6,7 @@ mod common;
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use neo_vm_guest::{execute, OpCode, ProofInput, StackItem};
+use neo_vm_guest::{execute, ProofInput, StackItem};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzInput {
@@ -18,20 +16,16 @@ struct FuzzInput {
 }
 
 fuzz_target!(|input: FuzzInput| {
-    let gas_limit = (input.gas_limit as u64 % 1_000_000) + 1;
+    let gas_limit = common::clamp_gas(input.gas_limit as u64);
 
     let arguments: Vec<StackItem> = input
         .initial_stack
         .iter()
-        .take(10)
+        .take(16)
         .map(|value| StackItem::Integer(*value))
         .collect();
 
-    let mut script = Vec::with_capacity(input.script.len().min(256) * 5 + 1);
-    for byte in input.script.into_iter().take(256) {
-        common::append_bounded_neo_vm_sequence(&mut script, byte);
-    }
-    script.push(OpCode::RET.byte());
+    let script = common::build_structured_script(&input.script, 256);
 
     let _ = execute(ProofInput {
         script,

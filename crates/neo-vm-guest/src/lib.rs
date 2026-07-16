@@ -90,6 +90,35 @@ pub enum ProofMode {
     Groth16,
 }
 
+impl core::fmt::Display for ProofMode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Execute => "execute",
+            Self::Mock => "mock",
+            Self::Sp1 => "sp1",
+            Self::Plonk => "plonk",
+            Self::Groth16 => "groth16",
+        })
+    }
+}
+
+impl core::str::FromStr for ProofMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "execute" => Ok(Self::Execute),
+            "mock" => Ok(Self::Mock),
+            "sp1" => Ok(Self::Sp1),
+            "plonk" => Ok(Self::Plonk),
+            "groth16" => Ok(Self::Groth16),
+            other => Err(format!(
+                "invalid proof mode '{other}'; expected execute|mock|sp1|plonk|groth16"
+            )),
+        }
+    }
+}
+
 // ============================================================================
 // Shared utility functions
 // ============================================================================
@@ -392,6 +421,22 @@ mod tests {
         inputs_b.gas_consumed = 11;
 
         assert_ne!(compute_commitment(&inputs_a), compute_commitment(&inputs_b));
+    }
+
+    #[test]
+    fn test_proof_mode_display_and_from_str_roundtrip() {
+        use core::str::FromStr;
+        for mode in [
+            ProofMode::Execute,
+            ProofMode::Mock,
+            ProofMode::Sp1,
+            ProofMode::Plonk,
+            ProofMode::Groth16,
+        ] {
+            let parsed = ProofMode::from_str(&mode.to_string()).expect("parse");
+            assert_eq!(parsed, mode);
+        }
+        assert!(ProofMode::from_str("nope").is_err());
     }
 
     #[test]

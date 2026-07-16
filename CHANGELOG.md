@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Assembler macro expansion uses whole-token substitution (param `x` no longer rewrites `max`)
+- Macro body lines re-run sugar expansion (e.g. `PUSH n` inside macros works)
+- SP1 guest commits public inputs via workspace `bincode_serialize` + `commit_slice` (aligned with host decode)
+- `ProverConfig::default` proof mode is `Mock` without `sp1` feature (matches CLI)
+- Verifier crate docs/examples pin `verify_for_mode` instead of bare `verify`
+- CI runs SP1-feature unit tests under `SP1_FORCE_DUMMY`
+
+### Added
+
+- Expanded fuzz suite: `fuzz_raw_script`, `fuzz_proof_pipeline`, `fuzz_bincode`, `fuzz_assembler`
+- Shared structured opcode generators (crypto, arrays, control flow) in `fuzz/fuzz_targets/common.rs`
+- `./scripts/fuzz-all.sh` campaign runner
+- `neo-zkvm-cli` library surface for reusing Assembler/Disassembler in fuzz/tests
 - Fuzz target `fuzz_vm_execution` type error: arguments are now `StackItem::ByteString` (CI fuzz-smoke was broken)
 - Legacy `NeoProof` deserialize no longer rejects valid Execute-mode proofs with zero `vkey_hash`
 - `prove_strict` rejects execution faults in all modes (not only SP1/Plonk/Groth16)
