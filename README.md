@@ -184,13 +184,18 @@ assert!(verify_for_mode(&proof, ProofMode::Mock));
 
 ## Benchmarks
 
-Representative local timings (host execution path; not SP1 proving):
+Host-path execution benchmarks (Criterion; not SP1 proving):
+
+```bash
+cargo bench -p neo-vm-guest --bench execute
+```
 
 ```text
-arithmetic/add      time: [82.3 ns 85.1 ns 88.2 ns]
-arithmetic/mul      time: [84.7 ns 87.3 ns 90.1 ns]
-stack/dup           time: [45.2 ns 46.8 ns 48.5 ns]
-loop/1000           time: [8.2 us 8.5 us 8.8 us]
+execute/arithmetic/add
+execute/arithmetic/mul
+execute/stack/dup
+execute/loop/1000_nops
+execute/crypto/sha256
 ```
 
 ## Documentation

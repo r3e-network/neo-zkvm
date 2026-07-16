@@ -12,12 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guest execution meters gas at runtime (one unit per executed instruction via `on_instruction`), so loops cannot under-charge relative to static bytecode estimates
 - CLI `prove` verifies with `verify_for_mode` pinned to the actual proof mode (never bare attacker-controlled dispatch)
 - CLI `run` exits non-zero on Fault for scripting-friendly automation
+- CLI argument parsing migrated to `clap` derive (same flags; generated `--help`)
 - `verify_with_vkey` rejects Mock/Execute proofs (fail closed for succinct vkey verification)
 - `neo-zkvm-verifier` depends on `neo-zkvm-prover` only under the optional `sp1` feature
 
 ### Added
 
 - CLI `-o` / `--output` to write a serialized `NeoProof` after successful prove
+- Deterministic guest crypto syscalls: `RIPEMD160`, `Hash160`, `Hash256` (in addition to `SHA256`)
+- Assembler `HASH256` mnemonic for `System.Crypto.Hash256`
+- Criterion benches in `neo-vm-guest` (`cargo bench -p neo-vm-guest --bench execute`)
 - Release operator scripts: `verify-release-metadata.sh`, `verify-packaging.sh`, `release.sh`, `publish-crates.sh`
 - Crates.io package metadata (keywords, categories, homepage, documentation) on publishable crates
 

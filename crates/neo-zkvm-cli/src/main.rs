@@ -1,15 +1,12 @@
-//! Neo zkVM CLI - Complete development toolkit
-//!
-//! A comprehensive command-line interface for Neo zkVM development,
-//! including execution, debugging, assembly, and proof generation.
+//! Neo zkVM CLI — development toolkit for execution, assembly, and proving.
 
+use clap::{Parser, Subcommand, ValueEnum};
 use neo_vm_guest::{ProofInput, bincode_serialize, execute};
 use neo_vm_rs::{MAX_SCRIPT_SIZE, interpret_with_stack_and_syscalls};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
 use neo_zkvm_verifier::verify_for_mode;
-use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod assembler;
 mod disassembler;
@@ -22,116 +19,117 @@ use disassembler::Disassembler;
 use inspector::Inspector;
 use trace_host::TraceHost;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+const DEFAULT_GAS: u64 = 1_000_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliProofMode {
+    Execute,
+    Mock,
+    Sp1,
+    Plonk,
+    Groth16,
+}
+
+impl From<CliProofMode> for ProofMode {
+    fn from(mode: CliProofMode) -> Self {
+        match mode {
+            CliProofMode::Execute => ProofMode::Execute,
+            CliProofMode::Mock => ProofMode::Mock,
+            CliProofMode::Sp1 => ProofMode::Sp1,
+            CliProofMode::Plonk => ProofMode::Plonk,
+            CliProofMode::Groth16 => ProofMode::Groth16,
+        }
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(
+    name = "neo-zkvm",
+    version,
+    about = "Neo zkVM development toolkit",
+    long_about = "Execute, assemble, disassemble, debug, inspect, and prove Neo VM scripts with shared neo-vm-rs semantics."
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Execute a script and show results
+    Run {
+        /// Hex bytecode, or a .bin/.nef file
+        script: String,
+        /// Gas / step budget
+        #[arg(short = 'g', long = "gas", default_value_t = DEFAULT_GAS)]
+        gas: u64,
+    },
+    /// Generate a ZK proof for script execution
+    Prove {
+        /// Hex bytecode, or a .bin/.nef file
+        script: String,
+        /// Gas / step budget
+        #[arg(short = 'g', long = "gas", default_value_t = DEFAULT_GAS)]
+        gas: u64,
+        /// Proof mode (default: sp1)
+        #[arg(short = 'm', long = "proof-mode", value_enum, default_value_t = CliProofMode::Sp1)]
+        proof_mode: CliProofMode,
+        /// Allow mock fallback when SP1 is unavailable
+        #[arg(long = "allow-fallback")]
+        allow_fallback: bool,
+        /// Write serialized NeoProof bytes to this path
+        #[arg(short = 'o', long = "output", value_name = "PATH")]
+        output: Option<PathBuf>,
+    },
+    /// Assemble source code to bytecode
+    Asm {
+        /// Inline assembly or a .neoasm file path
+        source: String,
+    },
+    /// Disassemble bytecode to readable form
+    Disasm {
+        /// Hex bytecode, or a .bin/.nef file
+        script: String,
+    },
+    /// Trace execution with shared neo-vm-rs semantics
+    Debug {
+        /// Hex bytecode, or a .bin/.nef file
+        script: String,
+    },
+    /// Analyze and display script information
+    Inspect {
+        /// Hex bytecode, or a .bin/.nef file
+        script: String,
+    },
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        print_help();
-        std::process::exit(1);
-    }
-
-    let result = match args[1].as_str() {
-        "run" => cmd_run(&args[2..]),
-        "prove" => cmd_prove(&args[2..]),
-        "asm" => cmd_assemble(&args[2..]),
-        "disasm" => cmd_disassemble(&args[2..]),
-        "debug" => cmd_debug(&args[2..]),
-        "inspect" => cmd_inspect(&args[2..]),
-        "version" | "-v" | "--version" => {
-            println!("neo-zkvm v{VERSION}");
-            Ok(())
-        }
-        "help" | "-h" | "--help" => {
-            print_help();
-            Ok(())
-        }
-        cmd => {
-            eprintln!("Error: Unknown command '{cmd}'\n");
-            eprintln!("Run 'neo-zkvm help' for usage information.");
-            std::process::exit(1);
-        }
-    };
-
-    if let Err(e) = result {
+    let cli = Cli::parse();
+    if let Err(e) = dispatch(cli.command) {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }
 
-fn print_help() {
-    println!(
-        r#"Neo zkVM CLI v{VERSION}
-
-A comprehensive toolkit for Neo zkVM development.
-
-USAGE:
-    neo-zkvm <COMMAND> [OPTIONS] [ARGS]
-
-COMMANDS:
-    run <script>        Execute a script and show results
-    prove <script>      Generate ZK proof for script execution
-    asm <source>        Assemble source code to bytecode
-    disasm <hex>        Disassemble bytecode to readable format
-    debug <script>      Trace execution with shared neo-vm-rs semantics
-    inspect <script>    Analyze and display script information
-    version             Show version information
-    help                Show this help message
-
-OPTIONS:
-    -g, --gas <N>                 Gas/step budget (default: 1000000)
-    -m, --proof-mode <mode>       Proof mode: execute|mock|sp1|plonk|groth16
-    --allow-fallback              Allow mock fallback when SP1 is unavailable
-    -o, --output <path>           Write serialized NeoProof to a file (prove)
-
-SCRIPT INPUT FORMATS:
-    - Hex string:       12139E40 or 0x12139E40
-    - Binary file:      script.bin or script.nef
-    - Assembly file:    script.neoasm (for asm command)
-
-EXAMPLES:
-    # Execute a simple addition (PUSH2 PUSH3 ADD RET)
-    neo-zkvm run 12139E40
-
-    # Assemble source code
-    neo-zkvm asm "PUSH2 PUSH3 ADD RET"
-    neo-zkvm asm program.neoasm
-
-    # Disassemble bytecode
-    neo-zkvm disasm 12139E40
-
-    # Trace execution
-    neo-zkvm debug 12139E40
-
-    # Inspect script structure
-    neo-zkvm inspect 12139E40
-
-    # Generate ZK proof (default mode: sp1)
-    neo-zkvm prove 12139E40
-
-    # Generate ZK proof with explicit mode and save bytes
-    neo-zkvm prove 12139E40 --proof-mode groth16
-    neo-zkvm prove 12139E40 -m mock -o proof.bin
-
-    # Allow explicit SP1 fallback to mock when setup is unavailable
-    neo-zkvm prove 12139E40 -m sp1 --allow-fallback
-
-For more information, visit: https://github.com/r3e-network/neo-zkvm"#
-    );
+fn dispatch(command: Commands) -> Result<(), String> {
+    match command {
+        Commands::Run { script, gas } => cmd_run(&script, gas),
+        Commands::Prove {
+            script,
+            gas,
+            proof_mode,
+            allow_fallback,
+            output,
+        } => cmd_prove(&script, gas, proof_mode.into(), allow_fallback, output),
+        Commands::Asm { source } => cmd_assemble(&source),
+        Commands::Disasm { script } => cmd_disassemble(&script),
+        Commands::Debug { script } => cmd_debug(&script),
+        Commands::Inspect { script } => cmd_inspect(&script),
+    }
 }
 
-fn cmd_run(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing script argument.\n\nUsage: neo-zkvm run <script>\n\nExamples:\n  \
-             neo-zkvm run 12139E40\n  neo-zkvm run script.bin"
-                .to_string(),
-        );
-    }
-
-    let script = parse_script(&args[0])?;
-    let gas_limit = parse_gas_limit(args)?;
+fn cmd_run(script_input: &str, gas_limit: u64) -> Result<(), String> {
+    let script = parse_script(script_input)?;
 
     println!("Executing script with shared neo-vm-rs semantics...\n");
 
@@ -164,22 +162,18 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_prove(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing script argument.\n\nUsage: neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback] [-o <path>]\n\nExamples:\n  \
-             neo-zkvm prove 12139E40\n  neo-zkvm prove script.bin\n  neo-zkvm prove 12139E40 \
-             --proof-mode groth16\n  neo-zkvm prove 12139E40 -m mock\n  neo-zkvm prove 12139E40 -m sp1 \
-             --allow-fallback\n  neo-zkvm prove 12139E40 -m mock -o proof.bin"
-                .to_string(),
-        );
+fn cmd_prove(
+    script_input: &str,
+    gas_limit: u64,
+    proof_mode: ProofMode,
+    allow_fallback: bool,
+    output_path: Option<PathBuf>,
+) -> Result<(), String> {
+    if let Some(ref path) = output_path {
+        validate_output_path(path)?;
     }
 
-    let script = parse_script(&args[0])?;
-    let gas_limit = parse_gas_limit(args)?;
-    let proof_mode = parse_proof_mode(args)?;
-    let allow_fallback = parse_allow_fallback(args);
-    let output_path = parse_output_path(args)?;
+    let script = parse_script(script_input)?;
 
     if !allow_fallback
         && matches!(
@@ -226,7 +220,7 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
     println!("=======================================");
     println!("  PROOF GENERATION RESULT");
     println!("=======================================");
-    println!("  Requested: {:?}", proof_mode);
+    println!("  Requested: {proof_mode:?}");
     println!("  Mode:      {:?}", proof.proof_mode);
     println!("  Result:    {:?}", proof.output.result);
     println!("  Gas:       {}", proof.output.gas_consumed);
@@ -248,19 +242,11 @@ fn cmd_prove(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_assemble(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing source argument.\n\nUsage: neo-zkvm asm <source>\n\nExamples:\n  \
-             neo-zkvm asm \"PUSH2 PUSH3 ADD RET\"\n  neo-zkvm asm program.neoasm"
-                .to_string(),
-        );
-    }
-
-    let source = if args[0].ends_with(".neoasm") {
-        fs::read_to_string(&args[0]).map_err(|e| format!("Failed to read file: {}", e))?
+fn cmd_assemble(source_arg: &str) -> Result<(), String> {
+    let source = if source_arg.ends_with(".neoasm") {
+        fs::read_to_string(source_arg).map_err(|e| format!("Failed to read file: {e}"))?
     } else {
-        args[0].clone()
+        source_arg.to_string()
     };
 
     let mut assembler = Assembler::new();
@@ -268,41 +254,22 @@ fn cmd_assemble(args: &[String]) -> Result<(), String> {
 
     println!("{}", hex::encode(&bytecode));
 
-    // Show warnings if any
     for warning in assembler.warnings() {
-        eprintln!("Warning: {}", warning);
+        eprintln!("Warning: {warning}");
     }
 
     Ok(())
 }
 
-fn cmd_disassemble(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing bytecode argument.\n\nUsage: neo-zkvm disasm <hex>\n\nExamples:\n  \
-             neo-zkvm disasm 12139E40\n  neo-zkvm disasm script.bin"
-                .to_string(),
-        );
-    }
-
-    let script = parse_script(&args[0])?;
+fn cmd_disassemble(script_input: &str) -> Result<(), String> {
+    let script = parse_script(script_input)?;
     let disasm = Disassembler::new(&script);
-
     println!("{}", disasm.disassemble());
-
     Ok(())
 }
 
-fn cmd_debug(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing script argument.\n\nUsage: neo-zkvm debug <script>\n\nExamples:\n  \
-             neo-zkvm debug 12139E40\n  neo-zkvm debug script.bin"
-                .to_string(),
-        );
-    }
-
-    let script = parse_script(&args[0])?;
+fn cmd_debug(script_input: &str) -> Result<(), String> {
+    let script = parse_script(script_input)?;
     let mut trace_host = TraceHost::new(script.clone());
 
     println!("Tracing script with shared neo-vm-rs semantics...\n");
@@ -315,7 +282,7 @@ fn cmd_debug(args: &[String]) -> Result<(), String> {
             println!("  State: {:?}", result.state);
             println!("  Stack: {:?}", result.stack);
             if let Some(error) = result.fault_message {
-                println!("  Fault: {}", error);
+                println!("  Fault: {error}");
             }
             Ok(())
         }
@@ -323,134 +290,59 @@ fn cmd_debug(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn cmd_inspect(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err(
-            "Missing script argument.\n\nUsage: neo-zkvm inspect <script>\n\nExamples:\n  \
-             neo-zkvm inspect 12139E40\n  neo-zkvm inspect script.bin"
-                .to_string(),
-        );
-    }
-
-    let script = parse_script(&args[0])?;
+fn cmd_inspect(script_input: &str) -> Result<(), String> {
+    let script = parse_script(script_input)?;
     let inspector = Inspector::new(&script);
-
     println!("{}", inspector.analyze());
-
     Ok(())
 }
 
 fn parse_script(input: &str) -> Result<Vec<u8>, String> {
     if input.ends_with(".nef") || input.ends_with(".bin") {
         let metadata =
-            fs::metadata(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))?;
+            fs::metadata(input).map_err(|e| format!("Failed to read file '{input}': {e}"))?;
         if metadata.len() > MAX_SCRIPT_SIZE as u64 {
             return Err(format!(
-                "Script file exceeds maximum size of {} bytes",
-                MAX_SCRIPT_SIZE
+                "Script file exceeds maximum size of {MAX_SCRIPT_SIZE} bytes"
             ));
         }
-        let content =
-            fs::read(input).map_err(|e| format!("Failed to read file '{}': {}", input, e))?;
+        let content = fs::read(input).map_err(|e| format!("Failed to read file '{input}': {e}"))?;
         // Defense-in-depth: re-check after read in case the file was replaced
-        // between metadata() and read() (TOCTOU). The metadata check catches
-        // obviously-too-large files without reading them; this catches the race.
+        // between metadata() and read() (TOCTOU).
         if content.len() > MAX_SCRIPT_SIZE {
             return Err(format!(
-                "Script content exceeds maximum size of {} bytes",
-                MAX_SCRIPT_SIZE
+                "Script content exceeds maximum size of {MAX_SCRIPT_SIZE} bytes"
             ));
         }
         Ok(content)
     } else {
-        // If the input looks like a file path (contains '.' or '/') but
-        // doesn't end in .nef/.bin, the user may have mistyped a filename.
-        // Give a clearer error than "Invalid hex string".
         if (input.contains('.') || input.contains('/')) && !input.starts_with("0x") {
             return Err(format!(
-                "'{}' does not look like hex or a known script file — use a .nef/.bin file or hex bytes (optionally 0x-prefixed)",
-                input
+                "'{input}' does not look like hex or a known script file — use a .nef/.bin file or hex bytes (optionally 0x-prefixed)"
             ));
         }
         let hex_str = input.trim_start_matches("0x");
-        let decoded = hex::decode(hex_str).map_err(|e| format!("Invalid hex string: {}", e))?;
+        let decoded = hex::decode(hex_str).map_err(|e| format!("Invalid hex string: {e}"))?;
         if decoded.len() > MAX_SCRIPT_SIZE {
             return Err(format!(
-                "Script exceeds maximum size of {} bytes",
-                MAX_SCRIPT_SIZE
+                "Script exceeds maximum size of {MAX_SCRIPT_SIZE} bytes"
             ));
         }
         Ok(decoded)
     }
 }
 
-fn parse_gas_limit(args: &[String]) -> Result<u64, String> {
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--gas" || arg == "-g" {
-            let value = args
-                .get(i + 1)
-                .ok_or_else(|| "Missing value for --gas".to_string())?;
-            return value
-                .parse()
-                .map_err(|_| "Invalid gas limit value".to_string());
-        }
+fn validate_output_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err("Output path must not be empty".to_string());
     }
-    Ok(1_000_000) // Default gas limit
-}
-
-fn parse_requested_proof_mode(args: &[String]) -> Result<Option<ProofMode>, String> {
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--proof-mode" || arg == "-m" {
-            let mode = args
-                .get(i + 1)
-                .ok_or_else(|| "Missing value for --proof-mode".to_string())?
-                .to_ascii_lowercase();
-
-            return match mode.as_str() {
-                "execute" => Ok(Some(ProofMode::Execute)),
-                "mock" => Ok(Some(ProofMode::Mock)),
-                "sp1" => Ok(Some(ProofMode::Sp1)),
-                "plonk" => Ok(Some(ProofMode::Plonk)),
-                "groth16" => Ok(Some(ProofMode::Groth16)),
-                _ => Err(
-                    "Invalid proof mode. Expected one of: execute, mock, sp1, plonk, groth16"
-                        .to_string(),
-                ),
-            };
-        }
+    if path.is_dir() {
+        return Err(format!(
+            "Output path '{}' is a directory; provide a file path",
+            path.display()
+        ));
     }
-
-    Ok(None)
-}
-
-fn parse_proof_mode(args: &[String]) -> Result<ProofMode, String> {
-    Ok(parse_requested_proof_mode(args)?.unwrap_or(ProofMode::Sp1))
-}
-
-fn parse_allow_fallback(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--allow-fallback")
-}
-
-fn parse_output_path(args: &[String]) -> Result<Option<std::path::PathBuf>, String> {
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--output" || arg == "-o" {
-            let value = args
-                .get(i + 1)
-                .ok_or_else(|| "Missing value for --output".to_string())?;
-            let path = Path::new(value);
-            if value.is_empty() {
-                return Err("Output path must not be empty".to_string());
-            }
-            if path.is_dir() {
-                return Err(format!(
-                    "Output path '{}' is a directory; provide a file path",
-                    path.display()
-                ));
-            }
-            return Ok(Some(path.to_path_buf()));
-        }
-    }
-    Ok(None)
+    Ok(())
 }
 
 fn should_error_on_fallback(
@@ -469,13 +361,22 @@ fn should_error_on_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_zkvm_prover::ProofMode;
+    use clap::Parser;
+
+    fn parse_cli(args: &[&str]) -> Result<Cli, String> {
+        Cli::try_parse_from(std::iter::once("neo-zkvm").chain(args.iter().copied()))
+            .map_err(|e| e.to_string())
+    }
 
     #[test]
     fn test_parse_proof_mode_defaults_to_sp1() {
-        let args = vec!["12139E40".to_string()];
-        let mode = parse_proof_mode(&args).unwrap();
-        assert_eq!(mode, ProofMode::Sp1);
+        let cli = parse_cli(&["prove", "12139E40"]).unwrap();
+        match cli.command {
+            Commands::Prove { proof_mode, .. } => {
+                assert_eq!(ProofMode::from(proof_mode), ProofMode::Sp1);
+            }
+            _ => panic!("expected prove"),
+        }
     }
 
     #[test]
@@ -489,81 +390,92 @@ mod tests {
         ];
 
         for (mode_str, expected_mode) in cases {
-            let args = vec![
-                "12139E40".to_string(),
-                "--proof-mode".to_string(),
-                mode_str.to_string(),
-            ];
-            let mode = parse_proof_mode(&args).unwrap();
-            assert_eq!(mode, expected_mode);
+            let cli = parse_cli(&["prove", "12139E40", "--proof-mode", mode_str]).unwrap();
+            match cli.command {
+                Commands::Prove { proof_mode, .. } => {
+                    assert_eq!(ProofMode::from(proof_mode), expected_mode);
+                }
+                _ => panic!("expected prove"),
+            }
         }
     }
 
     #[test]
     fn test_parse_proof_mode_accepts_short_alias() {
-        let args = vec!["12139E40".to_string(), "-m".to_string(), "mock".to_string()];
-        let mode = parse_proof_mode(&args).unwrap();
-        assert_eq!(mode, ProofMode::Mock);
+        let cli = parse_cli(&["prove", "12139E40", "-m", "mock"]).unwrap();
+        match cli.command {
+            Commands::Prove { proof_mode, .. } => {
+                assert_eq!(ProofMode::from(proof_mode), ProofMode::Mock);
+            }
+            _ => panic!("expected prove"),
+        }
     }
 
     #[test]
     fn test_parse_proof_mode_rejects_invalid_mode() {
-        let args = vec![
-            "12139E40".to_string(),
-            "--proof-mode".to_string(),
-            "bad-mode".to_string(),
-        ];
-        let err = parse_proof_mode(&args).unwrap_err();
-        assert!(err.contains("Invalid proof mode"));
+        let err = parse_cli(&["prove", "12139E40", "--proof-mode", "bad-mode"]).unwrap_err();
+        assert!(
+            err.to_ascii_lowercase().contains("invalid")
+                || err.to_ascii_lowercase().contains("possible values"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn test_parse_proof_mode_requires_value() {
-        let args = vec!["12139E40".to_string(), "--proof-mode".to_string()];
-        let err = parse_proof_mode(&args).unwrap_err();
-        assert!(err.contains("Missing value for --proof-mode"));
+        let err = parse_cli(&["prove", "12139E40", "--proof-mode"]).unwrap_err();
+        assert!(
+            err.contains("requires a value")
+                || err.contains("a value is required")
+                || err.contains("proof-mode"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn test_parse_proof_mode_requires_value_short_alias() {
-        let args = vec!["12139E40".to_string(), "-m".to_string()];
-        let err = parse_proof_mode(&args).unwrap_err();
-        assert!(err.contains("Missing value for --proof-mode"));
+        let err = parse_cli(&["prove", "12139E40", "-m"]).unwrap_err();
+        assert!(
+            err.contains("requires a value")
+                || err.contains("a value is required")
+                || err.contains("proof-mode")
+                || err.contains("-m"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn test_parse_requested_proof_mode_detects_explicit_mode() {
-        let args = vec!["12139E40".to_string(), "-m".to_string(), "sp1".to_string()];
-        let mode = parse_requested_proof_mode(&args).unwrap();
-        assert_eq!(mode, Some(ProofMode::Sp1));
+        let cli = parse_cli(&["prove", "12139E40", "-m", "sp1"]).unwrap();
+        match cli.command {
+            Commands::Prove { proof_mode, .. } => {
+                assert_eq!(ProofMode::from(proof_mode), ProofMode::Sp1);
+            }
+            _ => panic!("expected prove"),
+        }
     }
 
     #[test]
     fn test_parse_allow_fallback_flag() {
-        let args = vec![
-            "12139E40".to_string(),
-            "-m".to_string(),
-            "sp1".to_string(),
-            "--allow-fallback".to_string(),
-        ];
-        assert!(parse_allow_fallback(&args));
+        let cli = parse_cli(&["prove", "12139E40", "-m", "sp1", "--allow-fallback"]).unwrap();
+        match cli.command {
+            Commands::Prove { allow_fallback, .. } => assert!(allow_fallback),
+            _ => panic!("expected prove"),
+        }
     }
 
     #[test]
     fn test_should_error_on_fallback_for_crypto_modes() {
-        // Sp1 requested, Mock produced, fallback not allowed → error
         assert!(should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
             false,
         ));
-        // Sp1 requested, Mock produced, fallback allowed → no error
         assert!(!should_error_on_fallback(
             ProofMode::Sp1,
             ProofMode::Mock,
             true,
         ));
-        // Mock requested, Mock produced → no error (modes match)
         assert!(!should_error_on_fallback(
             ProofMode::Mock,
             ProofMode::Mock,
@@ -573,9 +485,13 @@ mod tests {
 
     #[test]
     fn test_parse_gas_limit_requires_value() {
-        let args = vec!["12139E40".to_string(), "--gas".to_string()];
-        let err = parse_gas_limit(&args).unwrap_err();
-        assert!(err.contains("Missing value for --gas"));
+        let err = parse_cli(&["run", "12139E40", "--gas"]).unwrap_err();
+        assert!(
+            err.contains("requires a value")
+                || err.contains("a value is required")
+                || err.contains("gas"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
@@ -583,37 +499,48 @@ mod tests {
         if !cfg!(debug_assertions) {
             return;
         }
-        let args = vec!["12139E40".to_string()];
-        let err = cmd_prove(&args).unwrap_err();
+        let err = cmd_prove("12139E40", DEFAULT_GAS, ProofMode::Sp1, false, None).unwrap_err();
         assert!(err.contains("requires a release build"));
     }
 
     #[test]
     fn test_parse_output_path_requires_value() {
-        let args = vec!["12139E40".to_string(), "--output".to_string()];
-        let err = parse_output_path(&args).unwrap_err();
-        assert!(err.contains("Missing value for --output"));
+        let err = parse_cli(&["prove", "12139E40", "-m", "mock", "--output"]).unwrap_err();
+        assert!(
+            err.contains("requires a value")
+                || err.contains("a value is required")
+                || err.contains("output"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn test_parse_output_path_accepts_file() {
-        let args = vec![
-            "12139E40".to_string(),
-            "-o".to_string(),
-            "proof.bin".to_string(),
-        ];
-        let path = parse_output_path(&args).unwrap();
-        assert_eq!(
-            path.as_deref().map(Path::as_os_str),
-            Some("proof.bin".as_ref())
-        );
+        let cli = parse_cli(&["prove", "12139E40", "-m", "mock", "-o", "proof.bin"]).unwrap();
+        match cli.command {
+            Commands::Prove { output, .. } => {
+                assert_eq!(
+                    output.as_deref().map(Path::as_os_str),
+                    Some("proof.bin".as_ref())
+                );
+            }
+            _ => panic!("expected prove"),
+        }
     }
 
     #[test]
     fn test_cmd_run_fails_on_fault() {
         // PUSH5 PUSH0 DIV RET (division by zero)
-        let args = vec!["1510A140".to_string()];
-        let err = cmd_run(&args).unwrap_err();
+        let err = cmd_run("1510A140", DEFAULT_GAS).unwrap_err();
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn test_cli_run_parses_gas() {
+        let cli = parse_cli(&["run", "12139E40", "-g", "42"]).unwrap();
+        match cli.command {
+            Commands::Run { gas, .. } => assert_eq!(gas, 42),
+            _ => panic!("expected run"),
+        }
     }
 }

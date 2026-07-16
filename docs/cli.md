@@ -14,6 +14,9 @@ Or build from source:
 cargo build --release -p neo-zkvm-cli
 ```
 
+The CLI is built with `clap`. Use `neo-zkvm --help` and `neo-zkvm <command> --help`
+for generated flag documentation (always matches the binary).
+
 ## Commands
 
 ### run

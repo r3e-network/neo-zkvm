@@ -287,7 +287,10 @@ impl Assembler {
         let op = s.to_uppercase();
         match Self::opcode_from_mnemonic(&op) {
             Some(opcode) => opcode.operand_size() == 0,
-            None => matches!(op.as_str(), "SHA256" | "RIPEMD160" | "HASH160" | "CHECKSIG"),
+            None => matches!(
+                op.as_str(),
+                "SHA256" | "RIPEMD160" | "HASH160" | "HASH256" | "CHECKSIG"
+            ),
         }
     }
 
@@ -626,6 +629,7 @@ impl Assembler {
             "SHA256" => self.emit_named_syscall(bytecode, "System.Crypto.SHA256"),
             "RIPEMD160" => self.emit_named_syscall(bytecode, "System.Crypto.RIPEMD160"),
             "HASH160" => self.emit_named_syscall(bytecode, "System.Crypto.Hash160"),
+            "HASH256" => self.emit_named_syscall(bytecode, "System.Crypto.Hash256"),
             "CHECKSIG" => self.emit_named_syscall(bytecode, "System.Crypto.CheckSig"),
             "DB" | ".BYTE" => {
                 for operand in operands {
@@ -940,6 +944,7 @@ impl Assembler {
             "SYSTEM.CRYPTO.SHA256" => return Ok(interop_hash("System.Crypto.SHA256")),
             "SYSTEM.CRYPTO.RIPEMD160" => return Ok(interop_hash("System.Crypto.RIPEMD160")),
             "SYSTEM.CRYPTO.HASH160" => return Ok(interop_hash("System.Crypto.Hash160")),
+            "SYSTEM.CRYPTO.HASH256" => return Ok(interop_hash("System.Crypto.Hash256")),
             "SYSTEM.CRYPTO.CHECKSIG" => return Ok(interop_hash("System.Crypto.CheckSig")),
             _ => {}
         }
