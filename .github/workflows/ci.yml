@@ -173,6 +173,10 @@ jobs:
         run: |
           cd fuzz
           cargo +nightly fuzz run --sanitizer none fuzz_assembler -- -runs=256 -max_len=512
+      - name: Fuzz attestation / N-of-M ECDSA (smoke)
+        run: |
+          cd fuzz
+          cargo +nightly fuzz run --sanitizer none fuzz_attestation -- -runs=512 -max_len=512
 
   # Build and test documentation
   doc:

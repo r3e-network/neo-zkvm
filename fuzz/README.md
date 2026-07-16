@@ -39,6 +39,7 @@ Full technical explanation: [docs/learning-guide.md](docs/learning-guide.md).
 | `fuzz_proof_pipeline` | Mock prove → verify → bincode round-trip → tamper |
 | `fuzz_bincode` | Deserialize NeoProof/ProofInput/StackItem (no panic) |
 | `fuzz_assembler` | Arbitrary NeoASM source + CHECKSIG/macro paths |
+| `fuzz_attestation` | N-of-M ECDSA digests, threshold, JSON/config, tamper |
 
 ## Run
 

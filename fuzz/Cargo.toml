@@ -10,9 +10,12 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
+hex = "0.4"
+serde_json = "1"
 neo-vm-guest = { path = "../crates/neo-vm-guest" }
 neo-zkvm-prover = { path = "../crates/neo-zkvm-prover" }
 neo-zkvm-verifier = { path = "../crates/neo-zkvm-verifier" }
+neo-zkvm-attestation = { path = "../crates/neo-zkvm-attestation" }
 neo-zkvm-cli = { path = "../crates/neo-zkvm-cli" }
 
 [[bin]]
@@ -53,6 +56,13 @@ bench = false
 [[bin]]
 name = "fuzz_assembler"
 path = "fuzz_targets/fuzz_assembler.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_attestation"
+path = "fuzz_targets/fuzz_attestation.rs"
 test = false
 doc = false
 bench = false

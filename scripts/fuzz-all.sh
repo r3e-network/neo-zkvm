@@ -34,6 +34,7 @@ TARGETS=(
   fuzz_proof_pipeline
   fuzz_bincode
   fuzz_assembler
+  fuzz_attestation
 )
 
 echo "=== neo-zkvm fuzz campaign: runs=${RUNS} max_len=${MAX_LEN} sanitizer=${SANITIZER} ==="
