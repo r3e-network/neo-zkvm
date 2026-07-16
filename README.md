@@ -3,16 +3,18 @@
 [![CI](https://github.com/r3e-network/neo-zkvm/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-zkvm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verifiable computation with cryptographic proofs.
+A **production-grade** zero-knowledge stack for **current Neo N3**: prove **NeoVM** execution (canonical `neo-vm-rs` semantics) with the mature **SP1** proving backend.
+
+> **Product rule:** Neo N3 today runs **NeoVM**. This project proves NeoVM scripts/args, not “replace NeoVM with arbitrary RISC-V apps.” SP1’s RISC-V guest only *hosts* the Neo interpreter. See [docs/neo-n3-solution.md](docs/neo-n3-solution.md).
 
 ## Features
 
-- **Real ZK Proofs** — SP1 integration for production-grade proving
-- **Shared VM semantics** — proof execution uses the canonical `neo-vm-rs` interpreter shared with Neo RISC-V VM
-- **Neo N3 compatible** — canonical NeoVM opcodes, stack values, and deterministic zk syscall adapters
-- **Runtime gas metering** — each executed instruction costs one gas unit (loops cannot under-charge)
-- **Deterministic zk syscalls** — hash/syscall adapters constrained through the shared guest boundary
-- **Developer tools** — CLI with assembler, disassembler, execution trace, inspection, proving, and verification
+- **NeoVM first** — same opcode/stack semantics as Neo N3 via shared `neo-vm-rs` (no second engine)
+- **Real ZK proofs** — SP1 compressed / Plonk / Groth16 when the toolchain + guest ELF are available
+- **Local DX** — Execute + Mock modes without SP1 (not cryptographically secure)
+- **Runtime gas metering** — one gas unit per executed instruction
+- **Deterministic zk syscalls** — SHA256 / RIPEMD160 / Hash160 / Hash256 only in-guest
+- **Developer tools** — CLI: run, prove, verify, asm, disasm, debug, inspect
 
 ## Architecture
 

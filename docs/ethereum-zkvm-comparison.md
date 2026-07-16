@@ -53,6 +53,15 @@ SP1 and RISC Zero prove **arbitrary Rust**; zkEVMs prove **Ethereum L1/L2 execut
 
 A zkEVM re-implements (or circuits) the **EVM** so each L2 block gets a validity proof. That is a specialized zkVM-like system for Ethereum opcodes and gas, not a general RISC-V guest.
 
+## Product stance for current Neo N3
+
+For **today’s Neo N3**, the intended solution is documented in [neo-n3-solution.md](neo-n3-solution.md):
+
+- **Prove NeoVM** (not drop NeoVM for pure RISC-V apps).
+- Use **SP1** as the mature **proof backend** (RISC-V guest runs the Neo interpreter).
+
+Pure SP1 “any Rust program” is mature for generic apps but does **not** by itself mean NeoVM/N3 script fidelity.
+
 ## What Neo zkVM can do
 
 Neo zkVM is a **Neo N3-oriented zk stack**:
