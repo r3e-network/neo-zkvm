@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Guest execution meters gas at runtime (one unit per executed instruction via `on_instruction`), so loops cannot under-charge relative to static bytecode estimates
+- CLI `prove` verifies with `verify_for_mode` pinned to the actual proof mode (never bare attacker-controlled dispatch)
+- CLI `run` exits non-zero on Fault for scripting-friendly automation
+- `verify_with_vkey` rejects Mock/Execute proofs (fail closed for succinct vkey verification)
+- `neo-zkvm-verifier` depends on `neo-zkvm-prover` only under the optional `sp1` feature
+
+### Added
+
+- CLI `-o` / `--output` to write a serialized `NeoProof` after successful prove
+- Release operator scripts: `verify-release-metadata.sh`, `verify-packaging.sh`, `release.sh`, `publish-crates.sh`
+- Crates.io package metadata (keywords, categories, homepage, documentation) on publishable crates
+
+### Fixed
+
+- `verify-production.sh` referenced non-existent example binaries (`storage_example`, `native_contracts`); now runs the real example set
+- README encoding corruption and stale security guidance
+- Hardcoded CLI version string now uses `CARGO_PKG_VERSION`
+
 ## [0.2.2] - 2026-02-23
 
 ### Changed

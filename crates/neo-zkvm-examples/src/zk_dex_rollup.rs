@@ -22,7 +22,13 @@ fn main() {
     // 200 = 0xc800
     // 50 = 0x32
     let script_hex = "006401c8009e00329e40";
-    let script = hex_decode(script_hex);
+    let script = match hex::decode(script_hex) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("Invalid example script hex: {err}");
+            std::process::exit(1);
+        }
+    };
 
     // Run locally with the same shared VM semantics used by the zkVM guest.
     let local_output = execute(ProofInput {
@@ -32,7 +38,7 @@ fn main() {
     });
     let l2_execution_units = local_output.gas_consumed;
 
-    println!("[L2 VM] Shared execution units: {}", l2_execution_units);
+    println!("[L2 VM] Shared execution units: {l2_execution_units}");
     println!(
         "[L2 VM] Imagine batching 10,000 trades... Units: {}\n",
         l2_execution_units * 10000
@@ -61,22 +67,15 @@ fn main() {
     // rollup MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`) here and
     // reject everything else.
     let is_valid = verify_for_mode(&proof, ProofMode::Mock);
-    println!(
-        "L1 verifies the succinct mathematical proof... Valid? {}",
-        is_valid
-    );
+    println!("L1 verifies the succinct mathematical proof... Valid? {is_valid}");
 
-    let result = proof.output.result.as_ref().unwrap();
-    if let StackItem::Integer(val) = result {
-        println!("New DEX State Root (Total Liquidity): {}", val);
+    match proof.output.result.as_ref() {
+        Some(StackItem::Integer(val)) => {
+            println!("New DEX State Root (Total Liquidity): {val}");
+        }
+        Some(other) => println!("Unexpected result type: {other:?}"),
+        None => println!("No result on stack"),
     }
     println!("\nThe L1 blockchain didn't need to process the trades!");
     println!("The single proof guarantees correctness for infinite transactions.");
-}
-
-fn hex_decode(s: &str) -> Vec<u8> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-        .collect()
 }

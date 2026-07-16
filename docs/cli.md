@@ -37,19 +37,21 @@ neo-zkvm run script.bin
 neo-zkvm run 12139E40 --gas 500000
 ```
 
+**Notes:**
+
+- Gas is metered at runtime (one unit per executed instruction).
+- Exit code is non-zero if the VM faults (scripting-friendly).
+
 **Output:**
 
 ```
-═══════════════════════════════════════
+=======================================
   EXECUTION RESULT
-═══════════════════════════════════════
+=======================================
   State:        Halt
-  Gas consumed: 12
-  Stack depth:  1
-───────────────────────────────────────
-  Stack (top → bottom):
-    [0] Integer(5)
-═══════════════════════════════════════
+  Gas consumed: 4
+  Result:       Some(Integer(5))
+=======================================
 ```
 
 ### prove
@@ -57,7 +59,7 @@ neo-zkvm run 12139E40 --gas 500000
 Generate a ZK proof for script execution.
 
 ```bash
-neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback] [--gas <limit>]
+neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback] [--gas <limit>] [-o <path>]
 ```
 
 **Options:**
@@ -65,8 +67,9 @@ neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback] [--ga
 | Flag               | Alias | Default | Description                                              |
 | ------------------ | ----- | ------- | -------------------------------------------------------- |
 | `--proof-mode`     | `-m`  | `sp1`   | Proof mode: `execute`, `mock`, `sp1`, `plonk`, `groth16` |
-| `--allow-fallback` |       | off     | Allow silent downgrade to mock if SP1 unavailable        |
-| `--gas`            | `-g`  | 1000000 | Gas limit                                                |
+| `--allow-fallback` |       | off     | Allow downgrade to mock if SP1 unavailable               |
+| `--gas`            | `-g`  | 1000000 | Gas / step budget                                        |
+| `--output`         | `-o`  |         | Write serialized `NeoProof` bytes to a file              |
 
 **Examples:**
 
@@ -82,7 +85,16 @@ neo-zkvm prove 12139E40 --proof-mode groth16
 
 # SP1 with fallback to mock if toolchain missing
 neo-zkvm prove 12139E40 -m sp1 --allow-fallback
+
+# Save a serialized NeoProof after successful verification
+neo-zkvm prove 12139E40 -m mock -o proof.bin
 ```
+
+**Notes:**
+
+- Verification pins `verify_for_mode` to the **actual** mode produced (after any
+  allowed fallback). Cryptographic modes require a release build unless
+  `--allow-fallback` is set.
 
 ### asm
 

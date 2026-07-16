@@ -311,7 +311,9 @@ fn test_pushdata_truncated() {
 
 #[test]
 fn test_loop_detection_by_gas() {
-    // Test that a loop consumes gas and eventually halts
+    // Tight spin: JMP with relative offset that re-executes itself when valid.
+    // Regardless of encoding edge cases, a low gas budget must not hang and
+    // must report non-zero consumption under runtime metering.
     let script = vec![OpCode::JMP.byte(), 0xFE];
     let input = ProofInput {
         script,
@@ -319,9 +321,12 @@ fn test_loop_detection_by_gas() {
         gas_limit: 100,
     };
     let output = execute(input);
-    // Should either fault (out of gas) or halt after some iterations
-    assert!(output.state == 0 || output.state == 1);
+    assert_eq!(
+        output.state, 1,
+        "looping/faulting script must not report Halt"
+    );
     assert!(output.gas_consumed > 0);
+    assert!(output.gas_consumed <= 100);
 }
 
 #[test]

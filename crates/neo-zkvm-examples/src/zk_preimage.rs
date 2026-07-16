@@ -43,16 +43,18 @@ fn main() {
     // DEMO ONLY: Mock proofs are not cryptographically secure; a production
     // verifier MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`).
     let is_valid = verify_for_mode(&proof, ProofMode::Mock);
-    println!("Verifier checks the proof... Valid? {}", is_valid);
+    println!("Verifier checks the proof... Valid? {is_valid}");
 
-    // Read the output
-    let output_item = proof.output.result.as_ref().unwrap();
-    if let StackItem::ByteString(hash_bytes) = output_item {
-        println!("Public Output (Computed Hash): {}", hex::encode(hash_bytes));
-        println!("The verifier confirms this matches the expected hash!");
-        println!(
-            "\nSuccess! The secret '{}' is NEVER revealed to the blockchain!",
-            String::from_utf8_lossy(&secret_password)
-        );
+    match proof.output.result.as_ref() {
+        Some(StackItem::ByteString(hash_bytes)) => {
+            println!("Public Output (Computed Hash): {}", hex::encode(hash_bytes));
+            println!("The verifier confirms this matches the expected hash!");
+            println!(
+                "\nSuccess! The secret '{}' is NEVER revealed to the blockchain!",
+                String::from_utf8_lossy(&secret_password)
+            );
+        }
+        Some(other) => println!("Unexpected result type: {other:?}"),
+        None => println!("No hash result on stack"),
     }
 }

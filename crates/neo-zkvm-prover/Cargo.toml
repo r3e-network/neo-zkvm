@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/neo-zkvm-prover"
+readme = "README.md"
 description = "SP1-backed proof generation for Neo zkVM"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 neo-vm-guest = { workspace = true }

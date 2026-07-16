@@ -11,7 +11,6 @@ mod zk_proof_syscalls;
 pub use legacy_neo_proof::LegacyNeoProof;
 pub use mock_proof::MockProof;
 pub use neo_proof::NeoProof;
-use neo_vm_rs::parse_script_instructions;
 use neo_vm_rs::{
     DEFAULT_MAX_STACK_DEPTH, MAX_SCRIPT_SIZE, VmState, interpret_with_stack_and_syscalls,
 };
@@ -219,10 +218,19 @@ pub fn deserialize_neoproof(bytes: &[u8]) -> Result<NeoProof, BincodeDecodeError
 // Guest execution
 // ============================================================================
 
-/// Execute Neo VM and return proof output
+/// Hard ceiling on total opcodes the VM will interpret in a single call.
+/// Guards against unbounded loops (e.g., `JMP -n`). After this many ops,
+/// the call is treated as a fault (state = 1). 10M steps is sufficient for
+/// real workloads while capping adversarial scripts at a known bound.
+pub const MAX_EXECUTION_STEPS: u64 = 10_000_000;
+
+/// Execute Neo VM and return proof output.
+///
+/// Gas is metered at runtime: each executed instruction costs one gas unit via
+/// the guest syscall host's `on_instruction` hook. This correctly charges loops
+/// and dynamic control flow (unlike static bytecode-length estimates).
 #[must_use]
 pub fn execute(input: ProofInput) -> ProofOutput {
-    let estimated_gas = estimate_gas(&input.script, input.arguments.len());
     if input.script.len() > PROOF_MAX_SCRIPT_SIZE {
         return ProofOutput {
             state: 1,
@@ -247,18 +255,22 @@ pub fn execute(input: ProofInput) -> ProofOutput {
         };
     }
 
-    if estimated_gas > input.gas_limit {
+    if input.gas_limit == 0 {
         return ProofOutput {
             state: 1,
-            gas_consumed: input.gas_limit,
+            gas_consumed: 0,
             result: Some(StackItem::Boolean(false)),
             error: Some("Out of gas".to_string()),
         };
     }
 
-    let mut host = ZkProofSyscalls;
+    // Cap the effective budget so adversarial scripts cannot force unbounded
+    // interpreter work even if the caller passes a huge gas_limit.
+    let effective_gas_limit = input.gas_limit.min(MAX_EXECUTION_STEPS);
+    let mut host = ZkProofSyscalls::new(effective_gas_limit);
     match interpret_with_stack_and_syscalls(&input.script, input.arguments, &mut host) {
         Ok(result) => {
+            let gas_consumed = host.steps().min(effective_gas_limit);
             let state = match result.state {
                 VmState::Halt => 0,
                 VmState::Fault => 1,
@@ -266,7 +278,7 @@ pub fn execute(input: ProofInput) -> ProofOutput {
                     return ProofOutput {
                         state: 1,
                         result: Some(StackItem::Boolean(false)),
-                        gas_consumed: estimated_gas,
+                        gas_consumed,
                         error: Some(format!("interpreter returned non-final VM state {state:?}")),
                     };
                 }
@@ -275,7 +287,7 @@ pub fn execute(input: ProofInput) -> ProofOutput {
             ProofOutput {
                 state,
                 result: result.stack.into_iter().last(),
-                gas_consumed: estimated_gas,
+                gas_consumed,
                 error: if state == 1 {
                     result
                         .fault_message
@@ -285,35 +297,16 @@ pub fn execute(input: ProofInput) -> ProofOutput {
                 },
             }
         }
-        Err(error) => ProofOutput {
-            state: 1,
-            result: Some(StackItem::Boolean(false)),
-            gas_consumed: estimated_gas.min(input.gas_limit),
-            error: Some(normalize_interpreter_error(error)),
-        },
+        Err(error) => {
+            let gas_consumed = host.steps().min(effective_gas_limit);
+            ProofOutput {
+                state: 1,
+                result: Some(StackItem::Boolean(false)),
+                gas_consumed,
+                error: Some(normalize_interpreter_error(error)),
+            }
+        }
     }
-}
-
-/// Gas units per NeoVM opcode — structural floor for the zkVM proving path.
-/// Full Neo Policy-level gas accounting lives in neo-vm-rs and is the
-/// canonical source once the interpreter grows per-opcode pricing tables.
-const GAS_PER_OPCODE: u64 = 1;
-
-/// Hard ceiling on total opcodes the VM will interpret in a single call.
-/// Guards against unbounded loops (e.g., `JMP -n`). After this many ops,
-/// the call is treated as a fault (state = 1). 10M steps is sufficient for
-/// real workloads while capping adversarial scripts at a known bound.
-const MAX_EXECUTION_STEPS: u64 = 10_000_000;
-
-#[inline]
-fn estimate_gas(script: &[u8], argument_count: usize) -> u64 {
-    let op_count = match parse_script_instructions(script) {
-        Ok(instructions) => instructions.len() as u64,
-        Err(_) => script.len() as u64,
-    };
-    let base = op_count.max(1).saturating_mul(GAS_PER_OPCODE);
-    base.saturating_add(argument_count as u64)
-        .min(MAX_EXECUTION_STEPS)
 }
 
 fn normalize_interpreter_error(error: String) -> String {
@@ -431,6 +424,66 @@ mod tests {
                 .as_deref()
                 .unwrap_or_default()
                 .contains("Invalid opcode")
+        );
+    }
+
+    #[test]
+    fn test_execute_meters_gas_per_instruction() {
+        let input = ProofInput {
+            script: vec![
+                OpCode::PUSH2.byte(),
+                OpCode::PUSH3.byte(),
+                OpCode::ADD.byte(),
+                OpCode::RET.byte(),
+            ],
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let output = execute(input);
+        assert_eq!(output.state, 0);
+        // Four executed opcodes: PUSH2, PUSH3, ADD, RET
+        assert_eq!(output.gas_consumed, 4);
+    }
+
+    #[test]
+    fn test_execute_out_of_gas_on_runtime_step_budget() {
+        // 6 PUSH1 + RET requires 7 steps; budget of 3 must fault mid-script.
+        let mut script = vec![OpCode::PUSH1.byte(); 6];
+        script.push(OpCode::RET.byte());
+        let input = ProofInput {
+            script,
+            arguments: vec![],
+            gas_limit: 3,
+        };
+
+        let output = execute(input);
+        assert_eq!(output.state, 1);
+        assert_eq!(output.gas_consumed, 3);
+        assert!(
+            output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Out of gas")
+        );
+    }
+
+    #[test]
+    fn test_execute_zero_gas_limit_fails_closed() {
+        let input = ProofInput {
+            script: vec![OpCode::RET.byte()],
+            arguments: vec![],
+            gas_limit: 0,
+        };
+        let output = execute(input);
+        assert_eq!(output.state, 1);
+        assert!(
+            output
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Out of gas")
         );
     }
 

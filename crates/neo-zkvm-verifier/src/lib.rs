@@ -251,7 +251,13 @@ pub fn verify_detailed_for_mode(proof: &NeoProof, expected_mode: ProofMode) -> V
     verify_detailed(proof)
 }
 
-/// Verify a proof with explicit vkey
+/// Verify a succinct proof with an explicit verifying key.
+///
+/// # Security
+///
+/// This entry point is for cryptographic modes only. `Mock` and `Execute`
+/// proofs are always rejected so callers cannot accidentally treat an
+/// unauthenticated payload as a vkey-bound succinct proof.
 #[cfg(feature = "sp1")]
 #[must_use]
 pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bool {
@@ -261,8 +267,9 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
     if !output_matches_public_inputs(proof) {
         return false;
     }
-    if proof.proof_mode == ProofMode::Mock || proof.proof_mode == ProofMode::Execute {
-        return verify(proof);
+    // Fail closed: vkey verification never authenticates Mock/Execute.
+    if matches!(proof.proof_mode, ProofMode::Mock | ProofMode::Execute) {
+        return false;
     }
     if proof.output.state != 0 {
         return false;

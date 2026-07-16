@@ -23,7 +23,13 @@ fn main() {
     // Bytecode assembled from:
     // DUP, PUSH1, NUMEQUAL, JMPIF 6, DUP, PUSH2, NUMEQUAL, JMPIF 3, PUSH0, RET, PUSH1, RET
     let script_hex = "4a11b3240a4a12b32405451040451140";
-    let script = hex_decode(script_hex);
+    let script = match hex::decode(script_hex) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("Invalid example script hex: {err}");
+            std::process::exit(1);
+        }
+    };
 
     let prover = NeoProver::new(ProverConfig {
         proof_mode: ProofMode::Mock,
@@ -33,7 +39,7 @@ fn main() {
     let secret_vote = 2; // User votes for candidate 2
 
     println!("[Prover] Executing DAO vote validation locally...");
-    println!("[Prover] Private Vote Choice: {}", secret_vote);
+    println!("[Prover] Private Vote Choice: {secret_vote}");
 
     let proof = prover.prove(ProofInput {
         script,
@@ -52,25 +58,18 @@ fn main() {
     // DEMO ONLY: Mock proofs are not cryptographically secure; a production
     // DAO MUST pin a succinct mode (`ProofMode::Groth16`/`Plonk`).
     let is_valid = verify_for_mode(&proof, ProofMode::Mock);
-    println!(
-        "DAO verifies the proof... Is the vote mathematically valid? {}",
-        is_valid
-    );
+    println!("DAO verifies the proof... Is the vote mathematically valid? {is_valid}");
 
-    let result = proof.output.result.as_ref().unwrap();
-    if let StackItem::Integer(val) = result {
-        println!("Execution Output: {}", val); // 1 = valid vote, 0 = invalid
-        if *val == 1 {
-            println!("Result: The vote is VALID. The DAO increments the tally using");
-            println!("homomorphic encryption or nullifiers combined with this ZK-proof,");
-            println!("meaning the vote is counted but the choice remains completely secret!");
+    match proof.output.result.as_ref() {
+        Some(StackItem::Integer(val)) => {
+            println!("Execution Output: {val}"); // 1 = valid vote, 0 = invalid
+            if *val == 1 {
+                println!("Result: The vote is VALID. The DAO increments the tally using");
+                println!("homomorphic encryption or nullifiers combined with this ZK-proof,");
+                println!("meaning the vote is counted but the choice remains completely secret!");
+            }
         }
+        Some(other) => println!("Unexpected result type: {other:?}"),
+        None => println!("No result on stack"),
     }
-}
-
-fn hex_decode(s: &str) -> Vec<u8> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
-        .collect()
 }

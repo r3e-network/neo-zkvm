@@ -3,6 +3,9 @@ set -euo pipefail
 
 source ~/.cargo/env 2>/dev/null || true
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
 retry() {
   local attempts="$1"
   shift
@@ -29,6 +32,23 @@ cargo_deny_advisories() {
   cargo deny --all-features --locked --offline check advisories --show-stats
 }
 
+run_examples() {
+  local bins=(
+    basic
+    proof_generation
+    batch_verification
+    private_inputs
+    tamper_resistance
+    zk_preimage
+    zk_scaling
+    zk_dao_voting
+    zk_dex_rollup
+  )
+  for bin in "${bins[@]}"; do
+    retry 3 cargo run --locked --bin "$bin"
+  done
+}
+
 echo "[1/12] cargo fmt"
 cargo fmt --all -- --check
 
@@ -51,16 +71,18 @@ echo "[7/12] cargo test --doc"
 retry 3 cargo test --doc --workspace --locked
 
 echo "[8/12] run examples"
-retry 3 cargo run --locked --bin basic
-retry 3 cargo run --locked --bin storage_example
-retry 3 cargo run --locked --bin native_contracts
-retry 3 cargo run --locked --bin proof_generation
-retry 3 cargo run --locked --bin batch_verification
-retry 3 cargo run --locked --bin private_inputs
-retry 3 cargo run --locked --bin tamper_resistance
+run_examples
 
-echo "[9/12] release SP1 proof smoke"
-retry 3 cargo run --release -p neo-zkvm-cli --features sp1 -- prove 12139E40 -m sp1
+echo "[9/12] release mock proof smoke"
+retry 3 cargo run --release -p neo-zkvm-cli -- prove 12139E40 -m mock
+
+# Optional: only when SP1 toolchain is present and not forced dummy.
+if [ "${SP1_FORCE_DUMMY:-}" != "true" ] && command -v cargo-prove >/dev/null 2>&1; then
+  echo "[9b/12] release SP1 proof smoke"
+  retry 3 cargo run --release -p neo-zkvm-cli --features sp1 -- prove 12139E40 -m sp1
+else
+  echo "[9b/12] skip SP1 proof smoke (no cargo-prove / SP1_FORCE_DUMMY set)"
+fi
 
 echo "[10/12] cargo deny advisories"
 cargo_deny_advisories

@@ -11,7 +11,7 @@ use super::StackItem;
 ///
 /// Any other value is invalid and will cause deserialization to fail in
 /// debug builds.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct ProofOutput {
     /// VM exit state: 0 = halt (success), 1 = fault.
     pub state: u8,

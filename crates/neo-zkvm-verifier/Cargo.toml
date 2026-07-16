@@ -4,14 +4,23 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/neo-zkvm-verifier"
+readme = "README.md"
 description = "Proof verification utilities for Neo zkVM"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 neo-vm-guest = { workspace = true }
-neo-zkvm-prover = { workspace = true }
+# Only needed for SP1 ELF / host verification; mock/execute verify without it.
+neo-zkvm-prover = { workspace = true, optional = true }
 sp1-sdk = { workspace = true, optional = true }
 bincode.workspace = true
 
+[dev-dependencies]
+neo-zkvm-prover = { workspace = true }
+
 [features]
 default = []
-sp1 = ["dep:sp1-sdk", "neo-zkvm-prover/sp1"]
+sp1 = ["dep:sp1-sdk", "dep:neo-zkvm-prover", "neo-zkvm-prover/sp1"]

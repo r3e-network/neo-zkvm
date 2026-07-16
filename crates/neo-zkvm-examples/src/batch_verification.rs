@@ -1,6 +1,6 @@
 use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
-use neo_zkvm_verifier::verify_detailed;
+use neo_zkvm_verifier::verify_detailed_for_mode;
 
 #[path = "batch_verification/batch_summary.rs"]
 mod batch_summary;
@@ -71,7 +71,8 @@ fn verify_jobs(jobs: &[BatchJob], proofs: &[NeoProof]) -> BatchSummary {
     let mut invalid_jobs = Vec::new();
 
     for (job, proof) in jobs.iter().zip(proofs.iter()) {
-        let verification = verify_detailed(proof);
+        // Pin mode to Mock for this demo batch — never use attacker-controlled mode alone.
+        let verification = verify_detailed_for_mode(proof, ProofMode::Mock);
         let result_matches = proof_result_integer(proof) == Some(job.expected_result);
 
         if verification.valid && result_matches {

@@ -3,9 +3,41 @@ use sha2::{Digest, Sha256};
 
 use super::{StackItem, interop_hash, pop_byte_arg};
 
-pub(super) struct ZkProofSyscalls;
+/// Deterministic zk-proof syscall host with runtime step metering.
+///
+/// Gas is charged per executed instruction via [`SyscallProvider::on_instruction`],
+/// so loops and dynamic control flow cannot under-charge relative to static
+/// bytecode length estimates.
+pub(super) struct ZkProofSyscalls {
+    /// Instructions executed so far (also reported as `gas_consumed`).
+    steps: u64,
+    /// Maximum instructions allowed before out-of-gas.
+    gas_limit: u64,
+}
+
+impl ZkProofSyscalls {
+    pub(super) fn new(gas_limit: u64) -> Self {
+        Self {
+            steps: 0,
+            gas_limit,
+        }
+    }
+
+    #[inline]
+    pub(super) fn steps(&self) -> u64 {
+        self.steps
+    }
+}
 
 impl SyscallProvider for ZkProofSyscalls {
+    fn on_instruction(&mut self, _opcode: u8) -> Result<(), String> {
+        self.steps = self.steps.saturating_add(1);
+        if self.steps > self.gas_limit {
+            return Err("Out of gas".to_string());
+        }
+        Ok(())
+    }
+
     fn syscall(&mut self, api: u32, _ip: usize, stack: &mut Vec<StackItem>) -> Result<(), String> {
         if api == interop_hash("System.Crypto.SHA256") {
             let bytes = pop_byte_arg(stack, "System.Crypto.SHA256")?;

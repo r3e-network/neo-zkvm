@@ -1,4 +1,4 @@
-﻿# Neo zkVM
+# Neo zkVM
 
 [![CI](https://github.com/r3e-network/neo-zkvm/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-zkvm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -7,11 +7,12 @@ A **production-grade** zero-knowledge virtual machine for Neo N3, enabling verif
 
 ## Features
 
-- ðŸ” **Real ZK Proofs** - SP1 integration for production-grade proving
-- Shared VM semantics - proof execution uses the canonical `neo-vm-rs` interpreter shared with Neo RISC-V VM
-- Neo N3 compatible - canonical NeoVM opcodes, stack values, and deterministic zk syscall adapters
-- Deterministic zk syscalls - hash/syscall adapters are constrained through the shared guest boundary
-- Developer tools - CLI with assembler, disassembler, execution trace, inspection, proving, and verification
+- **Real ZK Proofs** — SP1 integration for production-grade proving
+- **Shared VM semantics** — proof execution uses the canonical `neo-vm-rs` interpreter shared with Neo RISC-V VM
+- **Neo N3 compatible** — canonical NeoVM opcodes, stack values, and deterministic zk syscall adapters
+- **Runtime gas metering** — each executed instruction costs one gas unit (loops cannot under-charge)
+- **Deterministic zk syscalls** — hash/syscall adapters constrained through the shared guest boundary
+- **Developer tools** — CLI with assembler, disassembler, execution trace, inspection, proving, and verification
 
 ## Architecture
 
@@ -53,12 +54,15 @@ neo-zkvm prove 12139E40 -m groth16
 # Explicit SP1 mode with fallback allowed
 neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 
+# Save a serialized NeoProof
+neo-zkvm prove 12139E40 -m mock -o proof.bin
+
 # Valid modes: execute | mock | sp1 | plonk | groth16
 ```
 
 > For production SP1 proofs from a crates.io install, build from source with `--features sp1`, or reinstall with `NEO_ZKVM_PROGRAM_DIR=/path/to/neo-zkvm-program` so the SP1 guest ELF is compiled at install time.
 >
-> Explicit `-m sp1/plonk/groth16` now fails if it downgrades to `mock` unless you pass `--allow-fallback`.
+> Explicit `-m sp1/plonk/groth16` fails if it would downgrade to `mock` unless you pass `--allow-fallback`.
 
 ## Feature Model
 
@@ -85,6 +89,9 @@ SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo
 # Requires protoc and the Succinct/SP1 toolchain for the release proof smoke
 ./scripts/verify-production.sh
 
+# Core gates (fmt, clippy, tests, deny)
+./scripts/test.sh
+
 # Validate release notes/version metadata only
 ./scripts/verify-release-metadata.sh
 
@@ -98,9 +105,6 @@ SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo
 ./scripts/publish-crates.sh --plan
 ```
 
-A manual GitHub Actions release workflow is also available via `Actions -> Release -> Run workflow`
-with `plan` or `verify` mode for remote operator runs.
-
 ## Installation
 
 ### From Source
@@ -109,6 +113,8 @@ with `plan` or `verify` mode for remote operator runs.
 git clone https://github.com/r3e-network/neo-zkvm
 cd neo-zkvm
 cargo build --release
+# or
+./scripts/install.sh
 ```
 
 ### As Library
@@ -144,7 +150,7 @@ use neo_zkvm_verifier::verify_for_mode;
 use neo_vm_guest::ProofInput;
 
 let prover = NeoProver::new(ProverConfig {
-    proof_mode: ProofMode::Mock, // Use Mock for testing, Sp1/Plonk/Groth16 for production
+    proof_mode: ProofMode::Mock, // Use Mock for testing; Sp1/Plonk/Groth16 for production
     ..Default::default()
 });
 
@@ -155,14 +161,20 @@ let input = ProofInput {
 };
 
 let proof = prover.prove(input);
+// Always pin the expected mode — never pass proof.proof_mode as the expected value.
 assert!(verify_for_mode(&proof, ProofMode::Mock));
 ```
+
+> **Security note:** Bare `verify(&proof)` dispatches on the attacker-controlled
+> `proof.proof_mode` and accepts forgeable Mock/Execute proofs. Production
+> consumers that gate value on a proof **must** pin a succinct mode
+> (`Sp1` / `Plonk` / `Groth16`) via `verify_for_mode` with a compile-time constant.
 
 ## Supported Opcodes
 
 | Category     | Count | Examples                         |
 | ------------ | ----- | -------------------------------- |
-| Constants    | 25+   | PUSH0-16, PUSHDATA1-4, PUSHINT\* |
+| Constants    | 25+   | PUSH0-16, PUSHDATA1-4, PUSHINT*  |
 | Flow Control | 20+   | JMP, JMPIF, CALL, RET, ASSERT    |
 | Stack        | 15+   | DUP, SWAP, ROT, PICK, ROLL       |
 | Arithmetic   | 20+   | ADD, SUB, MUL, DIV, MOD, POW     |
@@ -172,11 +184,13 @@ assert!(verify_for_mode(&proof, ProofMode::Mock));
 
 ## Benchmarks
 
-```
+Representative local timings (host execution path; not SP1 proving):
+
+```text
 arithmetic/add      time: [82.3 ns 85.1 ns 88.2 ns]
 arithmetic/mul      time: [84.7 ns 87.3 ns 90.1 ns]
 stack/dup           time: [45.2 ns 46.8 ns 48.5 ns]
-loop/1000           time: [8.2 Âµs 8.5 Âµs 8.8 Âµs]
+loop/1000           time: [8.2 us 8.5 us 8.8 us]
 ```
 
 ## Documentation
@@ -193,11 +207,12 @@ loop/1000           time: [8.2 Âµs 8.5 Âµs 8.8 Âµs]
 - [Examples](examples/)
 
 ### Use Cases Included in Examples
-- **zk_dao_voting**: Anonymous DAO voting logic proving validity without revealing vote choices.
-- **zk_dex_rollup**: Zero-cost Layer 2 order matching proving thousands of transactions in a single verified root.
-- **zk_preimage**: Hash preimage proof demonstrating secret password handling.
-- **zk_scaling**: Complex algorithm scaling loop via Off-chain Computation.
+
+- **zk_dao_voting**: Anonymous DAO voting logic proving validity without revealing vote choices
+- **zk_dex_rollup**: Layer 2 order matching proving batches of transactions under a single root
+- **zk_preimage**: Hash preimage proof demonstrating secret password handling
+- **zk_scaling**: Off-chain computation scaling via verifiable execution
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)

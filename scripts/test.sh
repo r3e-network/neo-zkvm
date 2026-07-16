@@ -24,7 +24,11 @@ echo "[1/6] cargo fmt"
 cargo fmt --all -- --check
 
 echo "[2/6] cargo clippy"
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+# Default features only — full SP1 host deps need protoc + optional native libs.
+cargo clippy --workspace --all-targets --locked -- -D warnings
+
+echo "[2b/6] SP1 feature clippy (dummy ELF)"
+SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo-zkvm-cli --features sp1 --locked -- -D warnings
 
 echo "[3/6] cargo test"
 retry 3 cargo test --workspace --all-targets --locked

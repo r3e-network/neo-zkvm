@@ -22,10 +22,10 @@ A production proof release must be validated with a real SP1 guest ELF. Dummy SP
 ## Package Order
 
 1. `neo-vm-guest`
-2. `neo-zkvm-verifier`
-3. `neo-zkvm-prover`
+2. `neo-zkvm-prover`
+3. `neo-zkvm-verifier` (optional `sp1` feature depends on prover for ELF/host verify)
 4. `neo-zkvm-cli`
-5. `neo-zkvm-examples` remains unpublished
+5. `neo-zkvm-examples` remains unpublished (`publish = false`)
 
 ## Operator Checks
 
