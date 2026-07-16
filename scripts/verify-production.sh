@@ -43,6 +43,11 @@ run_examples() {
     zk_scaling
     zk_dao_voting
     zk_dex_rollup
+    zk_factors
+    zk_range
+    zk_membership
+    zk_selective_disclosure
+    zk_merkle_inclusion
   )
   for bin in "${bins[@]}"; do
     retry 3 cargo run --locked --bin "$bin"

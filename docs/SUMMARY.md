@@ -20,6 +20,7 @@
 - [Formal Verification](formal-verification.md)
 - [Completeness Proofs](completeness-proof.md)
 - [SP1 v6 Migration Notes](sp1-v6-migration-notes.md)
+- [Neo vs Ethereum zkVMs](ethereum-zkvm-comparison.md)
 
 # 中文
 

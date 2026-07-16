@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ethereum-style tutorial examples: `zk_factors`, `zk_range`, `zk_membership`, `zk_selective_disclosure`, `zk_merkle_inclusion`
+- Docs: `docs/ethereum-zkvm-comparison.md` (Neo vs SP1/RISC Zero/zkEVM mapping)
 - Expanded fuzz suite: `fuzz_raw_script`, `fuzz_proof_pipeline`, `fuzz_bincode`, `fuzz_assembler`
 - Shared structured opcode generators (crypto, arrays, control flow) in `fuzz/fuzz_targets/common.rs`
 - `./scripts/fuzz-all.sh` campaign runner

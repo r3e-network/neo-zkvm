@@ -212,14 +212,34 @@ execute/crypto/sha256
 - [Formal Verification](docs/formal-verification.md)
 - [Completeness Proofs](docs/completeness-proof.md)
 - [SP1 v6 Migration Notes](docs/sp1-v6-migration-notes.md)
+- [Neo vs Ethereum zkVMs](docs/ethereum-zkvm-comparison.md)
 - [Examples](examples/)
 
 ### Use Cases Included in Examples
 
-- **zk_dao_voting**: Anonymous DAO voting logic proving validity without revealing vote choices
-- **zk_dex_rollup**: Layer 2 order matching proving batches of transactions under a single root
-- **zk_preimage**: Hash preimage proof demonstrating secret password handling
-- **zk_scaling**: Off-chain computation scaling via verifiable execution
+**Core flows**
+
+- **basic / proof_generation / private_inputs / tamper_resistance / batch_verification**
+
+**Ethereum zkVM-style patterns** (see [docs/ethereum-zkvm-comparison.md](docs/ethereum-zkvm-comparison.md))
+
+| Example | Ethereum analogue | Proves |
+| --- | --- | --- |
+| `zk_factors` | RISC Zero / SP1 “hello factors” | Know \(p,q\) with \(n=p\cdot q\) |
+| `zk_range` | Range / balance threshold | Private balance ≥ public min |
+| `zk_membership` | Allowlist / set membership | Hash(secret) ∈ public set |
+| `zk_selective_disclosure` | JSON selective disclose | Age gate + reveal one field |
+| `zk_merkle_inclusion` | Merkle path inclusion | Node preimage = public root |
+| `zk_preimage` | Hash preimage | Know password for hash |
+| `zk_dao_voting` | Private governance | Vote eligibility predicate |
+| `zk_dex_rollup` / `zk_scaling` | Rollup / off-chain compute | Batch / heavy compute |
+
+```bash
+cargo run --locked --bin zk_factors
+cargo run --locked --bin zk_range
+cargo run --locked --bin zk_membership
+cargo run --locked --bin zk_merkle_inclusion
+```
 
 ## License
 

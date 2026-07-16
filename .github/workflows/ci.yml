@@ -123,6 +123,16 @@ jobs:
         run: cargo run --locked --bin zk_dao_voting
       - name: Run DEX rollup example
         run: cargo run --locked --bin zk_dex_rollup
+      - name: Run Ethereum-style factors example
+        run: cargo run --locked --bin zk_factors
+      - name: Run Ethereum-style range example
+        run: cargo run --locked --bin zk_range
+      - name: Run Ethereum-style membership example
+        run: cargo run --locked --bin zk_membership
+      - name: Run Ethereum-style selective disclosure example
+        run: cargo run --locked --bin zk_selective_disclosure
+      - name: Run Ethereum-style Merkle inclusion example
+        run: cargo run --locked --bin zk_merkle_inclusion
 
   # Run bounded fuzz smoke checks
   fuzz-smoke:

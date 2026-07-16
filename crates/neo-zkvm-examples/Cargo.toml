@@ -43,6 +43,27 @@ path = "src/zk_dao_voting.rs"
 name = "zk_dex_rollup"
 path = "src/zk_dex_rollup.rs"
 
+# Ethereum zkVM-style tutorial examples (RISC Zero / SP1 analogues)
+[[bin]]
+name = "zk_factors"
+path = "src/zk_factors.rs"
+
+[[bin]]
+name = "zk_range"
+path = "src/zk_range.rs"
+
+[[bin]]
+name = "zk_membership"
+path = "src/zk_membership.rs"
+
+[[bin]]
+name = "zk_selective_disclosure"
+path = "src/zk_selective_disclosure.rs"
+
+[[bin]]
+name = "zk_merkle_inclusion"
+path = "src/zk_merkle_inclusion.rs"
+
 [dependencies]
 neo-vm-guest = { workspace = true }
 neo-zkvm-prover = { workspace = true }
