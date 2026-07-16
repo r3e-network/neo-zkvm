@@ -23,6 +23,7 @@
 - [Neo vs Ethereum zkVMs](ethereum-zkvm-comparison.md)
 - [Solution for current Neo N3](neo-n3-solution.md)
 - [Neo N3 attestation settlement](neo-n3-attestation.md)
+- [Neo N3 crypto surface (BLS / pairings / BN254)](neo-n3-crypto-surface.md)
 - [Roadmap](ROADMAP.md)
 
 # 中文

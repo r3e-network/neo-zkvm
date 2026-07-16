@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `neo-zkvm-attestation`: canonical settlement digests + N-of-M secp256r1 ECDSA for Neo N3 (contracts-only path)
 - Neo N3 contract sketch `contracts/neo-n3/NeoZkAttestation`
 - Example `zk_attestation_settlement` (prove → attest → threshold verify)
-- Docs: `docs/neo-n3-attestation.md`, `docs/ROADMAP.md`; settlement architecture in `neo-n3-solution.md`
+- Docs: `docs/neo-n3-attestation.md`, `docs/neo-n3-crypto-surface.md` (BLS12-381 vs BN254 vs pairings), `docs/ROADMAP.md`; settlement architecture in `neo-n3-solution.md`
 - Ethereum-style tutorial examples: `zk_factors`, `zk_range`, `zk_membership`, `zk_selective_disclosure`, `zk_merkle_inclusion`
 - Docs: `docs/ethereum-zkvm-comparison.md` (Neo vs SP1/RISC Zero/zkEVM mapping)
 - Expanded fuzz suite: `fuzz_raw_script`, `fuzz_proof_pipeline`, `fuzz_bincode`, `fuzz_assembler`

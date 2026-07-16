@@ -63,3 +63,5 @@ Contract sketch: `contracts/neo-n3/NeoZkAttestation/`
 **Best stack for current Neo N3 without system changes:**
 
 `neo-vm-rs` + SP1 Groth16 (off-chain) + `neo-zkvm-attestation` + Neo contract N-of-M ECDSA.
+
+**About BLS12-381 on Neo:** useful for **attestor aggregation** or future **pairing-based SNARK verify** only if CryptoLib exposes the right ops and the proof curve matches. Default SP1 EVM Groth16 is **BN254**. Details: [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md).

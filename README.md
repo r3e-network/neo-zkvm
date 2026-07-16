@@ -251,6 +251,7 @@ cargo run --locked --bin zk_attestation_settlement
 | --- | --- |
 | Attestation ABI + Rust N-of-M ECDSA | `crates/neo-zkvm-attestation` |
 | Contract sketch (C#) | `contracts/neo-n3/NeoZkAttestation` |
+| Crypto surface (BLS vs pairings vs BN254) | [docs/neo-n3-crypto-surface.md](docs/neo-n3-crypto-surface.md) |
 | Roadmap | [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## License

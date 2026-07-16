@@ -59,13 +59,30 @@ AttestationBundle ──────────────────► Cont
 - [ ] First app (e.g. factors / membership settlement)
 - [ ] Optional: optimistic challenge path (T3)
 
-### Phase 5 — Stretch (requires Neo crypto upgrades or heavy gas)
+### Phase 5 — BLS-sig attestors (Path A′)
 
-- [ ] Native pairing / Groth16 precompile on Neo (protocol change — out of scope unless Neo adds it)
-- [ ] Full on-chain SNARK verify without attestors
+*Only when target Neo version documents BLS12-381 **signature** natives (not assumed on all N3 builds).*
+
+- [ ] Inventory CryptoLib BLS methods per Neo version (`docs/neo-n3-crypto-surface.md`)
+- [ ] Optional `neo-zkvm-attestation` feature: BLS aggregate sign/verify (e.g. `blst`)
+- [ ] Neo contract variant: one aggregate BLS verify instead of N× ECDSA
+- [ ] Gas comparison ECDSA N-of-M vs BLS aggregate
+
+### Phase 6 — On-chain SNARK verify (Path B/C)
+
+*Only if Neo exposes **pairings** (multi-pair check), not merely BLS signatures.*
+
+- [ ] Confirm curve: **BN254** (Path B, matches default SP1 EVM Groth16) vs **BLS12-381** (Path C)
+- [ ] If BN254 pairings: wire SP1 Groth16/PLONK verifier contract on Neo
+- [ ] If BLS12-381 pairings only: evaluate BLS12-381 SNARK wrapper (not stock SP1→BN254)
+- [ ] Public-input field encoding + VK storage + gas benchmarking
+- [ ] Keep Path A as fallback until Path B/C is audited
+
+See [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md) for the decision matrix.
 
 ## Non-goals
 
-- Changing Neo node / NeoVM / native syscalls
+- Claiming “Neo has BLS ⇒ SP1 Groth16 verifies on-chain” without pairing + curve match
+- Changing Neo node / NeoVM unless Neo ships natives we only *consume*
 - Using Mock proofs for value settlement
 - Silent SP1 → Mock fallback on settlement path

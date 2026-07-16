@@ -2,12 +2,20 @@
 
 ## Why attestation?
 
-Current Neo N3 smart contracts can use **SHA256** and **ECDSA** (`VerifyWithECDsa`), but **not** cheap BN254 pairings like Ethereum’s Groth16 precompile.
+Current Neo N3 smart contracts can use **SHA256** and **ECDSA** (`VerifyWithECDsa`). Some Neo builds discuss or add **BLS12-381** support; that is **not the same** as Ethereum’s BN254 Groth16 precompile.
 
-Therefore the **mature, deployable** settlement path is:
+| Neo crypto | On-chain settlement role |
+| --- | --- |
+| ECDSA (secp256r1/k1) | Path A: N-of-M attestor signatures (**implemented**) |
+| BLS signatures (if present) | Path A′: aggregate attestor signatures (roadmap) |
+| Pairings BN254 / BLS12-381 (if present) | Path B/C: direct SNARK verify (roadmap; curve must match proof) |
+
+**Important:** Default **SP1 Groth16 for EVM** targets **BN254**. Neo BLS12-381 does **not** automatically verify those proofs. See [neo-n3-crypto-surface.md](neo-n3-crypto-surface.md).
+
+Therefore the **mature, deployable** settlement path **today** is:
 
 1. **Off-chain:** prove NeoVM with SP1 (Groth16/PLONK) and verify the proof.
-2. **On-chain:** Neo contract checks **N-of-M ECDSA signatures** over a canonical digest of the public claim, then applies business logic.
+2. **On-chain:** Neo contract checks **N-of-M ECDSA** (or later BLS-sig) over a canonical digest, then applies business logic.
 
 No Neo protocol changes — only contract deploy.
 
