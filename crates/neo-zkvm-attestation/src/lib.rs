@@ -89,7 +89,7 @@ pub struct AttestationClaim {
 /// One ECDSA signature over the claim digest.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttestorSignature {
-    /// Uncompressed SEC1 public key bytes (0x04 ‖ X ‖ Y), 65 bytes.
+    /// SEC1 public key: compressed (33 bytes, preferred for Neo) or uncompressed (65).
     pub public_key: Vec<u8>,
     /// Compact signature (r ‖ s), 64 bytes.
     pub signature: Vec<u8>,
@@ -136,7 +136,10 @@ impl AttestationConfig {
         let mut attestors = Vec::with_capacity(self.attestors.len());
         for hex_key in &self.attestors {
             let pk = parse_hex_bytes(hex_key)?;
-            if pk.len() != 65 || pk[0] != 0x04 {
+            // Accept compressed (33) or uncompressed (65) SEC1 keys.
+            let ok_len = (pk.len() == 33 && (pk[0] == 0x02 || pk[0] == 0x03))
+                || (pk.len() == 65 && pk[0] == 0x04);
+            if !ok_len {
                 return Err(AttestationError::InvalidPublicKey);
             }
             // Reject duplicates in the authorized set.
@@ -320,14 +323,22 @@ impl AttestorKeypair {
         vk.to_encoded_point(false).as_bytes().to_vec()
     }
 
+    /// Compressed SEC1 public key (33 bytes, 0x02/0x03-prefixed).
+    /// Preferred for Neo N3 storage keys (max 64 bytes) and `ECPoint` casting.
+    pub fn public_key_compressed(&self) -> Vec<u8> {
+        let vk = VerifyingKey::from(&self.signing);
+        vk.to_encoded_point(true).as_bytes().to_vec()
+    }
+
     /// Sign the 32-byte attestation digest.
     ///
     /// Uses ECDSA-SHA256 over the digest bytes (same as Neo
     /// `VerifyWithECDsa(digest, pk, sig, secp256r1SHA256)`).
+    /// Public key is **compressed** (33 bytes) for Neo contract compatibility.
     pub fn sign_digest(&self, digest: &[u8; 32]) -> Result<AttestorSignature, AttestationError> {
         let sig: Signature = self.signing.sign(digest);
         Ok(AttestorSignature {
-            public_key: self.public_key_uncompressed(),
+            public_key: self.public_key_compressed(),
             signature: sig.to_bytes().to_vec(),
         })
     }
@@ -348,8 +359,10 @@ pub fn sign_claim(
 
 fn verify_one(digest: &[u8; 32], sig: &AttestorSignature) -> Result<(), AttestationError> {
     // SEC1: compressed 33 bytes (02/03‖X) or uncompressed 65 bytes (04‖X‖Y).
-    let pk_len = sig.public_key.len();
-    if pk_len != 33 && pk_len != 65 {
+    let pk = &sig.public_key;
+    let pk_ok = (pk.len() == 33 && (pk[0] == 0x02 || pk[0] == 0x03))
+        || (pk.len() == 65 && pk[0] == 0x04);
+    if !pk_ok {
         return Err(AttestationError::InvalidPublicKey);
     }
     // Compact (r ‖ s) only — 64 bytes. Reject DER/mixed lengths early.
@@ -617,9 +630,9 @@ mod tests {
         let claim = sample_claim(ProofModeCode::Groth16);
         let bundle = attest_bundle(claim.clone(), &[&k1, &k2], false).unwrap();
         let authorized = vec![
-            k1.public_key_uncompressed(),
-            k2.public_key_uncompressed(),
-            k3.public_key_uncompressed(),
+            k1.public_key_compressed(),
+            k2.public_key_compressed(),
+            k3.public_key_compressed(),
         ];
         verify_threshold(&bundle.claim, &bundle.signatures, &authorized, 2, false).unwrap();
     }
@@ -630,7 +643,7 @@ mod tests {
         let k2 = AttestorKeypair::generate();
         let claim = sample_claim(ProofModeCode::Plonk);
         let bundle = attest_bundle(claim.clone(), &[&k1], false).unwrap();
-        let authorized = vec![k1.public_key_uncompressed(), k2.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed(), k2.public_key_compressed()];
         let err = verify_threshold(&claim, &bundle.signatures, &authorized, 2, false).unwrap_err();
         assert!(matches!(
             err,
@@ -646,7 +659,7 @@ mod tests {
         assert!(matches!(err, AttestationError::UnsafeProofMode));
         // Explicit opt-in for tests/demos
         let sig = sign_claim(&k1, &claim, true).unwrap();
-        let authorized = vec![k1.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed()];
         verify_threshold(&claim, &[sig], &authorized, 1, true).unwrap();
     }
 
@@ -656,7 +669,7 @@ mod tests {
         let k2 = AttestorKeypair::generate();
         let claim = sample_claim(ProofModeCode::Sp1);
         let sig = sign_claim(&k1, &claim, false).unwrap();
-        let authorized = vec![k2.public_key_uncompressed()];
+        let authorized = vec![k2.public_key_compressed()];
         let err = verify_threshold(&claim, &[sig], &authorized, 1, false).unwrap_err();
         assert!(matches!(err, AttestationError::UnauthorizedAttestor));
     }
@@ -693,8 +706,8 @@ mod tests {
             network_magic: bundle.claim.network_magic,
             threshold: 2,
             attestors: vec![
-                hex::encode(k1.public_key_uncompressed()),
-                hex::encode(k2.public_key_uncompressed()),
+                hex::encode(k1.public_key_compressed()),
+                hex::encode(k2.public_key_compressed()),
             ],
         };
         let parsed = cfg.parse().unwrap();
@@ -706,7 +719,7 @@ mod tests {
         let k = AttestorKeypair::generate();
         let hex_sk = hex::encode(k.to_bytes());
         let k2 = AttestorKeypair::from_hex(&hex_sk).unwrap();
-        assert_eq!(k.public_key_uncompressed(), k2.public_key_uncompressed());
+        assert_eq!(k.public_key_compressed(), k2.public_key_compressed());
     }
 
     #[test]
@@ -734,7 +747,7 @@ mod tests {
         let k1 = AttestorKeypair::generate();
         let claim = sample_claim(ProofModeCode::Groth16);
         let sig = sign_claim(&k1, &claim, false).unwrap();
-        let authorized = vec![k1.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed()];
         let err =
             verify_threshold(&claim, &[sig.clone(), sig], &authorized, 1, false).unwrap_err();
         assert!(matches!(err, AttestationError::DuplicateAttestor));
@@ -744,7 +757,7 @@ mod tests {
     fn rejects_empty_signature_list() {
         let k1 = AttestorKeypair::generate();
         let claim = sample_claim(ProofModeCode::Groth16);
-        let authorized = vec![k1.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed()];
         let err = verify_threshold(&claim, &[], &authorized, 1, false).unwrap_err();
         assert!(matches!(
             err,
@@ -764,7 +777,7 @@ mod tests {
         let k1 = AttestorKeypair::generate();
         let claim = sample_claim(ProofModeCode::Plonk);
         let sig = sign_claim(&k1, &claim, false).unwrap();
-        let authorized = vec![k1.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed()];
         let err = verify_threshold(&claim, &[sig], &authorized, 2, false).unwrap_err();
         assert!(matches!(
             err,
@@ -778,7 +791,7 @@ mod tests {
         let claim = sample_claim(ProofModeCode::Groth16);
         let mut sig = sign_claim(&k1, &claim, false).unwrap();
         sig.signature.pop(); // 63 bytes
-        let authorized = vec![k1.public_key_uncompressed()];
+        let authorized = vec![k1.public_key_compressed()];
         let err = verify_threshold(&claim, &[sig], &authorized, 1, false).unwrap_err();
         assert!(matches!(err, AttestationError::InvalidSignature));
     }
@@ -792,7 +805,7 @@ mod tests {
             program_id: format!("0x{}", hex::encode(bundle.claim.program_id)),
             network_magic: bundle.claim.network_magic,
             threshold: 1,
-            attestors: vec![format!("0x{}", hex::encode(k1.public_key_uncompressed()))],
+            attestors: vec![format!("0x{}", hex::encode(k1.public_key_compressed()))],
         };
         let parsed = cfg.parse().unwrap();
         verify_bundle(&bundle, &parsed, false).unwrap();
@@ -807,7 +820,7 @@ mod tests {
             program_id: hex::encode(bundle.claim.program_id),
             network_magic: bundle.claim.network_magic,
             threshold: 1,
-            attestors: vec![hex::encode(k1.public_key_uncompressed())],
+            attestors: vec![hex::encode(k1.public_key_compressed())],
         }
         .parse()
         .unwrap();

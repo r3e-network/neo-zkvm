@@ -1,11 +1,5 @@
-// Neo N3 smart-contract for neo-zkvm attestation settlement (Path A).
-// Compile with Neo.SmartContract.Framework (Neo N3 DevPack).
-//
-// Architecture: SP1 verify off-chain → N-of-M secp256r1 ECDSA on Neo.
-// Wire format MUST match crates/neo-zkvm-attestation (docs/neo-n3-attestation.md).
-//
-// BLS12-381: optional Path A′ / B / C only when CryptoLib exposes the needed
-// natives AND the curve matches the proof system — not required for this contract.
+// Neo N3 attestation settlement — Path A (N-of-M ECDSA after off-chain SP1 verify).
+// Wire format matches crates/neo-zkvm-attestation (docs/neo-n3-attestation.md).
 
 using System;
 using System.ComponentModel;
@@ -22,9 +16,8 @@ namespace Neo.Zkvm.Attestation
     [ManifestExtra("Author", "neo-zkvm")]
     [ManifestExtra("Description", "N-of-M ECDSA settlement for neo-zkvm public claims")]
     [ContractPermission("*", "*")]
-    public class NeoZkAttestation : SmartContract
+    public class NeoZkAttestation : Neo.SmartContract.Framework.SmartContract
     {
-        // proof_mode codes — must match ProofModeCode in Rust
         private const byte ModeExecute = 0;
         private const byte ModeMock = 1;
         private const byte ModeSp1 = 2;
@@ -33,7 +26,6 @@ namespace Neo.Zkvm.Attestation
 
         private static readonly byte[] DomainTag = "neo-zkvm-attestation-v1".ToByteArray();
 
-        // Storage prefixes
         private static readonly byte[] PrefixConfig = new byte[] { 0x01 };
         private static readonly byte[] PrefixAttestor = new byte[] { 0x02 };
         private static readonly byte[] PrefixNonce = new byte[] { 0x03 };
@@ -42,10 +34,6 @@ namespace Neo.Zkvm.Attestation
         public static event Action<UInt256> ClaimSettled;
         public static event Action<string> SettlementFailed;
 
-        /// <summary>
-        /// One-time setup: program id, network magic, threshold, attestor pubkeys.
-        /// Uncompressed SEC1 pubkeys (65 bytes, 0x04-prefixed) recommended.
-        /// </summary>
         public static void Initialize(byte[] programId, uint networkMagic, BigInteger threshold, byte[][] attestorPubKeys)
         {
             if (Storage.Get(Storage.CurrentContext, KeyInitialized) != null)
@@ -64,7 +52,6 @@ namespace Neo.Zkvm.Attestation
                 var pk = attestorPubKeys[i];
                 if (pk == null || (pk.Length != 33 && pk.Length != 65))
                     throw new Exception("attestor pubkey must be 33 or 65 bytes");
-                // Reject duplicates in the committee set.
                 for (int j = 0; j < i; j++)
                 {
                     if (BytesEqual(pk, attestorPubKeys[j]))
@@ -72,22 +59,25 @@ namespace Neo.Zkvm.Attestation
                 }
             }
 
-            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }), programId);
+            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }), (ByteString)programId);
             Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x01 }), networkMagic);
             Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x02 }), threshold);
 
             for (int i = 0; i < attestorPubKeys.Length; i++)
             {
-                Storage.Put(Storage.CurrentContext, PrefixAttestor.Concat(attestorPubKeys[i]), 1);
+                // Neo storage keys max 64 bytes; 0x02‖65-byte SEC1 is too long.
+                // Store by SHA256(pubkey) so both compressed (33) and uncompressed (65) fit.
+                Storage.Put(Storage.CurrentContext, AttestorKey(attestorPubKeys[i]), 1);
             }
 
             Storage.Put(Storage.CurrentContext, KeyInitialized, 1);
         }
 
-        /// <summary>
-        /// Submit an attestation bundle. Fixed-size fields are explicit so
-        /// Neo contracts rebuild the digest without a full bincode parser.
-        /// </summary>
+        private static byte[] AttestorKey(byte[] pubkey)
+        {
+            return PrefixAttestor.Concat((byte[])CryptoLib.Sha256((ByteString)pubkey));
+        }
+
         public static bool Submit(
             byte[] programId,
             byte proofMode,
@@ -108,7 +98,6 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- validate field sizes ---
             if (programId == null || scriptHash == null || inputHash == null
                 || outputHash == null || appClaimHash == null || nonce == null)
             {
@@ -128,7 +117,6 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- reject non-production modes ---
             if (proofMode == ModeExecute || proofMode == ModeMock)
             {
                 SettlementFailed("mock/execute not allowed");
@@ -140,8 +128,7 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- config checks ---
-            var cfgProgram = Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }));
+            var cfgProgram = (byte[])(ByteString)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }));
             var cfgMagic = (uint)(BigInteger)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x01 }));
             var threshold = (BigInteger)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x02 }));
 
@@ -156,7 +143,6 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- replay protection ---
             var nonceKey = PrefixNonce.Concat(nonce);
             if (Storage.Get(Storage.CurrentContext, nonceKey) != null)
             {
@@ -164,12 +150,10 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- recompute digest (must match Rust attestation_digest) ---
             byte[] digest = ComputeDigest(
                 programId, proofMode, scriptHash, inputHash, outputHash,
                 gasConsumed, executionSuccess, appClaimHash, networkMagic, nonce);
 
-            // --- N-of-M ECDSA (secp256r1) with duplicate rejection ---
             BigInteger valid = 0;
             for (int i = 0; i < publicKeys.Length; i++)
             {
@@ -180,13 +164,11 @@ namespace Neo.Zkvm.Attestation
                     SettlementFailed("null sig entry");
                     return false;
                 }
-                // Signature: 64-byte compact r||s (Neo also accepts ASN.1 on some builds).
                 if (sig.Length != 64 && sig.Length != 65)
                 {
                     SettlementFailed("bad signature length");
                     return false;
                 }
-                // Reject duplicate attestors in this submission.
                 for (int j = 0; j < i; j++)
                 {
                     if (BytesEqual(pk, publicKeys[j]))
@@ -195,15 +177,16 @@ namespace Neo.Zkvm.Attestation
                         return false;
                     }
                 }
-                if (Storage.Get(Storage.CurrentContext, PrefixAttestor.Concat(pk)) == null)
+                if (Storage.Get(Storage.CurrentContext, AttestorKey(pk)) == null)
                 {
                     SettlementFailed("unauthorized attestor");
                     return false;
                 }
-                // Neo N3: VerifyWithECDsa hashes the message with SHA256 when using
-                // secp256r1SHA256. Rust p256 Signer does the same over the 32-byte digest
-                // (double-hash of the preimage). Keep both sides aligned.
-                if (!CryptoLib.VerifyWithECDsa(digest, pk, sig, NamedCurveHash.secp256r1SHA256))
+                if (!CryptoLib.VerifyWithECDsa(
+                        (ByteString)digest,
+                        (ECPoint)(ByteString)pk,
+                        (ByteString)sig,
+                        NamedCurveHash.secp256r1SHA256))
                 {
                     SettlementFailed("bad signature");
                     return false;
@@ -217,19 +200,14 @@ namespace Neo.Zkvm.Attestation
                 return false;
             }
 
-            // --- commit nonce + settle ---
             Storage.Put(Storage.CurrentContext, nonceKey, 1);
-            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x10 }), appClaimHash);
-            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x11 }), digest);
+            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x10 }), (ByteString)appClaimHash);
+            Storage.Put(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x11 }), (ByteString)digest);
 
-            ClaimSettled((UInt256)digest);
+            ClaimSettled((UInt256)(ByteString)digest);
             return true;
         }
 
-        /// <summary>
-        /// Canonical SHA256 digest — lockstep with neo_zkvm_attestation::attestation_digest.
-        /// All multi-byte integers are little-endian.
-        /// </summary>
         private static byte[] ComputeDigest(
             byte[] programId,
             byte proofMode,
@@ -255,7 +233,7 @@ namespace Neo.Zkvm.Attestation
                 .Concat(UInt32ToLeBytes(networkMagic))
                 .Concat(nonce);
 
-            return CryptoLib.Sha256(preimage);
+            return (byte[])CryptoLib.Sha256((ByteString)preimage);
         }
 
         private static byte[] UInt64ToLeBytes(ulong value)
@@ -303,26 +281,31 @@ namespace Neo.Zkvm.Attestation
             return true;
         }
 
+        [Safe]
         public static byte[] GetProgramId()
         {
-            return Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }));
+            return (byte[])(ByteString)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x00 }));
         }
 
+        [Safe]
         public static BigInteger GetThreshold()
         {
             return (BigInteger)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x02 }));
         }
 
+        [Safe]
         public static byte[] GetLastAppClaimHash()
         {
-            return Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x10 }));
+            return (byte[])(ByteString)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x10 }));
         }
 
+        [Safe]
         public static byte[] GetLastDigest()
         {
-            return Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x11 }));
+            return (byte[])(ByteString)Storage.Get(Storage.CurrentContext, PrefixConfig.Concat(new byte[] { 0x11 }));
         }
 
+        [Safe]
         public static bool IsNonceUsed(byte[] nonce)
         {
             if (nonce == null || nonce.Length != 32) return false;

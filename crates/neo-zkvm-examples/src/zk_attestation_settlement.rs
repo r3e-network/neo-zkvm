@@ -77,9 +77,9 @@ fn main() {
     let a3 = AttestorKeypair::generate();
     let bundle = attest_bundle(claim.clone(), &[&a1, &a2], true /* demo Mock */).unwrap();
     let authorized = vec![
-        a1.public_key_uncompressed(),
-        a2.public_key_uncompressed(),
-        a3.public_key_uncompressed(),
+        a1.public_key_compressed(),
+        a2.public_key_compressed(),
+        a3.public_key_compressed(),
     ];
     verify_threshold(&bundle.claim, &bundle.signatures, &authorized, 2, true).unwrap();
     println!(
@@ -120,7 +120,7 @@ mod tests {
             nonce: [5u8; 32],
         };
         let bundle = attest_bundle(claim.clone(), &[&k1, &k2], false).unwrap();
-        let auth = vec![k1.public_key_uncompressed(), k2.public_key_uncompressed()];
+        let auth = vec![k1.public_key_compressed(), k2.public_key_compressed()];
         verify_threshold(&claim, &bundle.signatures, &auth, 2, false).unwrap();
     }
 }

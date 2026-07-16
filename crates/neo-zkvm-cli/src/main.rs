@@ -543,7 +543,7 @@ fn cmd_attest_keygen(output: Option<PathBuf>) -> Result<(), String> {
     }
     let kp = AttestorKeypair::generate();
     let secret = hex::encode(kp.to_bytes());
-    let public = hex::encode(kp.public_key_uncompressed());
+    let public = hex::encode(kp.public_key_compressed());
     let json = serde_json::json!({
         "curve": "secp256r1",
         "secret_key": secret,
