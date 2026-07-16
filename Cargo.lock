@@ -2118,7 +2118,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "neo-vm-guest"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bincode 2.0.1",
  "criterion",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-attestation"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "ecdsa",
  "hex",
@@ -2155,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-cli"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "clap",
  "hex",
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-examples"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "hex",
  "neo-vm-guest",
@@ -2182,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-program"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bincode 2.0.1",
  "neo-vm-guest",
@@ -2193,7 +2193,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-prover"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bincode 2.0.1",
  "neo-vm-guest",
@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "neo-zkvm-verifier"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "bincode 2.0.1",
  "neo-vm-guest",

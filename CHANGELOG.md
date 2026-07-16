@@ -7,73 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Assembler macro expansion uses whole-token substitution (param `x` no longer rewrites `max`)
-- Macro body lines re-run sugar expansion (e.g. `PUSH n` inside macros works)
-- SP1 guest commits public inputs via workspace `bincode_serialize` + `commit_slice` (aligned with host decode)
-- `ProverConfig::default` proof mode is `Mock` without `sp1` feature (matches CLI)
-- Verifier crate docs/examples pin `verify_for_mode` instead of bare `verify`
-- CI runs SP1-feature unit tests under `SP1_FORCE_DUMMY`
+## [0.3.0] - 2026-07-16
 
 ### Added
 
-- `neo-zkvm-attestation`: canonical settlement digests + N-of-M secp256r1 ECDSA for Neo N3 (contracts-only path)
-- Neo N3 contract sketch `contracts/neo-n3/NeoZkAttestation`
-- Example `zk_attestation_settlement` (prove → attest → threshold verify)
-- Docs: `docs/neo-n3-attestation.md`, `docs/neo-n3-crypto-surface.md` (BLS12-381 vs BN254 vs pairings), `docs/ROADMAP.md`; settlement architecture in `neo-n3-solution.md`
-- Ethereum-style tutorial examples: `zk_factors`, `zk_range`, `zk_membership`, `zk_selective_disclosure`, `zk_merkle_inclusion`
-- Docs: `docs/ethereum-zkvm-comparison.md` (Neo vs SP1/RISC Zero/zkEVM mapping)
-- Expanded fuzz suite: `fuzz_raw_script`, `fuzz_proof_pipeline`, `fuzz_bincode`, `fuzz_assembler`
-- Shared structured opcode generators (crypto, arrays, control flow) in `fuzz/fuzz_targets/common.rs`
-- `./scripts/fuzz-all.sh` campaign runner
-- `neo-zkvm-cli` library surface for reusing Assembler/Disassembler in fuzz/tests
-- Fuzz target `fuzz_vm_execution` type error: arguments are now `StackItem::ByteString` (CI fuzz-smoke was broken)
-- Legacy `NeoProof` deserialize no longer rejects valid Execute-mode proofs with zero `vkey_hash`
-- `prove_strict` rejects execution faults in all modes (not only SP1/Plonk/Groth16)
-- CLI `debug` exits non-zero on Fault (parity with `run`)
-- Packaging docs/scripts clarify that crates.io publish requires published `neo-vm-rs`
-- Workspace `neo-vm-rs` dependency declares a version for packaging metadata
-- `docs/api-reference.md` no longer teaches `verify_for_mode(&proof, proof.proof_mode)` (security anti-pattern)
-- Prover `build.rs` always overwrites dummy ELF markers (no stale real ELF under force-dummy)
-- CLI rejects `.nef` containers instead of treating them as raw script
-- CLI default prove mode is `mock` without SP1 feature (was always `sp1`)
-- Assembler rejects `CHECKSIG` with a clear guest-unsupported error
-- Examples/tests pin `verify_for_mode(..., Mock)` instead of bare `verify`
-- `hash_data` / commitment docs corrected (domain-separated zkVM digests, not Neo Hash256)
-- Opcode gas docs match runtime metering (1 gas per executed instruction)
-- `verify_with_vkey` applies proof size cap and mode/type consistency
-- Dropped unused `sp1-build` build-dep from `neo-zkvm-program`
-- Privacy demos declare Mock/protocol limitations honestly
+- **Neo N3 settlement path (Path A):** prove NeoVM off-chain with SP1/Mock; settle with N-of-M secp256r1 ECDSA on-chain (no protocol change)
+- `neo-zkvm-attestation` crate: canonical domain-separated digests, claim/bundle JSON, committee config, compressed SEC1 keys
+- CLI `neo-zkvm attest` (`keygen`, `digest`, `sign`, `bundle`, `check`)
+- Compilable Neo N3 contract `contracts/neo-n3/NeoZkAttestation` (nccs / Framework 3.9.1)
+- Example `zk_attestation_settlement` and Ethereum-style samples: `zk_factors`, `zk_range`, `zk_membership`, `zk_merkle_inclusion`, `zk_selective_disclosure`
+- Docs: `neo-n3-solution.md`, `neo-n3-attestation.md`, `neo-n3-crypto-surface.md`, `ethereum-zkvm-comparison.md`, `ROADMAP.md`
+- Fuzz targets: `fuzz_attestation`, plus expanded `fuzz_raw_script` / `fuzz_proof_pipeline` / `fuzz_bincode` / `fuzz_assembler`
+- Continuous fuzz runner `./scripts/fuzz-continuous.sh`
+- CLI `verify` and `prove -o` for serialized `NeoProof` files
+
+### Fixed
+
+- Neo storage attestor keys use `SHA256(pubkey)` (Neo max key length 64B; raw SEC1-65 overflowed)
+- Attestor signatures use **compressed** SEC1 pubkeys for Neo `ECPoint` / `VerifyWithECDsa`
+- POW DoS hang: pin `neo-vm-rs` with exponent/size guards before `BigInt::pow`
+- StackValue bincode serde restored via `neo-vm-rs` enum deserialize (index + name)
+- Assembler macro whole-token substitution; sugar re-expansion inside macros
+- Legacy Execute `NeoProof` deserialize with zero vkey; `prove_strict` faults all modes
+- CLI rejects `.nef` containers; default prove mode is Mock without SP1 feature
+- Fuzz RSS false-positives: campaigns use `-rss_limit_mb=0` + `-malloc_limit_mb=256`
 
 ### Changed
 
-- Guest execution meters gas at runtime (one unit per executed instruction via `on_instruction`), so loops cannot under-charge relative to static bytecode estimates
-- CLI `prove` verifies with `verify_for_mode` pinned to the actual proof mode (never bare attacker-controlled dispatch)
-- CLI `run` exits non-zero on Fault for scripting-friendly automation
-- CLI argument parsing migrated to `clap` derive (same flags; generated `--help`)
-- Deterministic crypto helpers extracted to `neo_vm_guest::crypto` and shared by guest + CLI debug host
-- Mock proof serialization is fallible (no panic on encode failure)
-- `verify_with_vkey` rejects Mock/Execute proofs (fail closed for succinct vkey verification)
-- `neo-zkvm-verifier` depends on `neo-zkvm-prover` only under the optional `sp1` feature
-- CLI `debug` accepts `--gas` and meters steps like the proof guest
+- Workspace depends on `neo-vm-rs` `0.2.0` (git rev with POW guards + StackValue wire format)
+- Guest gas metered per executed instruction; CLI prove/verify mode-pinned
+- Publish order: guest → prover → verifier → **attestation** → cli
 
-### Added
+### Security / testnet
 
-- CLI `verify` subcommand for serialized `NeoProof` files (`prove -o` → `verify -m`)
-- CLI `-o` / `--output` to write a serialized `NeoProof` after successful prove
-- Deterministic guest crypto syscalls: `RIPEMD160`, `Hash160`, `Hash256` (in addition to `SHA256`)
-- Assembler `HASH256` mnemonic for `System.Crypto.Hash256`
-- Criterion benches in `neo-vm-guest` (`cargo bench -p neo-vm-guest --bench execute`)
-- Release operator scripts: `verify-release-metadata.sh`, `verify-packaging.sh`, `release.sh`, `publish-crates.sh`
-- Crates.io package metadata (keywords, categories, homepage, documentation) on publishable crates
-- `rust-toolchain.toml` documenting the Rust 1.88 floor
-
-### Fixed
-
-- `verify-production.sh` referenced non-existent example binaries (`storage_example`, `native_contracts`); now runs the real example set
-- README encoding corruption and stale security guidance
-- Hardcoded CLI version string now uses `CARGO_PKG_VERSION`
+- Path A validated on **Neo N3 T5** (deploy, initialize 2-of-3, reject Mock, settle multi-case claims, reject replay)
+- Mock/Execute rejected for settlement; production must use SP1/Plonk/Groth16 verify before attest
 
 ## [0.2.2] - 2026-02-23
 

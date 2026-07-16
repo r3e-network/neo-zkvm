@@ -29,7 +29,7 @@ while IFS= read -r crate_toml; do
 done < <(find crates -name Cargo.toml -print | sort)
 
 # Workspace path dependency versions should match the release version.
-for dep in neo-vm-guest neo-zkvm-prover neo-zkvm-verifier; do
+for dep in neo-vm-guest neo-zkvm-prover neo-zkvm-verifier neo-zkvm-attestation; do
   if ! grep -E "^\s*${dep}\s*=\s*\{[^}]*version\s*=\s*\"${VERSION}\"" Cargo.toml >/dev/null; then
     fail "workspace.dependencies.${dep} version is not ${VERSION}"
   fi

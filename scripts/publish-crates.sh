@@ -14,6 +14,7 @@ CRATES=(
   neo-vm-guest
   neo-zkvm-prover
   neo-zkvm-verifier
+  neo-zkvm-attestation
   neo-zkvm-cli
 )
 

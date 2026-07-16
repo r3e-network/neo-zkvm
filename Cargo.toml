@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/r3e-network/neo-zkvm"
@@ -27,10 +27,10 @@ rust-version = "1.88"
 # `version` is required for crates.io packaging; keep git+rev for reproducible
 # workspace builds until neo-vm-rs is published and consumers pin a crates.io release.
 neo-vm-rs = { version = "0.2.0", git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "dbaaa6a343b390009198e6eb9576832e8dc9b71d" }
-neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
-neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
-neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.2.2" }
-neo-zkvm-attestation = { path = "crates/neo-zkvm-attestation", version = "0.2.2" }
+neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.3.0" }
+neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.3.0" }
+neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.3.0" }
+neo-zkvm-attestation = { path = "crates/neo-zkvm-attestation", version = "0.3.0" }
 
 # zkVM frameworks
 sp1-sdk = { version = "=6.2.1", default-features = false, features = ["blocking"] }

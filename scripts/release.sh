@@ -35,7 +35,7 @@ Neo zkVM release plan for v${VERSION}
 Notes:
 - Production SP1 proofs require a real guest ELF (not SP1_FORCE_DUMMY).
 - neo-zkvm-examples is not published (publish = false).
-- Default publish order: guest → prover → verifier → cli.
+- Default publish order: guest → prover → verifier → attestation → cli.
 EOF
 }
 
