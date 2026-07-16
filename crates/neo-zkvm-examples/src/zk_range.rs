@@ -50,17 +50,12 @@ fn main() {
     let ok_rich = common::verify_mock(&proof_ok);
     let ok_poor = common::verify_mock(&proof_no);
 
-    println!(
-        "rich >= {threshold}? verify={} flag={:?}",
-        ok_rich,
-        common::result_i128(&proof_ok).or_else(|| {
-            // Boolean may be StackItem::Boolean
-            match proof_ok.output.result.as_ref() {
-                Some(StackItem::Boolean(b)) => Some(if *b { 1 } else { 0 }),
-                _ => None,
-            }
-        })
-    );
+    let rich_flag = match proof_ok.output.result.as_ref() {
+        Some(StackItem::Integer(i)) => Some(*i),
+        Some(StackItem::Boolean(b)) => Some(if *b { 1 } else { 0 }),
+        _ => None,
+    };
+    println!("rich >= {threshold}? verify={ok_rich} flag={rich_flag:?}");
     println!(
         "poor >= {threshold}? verify={} flag={:?}",
         ok_poor,

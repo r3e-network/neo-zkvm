@@ -5,7 +5,7 @@
 
 A **production-grade** zero-knowledge stack for **current Neo N3**: prove **NeoVM** execution (canonical `neo-vm-rs` semantics) with the mature **SP1** proving backend.
 
-> **Product rule:** Neo N3 today runs **NeoVM**. This project proves NeoVM scripts/args, not “replace NeoVM with arbitrary RISC-V apps.” SP1’s RISC-V guest only *hosts* the Neo interpreter. See [docs/neo-n3-solution.md](docs/neo-n3-solution.md).
+> **Product rule:** Neo N3 today runs **NeoVM**. This project proves NeoVM scripts/args (via `neo-vm-rs` inside SP1). Settlement on **current Neo N3** (contracts only, no protocol change) uses **N-of-M ECDSA attestations** after off-chain SP1 verify — see [docs/neo-n3-solution.md](docs/neo-n3-solution.md) and [docs/neo-n3-attestation.md](docs/neo-n3-attestation.md).
 
 ## Features
 
@@ -232,6 +232,7 @@ execute/crypto/sha256
 | `zk_membership` | Allowlist / set membership | Hash(secret) ∈ public set |
 | `zk_selective_disclosure` | JSON selective disclose | Age gate + reveal one field |
 | `zk_merkle_inclusion` | Merkle path inclusion | Node preimage = public root |
+| `zk_attestation_settlement` | On-chain settle (no protocol change) | SP1/Mock claim + N-of-M ECDSA |
 | `zk_preimage` | Hash preimage | Know password for hash |
 | `zk_dao_voting` | Private governance | Vote eligibility predicate |
 | `zk_dex_rollup` / `zk_scaling` | Rollup / off-chain compute | Batch / heavy compute |
@@ -241,7 +242,16 @@ cargo run --locked --bin zk_factors
 cargo run --locked --bin zk_range
 cargo run --locked --bin zk_membership
 cargo run --locked --bin zk_merkle_inclusion
+cargo run --locked --bin zk_attestation_settlement
 ```
+
+### Neo N3 settlement (contracts only)
+
+| Piece | Location |
+| --- | --- |
+| Attestation ABI + Rust N-of-M ECDSA | `crates/neo-zkvm-attestation` |
+| Contract sketch (C#) | `contracts/neo-n3/NeoZkAttestation` |
+| Roadmap | [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## License
 

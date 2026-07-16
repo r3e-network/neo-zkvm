@@ -48,6 +48,7 @@ run_examples() {
     zk_membership
     zk_selective_disclosure
     zk_merkle_inclusion
+    zk_attestation_settlement
   )
   for bin in "${bins[@]}"; do
     retry 3 cargo run --locked --bin "$bin"

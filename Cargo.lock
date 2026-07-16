@@ -2140,6 +2140,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-zkvm-attestation"
+version = "0.2.2"
+dependencies = [
+ "ecdsa",
+ "hex",
+ "neo-vm-guest",
+ "p256",
+ "rand_core 0.6.4",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "neo-zkvm-cli"
 version = "0.2.2"
 dependencies = [
@@ -2158,6 +2172,7 @@ version = "0.2.2"
 dependencies = [
  "hex",
  "neo-vm-guest",
+ "neo-zkvm-attestation",
  "neo-zkvm-prover",
  "neo-zkvm-verifier",
 ]

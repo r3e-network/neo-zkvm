@@ -64,10 +64,15 @@ path = "src/zk_selective_disclosure.rs"
 name = "zk_merkle_inclusion"
 path = "src/zk_merkle_inclusion.rs"
 
+[[bin]]
+name = "zk_attestation_settlement"
+path = "src/zk_attestation_settlement.rs"
+
 [dependencies]
 neo-vm-guest = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 neo-zkvm-verifier = { workspace = true }
+neo-zkvm-attestation = { workspace = true }
 hex.workspace = true
 
 [features]

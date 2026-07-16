@@ -1,0 +1,24 @@
+[package]
+name = "neo-zkvm-attestation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/neo-zkvm-attestation"
+readme = "README.md"
+description = "Neo N3 settlement attestations: canonical digests and N-of-M ECDSA for neo-zkvm public claims"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+neo-vm-guest = { workspace = true }
+serde.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+p256 = { version = "0.13", features = ["ecdsa", "std"] }
+ecdsa = { version = "0.16", features = ["verifying"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[dev-dependencies]

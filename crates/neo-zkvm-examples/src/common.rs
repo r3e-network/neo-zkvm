@@ -1,4 +1,9 @@
 //! Shared helpers for Neo zkVM examples (Ethereum-style patterns).
+//!
+//! Included via `#[path]` into multiple binaries; not every helper is used by
+//! every example.
+
+#![allow(dead_code)]
 
 use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};

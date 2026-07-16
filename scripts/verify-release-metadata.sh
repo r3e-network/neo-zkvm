@@ -41,7 +41,7 @@ if ! grep -qE "^## \[(Unreleased|${VERSION})\]" CHANGELOG.md; then
 fi
 
 # Ensure package descriptions exist for publishable crates.
-for crate in neo-vm-guest neo-zkvm-prover neo-zkvm-verifier neo-zkvm-cli neo-zkvm-program; do
+for crate in neo-vm-guest neo-zkvm-prover neo-zkvm-verifier neo-zkvm-attestation neo-zkvm-cli neo-zkvm-program; do
   desc="$(sed -n 's/^description = "\(.*\)"/\1/p' "crates/${crate}/Cargo.toml" | head -1 || true)"
   [ -n "${desc:-}" ] || fail "crates/${crate}/Cargo.toml missing description"
 done

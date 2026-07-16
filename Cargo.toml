@@ -4,6 +4,7 @@ members = [
     "crates/neo-vm-guest",
     "crates/neo-zkvm-prover",
     "crates/neo-zkvm-verifier",
+    "crates/neo-zkvm-attestation",
     "crates/neo-zkvm-cli",
     "crates/neo-zkvm-program",
     "crates/neo-zkvm-examples",
@@ -29,6 +30,7 @@ neo-vm-rs = { version = "0.1.0", git = "https://github.com/r3e-network/neo-vm-rs
 neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
 neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
 neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.2.2" }
+neo-zkvm-attestation = { path = "crates/neo-zkvm-attestation", version = "0.2.2" }
 
 # zkVM frameworks
 sp1-sdk = { version = "=6.2.1", default-features = false, features = ["blocking"] }
