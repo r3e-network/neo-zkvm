@@ -36,7 +36,7 @@ pub fn result_i128(proof: &NeoProof) -> Option<i128> {
 
 pub fn result_bytes(proof: &NeoProof) -> Option<&[u8]> {
     match proof.output.result.as_ref() {
-        Some(StackItem::ByteString(b)) | Some(StackItem::Buffer(b)) => Some(b.as_slice()),
+        Some(StackItem::ByteString(b)) | Some(StackItem::Buffer(_, b)) => Some(b.as_slice()),
         _ => None,
     }
 }

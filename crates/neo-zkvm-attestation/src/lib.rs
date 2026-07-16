@@ -347,6 +347,15 @@ pub fn sign_claim(
 }
 
 fn verify_one(digest: &[u8; 32], sig: &AttestorSignature) -> Result<(), AttestationError> {
+    // SEC1: compressed 33 bytes (02/03‖X) or uncompressed 65 bytes (04‖X‖Y).
+    let pk_len = sig.public_key.len();
+    if pk_len != 33 && pk_len != 65 {
+        return Err(AttestationError::InvalidPublicKey);
+    }
+    // Compact (r ‖ s) only — 64 bytes. Reject DER/mixed lengths early.
+    if sig.signature.len() != 64 {
+        return Err(AttestationError::InvalidSignature);
+    }
     let vk = VerifyingKey::from_sec1_bytes(&sig.public_key)
         .map_err(|_| AttestationError::InvalidPublicKey)?;
     let signature =
@@ -369,8 +378,17 @@ pub fn verify_threshold(
     if !allow_unsafe_mode && !claim.proof_mode.is_settlement_safe() {
         return Err(AttestationError::UnsafeProofMode);
     }
+    if authorized.is_empty() {
+        return Err(AttestationError::EmptyAttestorSet);
+    }
     if threshold == 0 {
         return Err(AttestationError::ThresholdNotMet { got: 0, need: 1 });
+    }
+    if threshold > authorized.len() {
+        return Err(AttestationError::ThresholdNotMet {
+            got: 0,
+            need: threshold,
+        });
     }
 
     let digest = attestation_digest(claim);
@@ -720,5 +738,89 @@ mod tests {
         let err =
             verify_threshold(&claim, &[sig.clone(), sig], &authorized, 1, false).unwrap_err();
         assert!(matches!(err, AttestationError::DuplicateAttestor));
+    }
+
+    #[test]
+    fn rejects_empty_signature_list() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let authorized = vec![k1.public_key_uncompressed()];
+        let err = verify_threshold(&claim, &[], &authorized, 1, false).unwrap_err();
+        assert!(matches!(
+            err,
+            AttestationError::ThresholdNotMet { got: 0, need: 1 }
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_authorized_set() {
+        let claim = sample_claim(ProofModeCode::Sp1);
+        let err = verify_threshold(&claim, &[], &[], 1, false).unwrap_err();
+        assert!(matches!(err, AttestationError::EmptyAttestorSet));
+    }
+
+    #[test]
+    fn rejects_threshold_above_committee_size() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Plonk);
+        let sig = sign_claim(&k1, &claim, false).unwrap();
+        let authorized = vec![k1.public_key_uncompressed()];
+        let err = verify_threshold(&claim, &[sig], &authorized, 2, false).unwrap_err();
+        assert!(matches!(
+            err,
+            AttestationError::ThresholdNotMet { got: 0, need: 2 }
+        ));
+    }
+
+    #[test]
+    fn rejects_wrong_signature_length() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let mut sig = sign_claim(&k1, &claim, false).unwrap();
+        sig.signature.pop(); // 63 bytes
+        let authorized = vec![k1.public_key_uncompressed()];
+        let err = verify_threshold(&claim, &[sig], &authorized, 1, false).unwrap_err();
+        assert!(matches!(err, AttestationError::InvalidSignature));
+    }
+
+    #[test]
+    fn accepts_0x_prefixed_hex_and_config() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let bundle = attest_bundle(claim, &[&k1], false).unwrap();
+        let cfg = AttestationConfig {
+            program_id: format!("0x{}", hex::encode(bundle.claim.program_id)),
+            network_magic: bundle.claim.network_magic,
+            threshold: 1,
+            attestors: vec![format!("0x{}", hex::encode(k1.public_key_uncompressed()))],
+        };
+        let parsed = cfg.parse().unwrap();
+        verify_bundle(&bundle, &parsed, false).unwrap();
+    }
+
+    #[test]
+    fn verify_bundle_rejects_program_id_mismatch() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let bundle = attest_bundle(claim, &[&k1], false).unwrap();
+        let mut parsed = AttestationConfig {
+            program_id: hex::encode(bundle.claim.program_id),
+            network_magic: bundle.claim.network_magic,
+            threshold: 1,
+            attestors: vec![hex::encode(k1.public_key_uncompressed())],
+        }
+        .parse()
+        .unwrap();
+        parsed.program_id[0] ^= 0xFF;
+        assert!(matches!(
+            verify_bundle(&bundle, &parsed, false),
+            Err(AttestationError::ProgramIdMismatch)
+        ));
+    }
+
+    #[test]
+    fn parse_hex_rejects_odd_length() {
+        assert!(parse_hex_bytes("abc").is_err());
+        assert!(parse_hex32("aa").is_err());
     }
 }

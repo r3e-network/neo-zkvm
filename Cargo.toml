@@ -26,7 +26,7 @@ rust-version = "1.88"
 # Shared NeoVM semantics.
 # `version` is required for crates.io packaging; keep git+rev for reproducible
 # workspace builds until neo-vm-rs is published and consumers pin a crates.io release.
-neo-vm-rs = { version = "0.1.0", git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "2333d8f881ac502ed169fc25daa2931baa11cbb9" }
+neo-vm-rs = { version = "0.2.0", git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "dbaaa6a343b390009198e6eb9576832e8dc9b71d" }
 neo-vm-guest = { path = "crates/neo-vm-guest", version = "0.2.2" }
 neo-zkvm-prover = { path = "crates/neo-zkvm-prover", version = "0.2.2" }
 neo-zkvm-verifier = { path = "crates/neo-zkvm-verifier", version = "0.2.2" }

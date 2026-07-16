@@ -766,7 +766,7 @@ mod tests {
         };
         let array_input = ProofInput {
             script: ret_script(),
-            arguments: vec![StackItem::Array(vec![StackItem::Integer(42)])],
+            arguments: vec![StackItem::Array(0, vec![StackItem::Integer(42)])],
             gas_limit: 1_000_000,
         };
 

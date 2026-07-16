@@ -680,3 +680,51 @@ mod tests {
         }
     }
 }
+
+
+
+#[cfg(test)]
+mod fuzz_timeout_regressions {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Inputs that previously hung libFuzzer (single POW with huge exponent).
+    #[test]
+    fn raw_fuzz_pow_timeout_cases_finish_quickly() {
+        let cases: &[&[u8]] = &[
+            &[6, 0, 20, 2, 42, 255, 46, 32, 163, 163, 163, 163],
+            &[
+                144, 8, 3, 136, 20, 255, 255, 255, 0, 175, 0, 3, 48, 86, 191, 186, 0, 0, 0, 0, 0,
+                0, 0, 0, 163, 163, 163, 144,
+            ],
+        ];
+        for data in cases {
+            let mode = data[0];
+            let body = &data[1..];
+            let script_len = body.len().min(512);
+            let mut script = body[..script_len].to_vec();
+            if script.last() != Some(&OpCode::RET.byte()) {
+                script.push(OpCode::RET.byte());
+            }
+            let gas_limit = match mode % 5 {
+                0 => 1u64,
+                1 => 10,
+                2 => 100,
+                3 => 1_000,
+                _ => 50_000,
+            };
+            let t0 = Instant::now();
+            let out = execute(ProofInput {
+                script,
+                arguments: vec![],
+                gas_limit,
+            });
+            let elapsed = t0.elapsed();
+            assert!(
+                elapsed < Duration::from_millis(200),
+                "POW path too slow: {elapsed:?} mode={mode} err={:?}",
+                out.error
+            );
+        }
+    }
+}

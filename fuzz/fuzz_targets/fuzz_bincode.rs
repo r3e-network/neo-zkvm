@@ -14,20 +14,41 @@ use neo_vm_guest::{
 
 fuzz_target!(|data: &[u8]| {
     // Cap input so we exercise the bincode limit path without huge allocations.
-    let slice = if data.len() > 64 * 1024 {
-        &data[..64 * 1024]
+    // Keep this modest: adversarial length prefixes still go through BINCODE_LIMIT,
+    // but smaller inputs reduce peak RSS under long high-throughput campaigns.
+    let slice = if data.len() > 8 * 1024 {
+        &data[..8 * 1024]
     } else {
         data
     };
 
-    let _ = bincode_deserialize::<NeoProof>(slice);
-    let _ = bincode_deserialize::<ProofInput>(slice);
-    let _ = bincode_deserialize::<ProofOutput>(slice);
-    let _ = bincode_deserialize::<PublicInputs>(slice);
-    let _ = bincode_deserialize::<MockProof>(slice);
-    let _ = bincode_deserialize::<StackItem>(slice);
-    let _ = bincode_deserialize::<ProofMode>(slice);
-    let _ = deserialize_neoproof(slice);
+    // Rotate which type we stress so one iteration does less peak work.
+    match data.first().copied().unwrap_or(0) % 8 {
+        0 => {
+            let _ = bincode_deserialize::<NeoProof>(slice);
+        }
+        1 => {
+            let _ = bincode_deserialize::<ProofInput>(slice);
+        }
+        2 => {
+            let _ = bincode_deserialize::<ProofOutput>(slice);
+        }
+        3 => {
+            let _ = bincode_deserialize::<PublicInputs>(slice);
+        }
+        4 => {
+            let _ = bincode_deserialize::<MockProof>(slice);
+        }
+        5 => {
+            let _ = bincode_deserialize::<StackItem>(slice);
+        }
+        6 => {
+            let _ = bincode_deserialize::<ProofMode>(slice);
+        }
+        _ => {
+            let _ = deserialize_neoproof(slice);
+        }
+    }
 
     // Round-trip of freshly executed small scripts under serialization.
     if !data.is_empty() {

@@ -520,17 +520,25 @@ fn test_within_range_check() {
 
 #[test]
 fn test_shared_stack_value_serialization_roundtrip() {
-    let original = StackItem::Array(vec![
-        StackItem::Integer(42),
-        StackItem::Boolean(true),
-        StackItem::ByteString(b"neo".to_vec()),
-    ]);
+    let original = StackItem::Array(
+        0,
+        vec![
+            StackItem::Integer(42),
+            StackItem::Boolean(true),
+            StackItem::ByteString(b"neo".to_vec()),
+        ],
+    );
 
     let bytes = bincode_serialize(&original).expect("StackItem should serialize");
     let deserialized: StackItem =
         bincode_deserialize(&bytes).expect("StackItem should deserialize");
 
-    assert_eq!(deserialized, original);
+    // Compound StackItems compare by runtime id (`PartialEq`); wire format
+    // omits ids, so round-trip assigns a fresh id — compare structurally.
+    assert!(
+        deserialized.structural_eq(&original),
+        "structural mismatch: {deserialized:?} vs {original:?}"
+    );
 }
 
 #[test]

@@ -50,10 +50,19 @@ Full technical explanation: [docs/learning-guide.md](docs/learning-guide.md).
 # Longer campaign
 RUNS=100000 ./scripts/fuzz-all.sh
 
+# Continuous rotating campaign (exits on real crash-*/timeout-*/leak-*)
+./scripts/fuzz-continuous.sh
+# SLICE=120 MAX_LEN=512 ./scripts/fuzz-continuous.sh
+
 # Single target
 cd fuzz
-cargo +nightly fuzz run --sanitizer none fuzz_raw_script -- -runs=50000 -max_len=1024
+cargo +nightly fuzz run --sanitizer none fuzz_raw_script -- \
+  -runs=50000 -max_len=512 -rss_limit_mb=0 -malloc_limit_mb=256 -timeout=10
 ```
+
+**RSS note:** libFuzzer’s default `-rss_limit_mb=2048` can false-positive on
+high-throughput targets (allocator retains process RSS). Campaigns use
+`-rss_limit_mb=0` and `-malloc_limit_mb=256` so single huge allocs still fail.
 
 CI runs a short smoke of every target on each PR (`fuzz-smoke` job).
 

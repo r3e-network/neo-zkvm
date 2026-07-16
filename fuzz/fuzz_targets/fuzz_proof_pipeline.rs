@@ -18,9 +18,11 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let script = common::build_structured_script(data, 64);
-    let arguments = common::arguments_from_tail(data, 64);
-    let gas_limit = common::clamp_gas(u64::from(data[0]).saturating_mul(100).max(1));
+    // Keep structured scripts + gas modest so long campaigns stay under RSS caps.
+    let script = common::build_structured_script(data, 32);
+    let arguments = common::arguments_from_tail(data, 32);
+    // Cap gas harder than default clamp_gas (100k) for prove+serialize path.
+    let gas_limit = (u64::from(data[0]).saturating_mul(50).max(1)).min(10_000);
 
     // Host execute (no proof) — must not panic.
     let _ = execute(neo_vm_guest::ProofInput {
