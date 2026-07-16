@@ -44,12 +44,13 @@ CARGO_TARGET_DIR=/tmp/target cargo install neo-zkvm-cli
 # Run a script
 neo-zkvm run 12139E40  # 2 + 3
 
-# Generate ZK proof (default: SP1)
+# Generate proof (default: mock without SP1 feature; sp1 when built with --features sp1)
 neo-zkvm prove 12139E40
 
 # Select proof mode explicitly (--proof-mode or -m)
 neo-zkvm prove 12139E40 -m mock
 neo-zkvm prove 12139E40 -m groth16
+
 
 # Explicit SP1 mode with fallback allowed
 neo-zkvm prove 12139E40 -m sp1 --allow-fallback

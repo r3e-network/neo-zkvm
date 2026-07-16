@@ -1,6 +1,6 @@
 use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProof, NeoProver, ProofMode, ProverConfig};
-use neo_zkvm_verifier::verify;
+use neo_zkvm_verifier::verify_for_mode;
 
 fn prove_square_of_secret(secret: i64) -> NeoProof {
     let prover = NeoProver::new(ProverConfig {
@@ -29,8 +29,14 @@ fn main() {
     println!("=== Private Inputs Example ===");
     println!("Result(secret_a^2): {:?}", read_integer_result(&proof_a));
     println!("Result(secret_b^2): {:?}", read_integer_result(&proof_b));
-    println!("Proof A verifies: {}", verify(&proof_a));
-    println!("Proof B verifies: {}", verify(&proof_b));
+    println!(
+        "Proof A verifies: {}",
+        verify_for_mode(&proof_a, ProofMode::Mock)
+    );
+    println!(
+        "Proof B verifies: {}",
+        verify_for_mode(&proof_b, ProofMode::Mock)
+    );
     println!(
         "Input hash A: 0x{}",
         hex::encode(proof_a.public_inputs.input_hash)
@@ -44,8 +50,8 @@ fn main() {
         proof_a.public_inputs.input_hash != proof_b.public_inputs.input_hash
     );
 
-    assert!(verify(&proof_a));
-    assert!(verify(&proof_b));
+    assert!(verify_for_mode(&proof_a, ProofMode::Mock));
+    assert!(verify_for_mode(&proof_b, ProofMode::Mock));
 }
 
 #[cfg(test)]
@@ -56,7 +62,7 @@ mod tests {
     fn test_private_input_proof_verifies_and_returns_square() {
         let proof = prove_square_of_secret(7);
 
-        assert!(verify(&proof));
+        assert!(verify_for_mode(&proof, ProofMode::Mock));
         assert_eq!(read_integer_result(&proof), Some(49));
     }
 
@@ -69,7 +75,7 @@ mod tests {
             proof_a.public_inputs.input_hash,
             proof_b.public_inputs.input_hash
         );
-        assert!(verify(&proof_a));
-        assert!(verify(&proof_b));
+        assert!(verify_for_mode(&proof_a, ProofMode::Mock));
+        assert!(verify_for_mode(&proof_b, ProofMode::Mock));
     }
 }

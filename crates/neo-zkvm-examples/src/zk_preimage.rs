@@ -6,6 +6,9 @@ fn main() {
     println!("=======================================================");
     println!("=== zkVM Privacy Use Case: Hash Preimage Proof ========");
     println!("=======================================================\n");
+    println!("NOTE: This demo uses ProofMode::Mock — NOT cryptographically");
+    println!("secure. Production must pin Sp1/Plonk/Groth16 and bind an");
+    println!("expected public image hash in the verification circuit.\n");
     println!("Goal: Prove you know a secret password that hashes to a");
     println!("known public value, WITHOUT revealing the password!\n");
 

@@ -17,6 +17,3 @@ neo-vm-guest = { workspace = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 bincode = { workspace = true }
 sha2 = { workspace = true, default-features = false }
-
-[build-dependencies]
-sp1-build = "6.2.1"

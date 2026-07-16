@@ -6,11 +6,14 @@ fn main() {
     println!("=======================================================");
     println!("=== zkVM Privacy: Anonymous DAO Voting     ============");
     println!("=======================================================\n");
+    println!("NOTE: Mock proofs are forgeable. This demo only checks vote");
+    println!("eligibility (value is 1 or 2); it does NOT hide the choice");
+    println!("from the proof output stack, and does NOT implement a real");
+    println!("homomorphic tally / nullifier protocol.\n");
     println!("Problem: On-chain voting is public. Whales can influence");
     println!("voters, and privacy is non-existent.");
-    println!("Solution: Users generate a ZK proof locally showing their");
-    println!("vote is valid (Candidate 1 or 2) without revealing WHICH");
-    println!("candidate they picked. The contract tallies ZK proofs.\n");
+    println!("Solution (full system): ZK eligibility + nullifiers + tally.");
+    println!("This sample: local proof that a private vote is in {{1,2}}.\n");
 
     // We want to prove that the private vote is either 1 or 2.
     // Script Logic (Validation):

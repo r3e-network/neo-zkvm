@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI `debug` exits non-zero on Fault (parity with `run`)
 - Packaging docs/scripts clarify that crates.io publish requires published `neo-vm-rs`
 - Workspace `neo-vm-rs` dependency declares a version for packaging metadata
+- `docs/api-reference.md` no longer teaches `verify_for_mode(&proof, proof.proof_mode)` (security anti-pattern)
+- Prover `build.rs` always overwrites dummy ELF markers (no stale real ELF under force-dummy)
+- CLI rejects `.nef` containers instead of treating them as raw script
+- CLI default prove mode is `mock` without SP1 feature (was always `sp1`)
+- Assembler rejects `CHECKSIG` with a clear guest-unsupported error
+- Examples/tests pin `verify_for_mode(..., Mock)` instead of bare `verify`
+- `hash_data` / commitment docs corrected (domain-separated zkVM digests, not Neo Hash256)
+- Opcode gas docs match runtime metering (1 gas per executed instruction)
+- `verify_with_vkey` applies proof size cap and mode/type consistency
+- Dropped unused `sp1-build` build-dep from `neo-zkvm-program`
+- Privacy demos declare Mock/protocol limitations honestly
 
 ### Changed
 

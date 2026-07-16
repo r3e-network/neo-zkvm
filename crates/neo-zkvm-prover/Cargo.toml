@@ -19,7 +19,9 @@ bincode.workspace = true
 [features]
 default = []
 sp1 = ["dep:sp1-sdk", "dep:sp1-build"]
-mock-elf = []  # Use empty ELF for testing without SP1 toolchain
+# Force dummy ELF markers even when a toolchain is present (CI / analysis).
+# Equivalent to SP1_FORCE_DUMMY=1 at build time; also enables mock_elf_available cfg.
+mock-elf = []
 
 [build-dependencies]
 sp1-build = { version = "6.2.1", optional = true }

@@ -69,7 +69,7 @@ neo-zkvm prove <script> [--proof-mode <mode>|-m <mode>] [--allow-fallback] [--ga
 
 | Flag               | Alias | Default | Description                                              |
 | ------------------ | ----- | ------- | -------------------------------------------------------- |
-| `--proof-mode`     | `-m`  | `sp1`   | Proof mode: `execute`, `mock`, `sp1`, `plonk`, `groth16` |
+| `--proof-mode`     | `-m`  | `mock` (no SP1 feature) / `sp1` (with `--features sp1`) | Proof mode: `execute`, `mock`, `sp1`, `plonk`, `groth16` |
 | `--allow-fallback` |       | off     | Allow downgrade to mock if SP1 unavailable               |
 | `--gas`            | `-g`  | 1000000 | Gas / step budget                                        |
 | `--output`         | `-o`  |         | Write serialized `NeoProof` bytes to a file              |
@@ -283,9 +283,10 @@ The CLI accepts scripts in multiple formats:
 | --------------- | ---------------- | -------------------------- |
 | Hex string      | `12139E40`       | Raw hex bytecode           |
 | Hex with prefix | `0x12139E40`     | Hex with 0x prefix         |
-| Binary file     | `script.bin`     | Binary file                |
-| NEF file        | `contract.nef`   | Neo Executable Format      |
+| Binary file     | `script.bin`     | Raw script bytes           |
 | Assembly file   | `program.neoasm` | Assembly source (asm only) |
+
+NEF containers (`.nef`) are **not** parsed yet — extract raw script bytes first.
 
 ## Opcode Reference
 

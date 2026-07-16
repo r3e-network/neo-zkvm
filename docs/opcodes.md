@@ -594,18 +594,26 @@ Stack: ..., message, signature, pubkey -> ..., valid
 
 ## Gas Consumption Summary
 
-| Category      | Gas Range | Examples                                  |
-| ------------- | --------- | ----------------------------------------- |
-| **Low**       | 1-2       | PUSH\*, NOP, JMP, RET, DUP, DROP, SYSCALL |
-| **Medium**    | 8         | ADD, SUB, MUL, AND, OR, LT, GT, PACK      |
-| **Very High** | syscall-dependent | SHA256, RIPEMD160, HASH160       |
-| **Extreme**   | syscall-dependent | CHECKSIG                          |
+**Neo zkVM proof guest metering (authoritative):** each **executed** instruction
+costs **1 gas unit**, including syscalls. Gas is charged at runtime via
+`on_instruction` (loops cannot under-charge relative to static bytecode length).
+`gas_limit` is a step budget; the hard ceiling is `MAX_EXECUTION_STEPS` (10M).
 
-### Gas Cost Table
+| Category | Gas (zkVM guest) | Notes |
+| --- | --- | --- |
+| All opcodes | 1 per execution | PUSH, JMP, ADD, SYSCALL, … |
+| Loops | 1 × iterations | Runtime metering |
+| Host crypto adapters | 1 (instruction) | SHA256 / RIPEMD160 / Hash160 / Hash256 body is not extra-billed |
+
+> **Neo mainnet Policy gas** (differential per-opcode fees) is **not** applied
+> on the zk proof path. Do not use mainnet gas tables to size `gas_limit` for
+> proofs. When `neo-vm-rs` exposes Policy tables, this document will be updated.
+
+### Historical Neo-style table (mainnet reference only — not zkVM metering)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    GAS COST BREAKDOWN                        │
+│          NEO MAINNET-STYLE COSTS (NOT used by zkVM)          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  1 gas:    PUSH0-16, PUSHNULL, PUSHM1, PUSHDATA*            │

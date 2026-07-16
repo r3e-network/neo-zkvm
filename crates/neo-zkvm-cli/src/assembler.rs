@@ -287,6 +287,7 @@ impl Assembler {
         let op = s.to_uppercase();
         match Self::opcode_from_mnemonic(&op) {
             Some(opcode) => opcode.operand_size() == 0,
+            // CHECKSIG is recognized as a mnemonic then rejected with a clear error.
             None => matches!(
                 op.as_str(),
                 "SHA256" | "RIPEMD160" | "HASH160" | "HASH256" | "CHECKSIG"
@@ -630,7 +631,13 @@ impl Assembler {
             "RIPEMD160" => self.emit_named_syscall(bytecode, "System.Crypto.RIPEMD160"),
             "HASH160" => self.emit_named_syscall(bytecode, "System.Crypto.Hash160"),
             "HASH256" => self.emit_named_syscall(bytecode, "System.Crypto.Hash256"),
-            "CHECKSIG" => self.emit_named_syscall(bytecode, "System.Crypto.CheckSig"),
+            "CHECKSIG" => {
+                return Err(format!(
+                    "Line {line_num}: CHECKSIG / System.Crypto.CheckSig is not supported in the \
+                     zk proof guest (non-deterministic / host-dependent). Use SHA256, RIPEMD160, \
+                     Hash160, or Hash256 instead."
+                ));
+            }
             "DB" | ".BYTE" => {
                 for operand in operands {
                     let byte = self.parse_byte(operand, line_num)?;
@@ -945,7 +952,11 @@ impl Assembler {
             "SYSTEM.CRYPTO.RIPEMD160" => return Ok(interop_hash("System.Crypto.RIPEMD160")),
             "SYSTEM.CRYPTO.HASH160" => return Ok(interop_hash("System.Crypto.Hash160")),
             "SYSTEM.CRYPTO.HASH256" => return Ok(interop_hash("System.Crypto.Hash256")),
-            "SYSTEM.CRYPTO.CHECKSIG" => return Ok(interop_hash("System.Crypto.CheckSig")),
+            "SYSTEM.CRYPTO.CHECKSIG" | "CHECKSIG" => {
+                return Err(format!(
+                    "Line {line_num}: System.Crypto.CheckSig is not supported in the zk proof guest"
+                ));
+            }
             _ => {}
         }
 

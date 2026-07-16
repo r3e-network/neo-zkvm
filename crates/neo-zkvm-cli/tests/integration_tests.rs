@@ -4,7 +4,7 @@ use neo_vm_guest::{
     OpCode, ProofInput, StackItem, bincode_deserialize, bincode_serialize, execute, interop_hash,
 };
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
-use neo_zkvm_verifier::verify;
+use neo_zkvm_verifier::verify_for_mode;
 
 fn syscall(name: &str) -> Vec<u8> {
     let mut script = vec![OpCode::SYSCALL.byte()];
@@ -33,7 +33,7 @@ fn test_full_prove_verify_cycle() {
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
-    assert!(verify(&proof));
+    assert!(verify_for_mode(&proof, ProofMode::Mock));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn test_prove_verify_with_arguments() {
 
     assert_eq!(proof.output.state, 0);
     assert_eq!(proof.output.result, Some(StackItem::Integer(30)));
-    assert!(verify(&proof));
+    assert!(verify_for_mode(&proof, ProofMode::Mock));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn test_prove_verify_hash_operation() {
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
-    assert!(verify(&proof));
+    assert!(verify_for_mode(&proof, ProofMode::Mock));
 }
 
 #[test]
@@ -189,7 +189,7 @@ fn test_prove_verify_array_operations() {
 
     assert_eq!(proof.output.state, 0);
     assert_eq!(proof.output.result, Some(StackItem::Integer(3)));
-    assert!(verify(&proof));
+    assert!(verify_for_mode(&proof, ProofMode::Mock));
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn test_prove_verify_control_flow() {
     let proof = prover.prove(input);
 
     assert_eq!(proof.output.state, 0);
-    assert!(verify(&proof));
+    assert!(verify_for_mode(&proof, ProofMode::Mock));
 }
 
 #[test]

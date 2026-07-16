@@ -10,18 +10,25 @@ use std::path::{Path, PathBuf};
 mod elf_markers;
 
 fn write_dummy_elf(elf_path: &Path, marker: &[u8]) {
-    if !elf_path.exists() {
-        let _ = std::fs::write(elf_path, marker);
+    // Always overwrite: a previous successful guest build must not leave a
+    // real ELF when SP1_FORCE_DUMMY / missing toolchain / build failure
+    // selects a dummy marker. Stale real ELFs would make is_elf_available()
+    // report true under force-dummy CI paths.
+    if let Err(e) = std::fs::write(elf_path, marker) {
+        println!(
+            "cargo:warning=Failed to write dummy ELF marker to {}: {e}",
+            elf_path.display()
+        );
     }
 }
 
 fn enable_mock_elf() {
-    // Use a non-colliding cfg name to avoid bypassing Cargo's feature
-    // resolution. Source code that supports mock ELF mode should gate
-    // on `#[cfg(any(feature = "mock-elf", mock_elf_available))]` so the
-    // feature can be enabled via Cargo.toml or detected from the build
-    // script's runtime environment.
+    // Non-colliding cfg so consumers can detect dummy-ELF builds without
+    // bypassing Cargo feature resolution.
     println!("cargo:rustc-cfg=mock_elf_available");
+    if std::env::var("CARGO_FEATURE_MOCK_ELF").is_ok() {
+        println!("cargo:warning=neo-zkvm-prover built with feature mock-elf (dummy ELF path)");
+    }
 }
 
 #[cfg(feature = "sp1")]
@@ -57,6 +64,10 @@ fn env_flag(name: &str) -> Option<bool> {
 
 #[cfg(feature = "sp1")]
 fn has_sp1_toolchain() -> bool {
+    // Cargo feature mock-elf forces dummy ELF path (same as SP1_FORCE_DUMMY).
+    if std::env::var("CARGO_FEATURE_MOCK_ELF").is_ok() {
+        return false;
+    }
     if env_flag("SP1_FORCE_DUMMY") == Some(true) {
         return false;
     }

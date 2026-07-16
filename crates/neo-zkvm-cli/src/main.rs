@@ -21,6 +21,17 @@ use trace_host::TraceHost;
 
 const DEFAULT_GAS: u64 = 1_000_000;
 
+/// Default prove mode: Mock when the binary is built without SP1 (crates.io /
+/// plain `cargo install`), Sp1 when `--features sp1` is enabled so release
+/// toolchains do not surprise operators with a silent mock default.
+const fn default_cli_proof_mode() -> CliProofMode {
+    if cfg!(feature = "sp1") {
+        CliProofMode::Sp1
+    } else {
+        CliProofMode::Mock
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum CliProofMode {
     Execute,
@@ -71,8 +82,8 @@ enum Commands {
         /// Gas / step budget
         #[arg(short = 'g', long = "gas", default_value_t = DEFAULT_GAS)]
         gas: u64,
-        /// Proof mode (default: sp1)
-        #[arg(short = 'm', long = "proof-mode", value_enum, default_value_t = CliProofMode::Sp1)]
+        /// Proof mode (default: mock without SP1 feature, sp1 with `--features sp1`)
+        #[arg(short = 'm', long = "proof-mode", value_enum, default_value_t = default_cli_proof_mode())]
         proof_mode: CliProofMode,
         /// Allow mock fallback when SP1 is unavailable
         #[arg(long = "allow-fallback")]
@@ -359,7 +370,13 @@ fn cmd_inspect(script_input: &str) -> Result<(), String> {
 }
 
 fn parse_script(input: &str) -> Result<Vec<u8>, String> {
-    if input.ends_with(".nef") || input.ends_with(".bin") {
+    if input.ends_with(".nef") {
+        return Err(format!(
+            "NEF container files are not supported yet ('{input}'). \
+             Extract the raw script bytes and pass a .bin file or hex bytecode."
+        ));
+    }
+    if input.ends_with(".bin") {
         let metadata =
             fs::metadata(input).map_err(|e| format!("Failed to read file '{input}': {e}"))?;
         if metadata.len() > MAX_SCRIPT_SIZE as u64 {
@@ -379,7 +396,7 @@ fn parse_script(input: &str) -> Result<Vec<u8>, String> {
     } else {
         if (input.contains('.') || input.contains('/')) && !input.starts_with("0x") {
             return Err(format!(
-                "'{input}' does not look like hex or a known script file — use a .nef/.bin file or hex bytes (optionally 0x-prefixed)"
+                "'{input}' does not look like hex or a known script file — use a .bin file or hex bytes (optionally 0x-prefixed)"
             ));
         }
         let hex_str = input.trim_start_matches("0x");
@@ -430,14 +447,25 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_proof_mode_defaults_to_sp1() {
+    fn test_parse_proof_mode_default_depends_on_sp1_feature() {
         let cli = parse_cli(&["prove", "12139E40"]).unwrap();
         match cli.command {
             Commands::Prove { proof_mode, .. } => {
-                assert_eq!(ProofMode::from(proof_mode), ProofMode::Sp1);
+                let expected = if cfg!(feature = "sp1") {
+                    ProofMode::Sp1
+                } else {
+                    ProofMode::Mock
+                };
+                assert_eq!(ProofMode::from(proof_mode), expected);
             }
             _ => panic!("expected prove"),
         }
+    }
+
+    #[test]
+    fn test_parse_script_rejects_nef_containers() {
+        let err = parse_script("contract.nef").unwrap_err();
+        assert!(err.contains("NEF"), "unexpected: {err}");
     }
 
     #[test]

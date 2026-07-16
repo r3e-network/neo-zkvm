@@ -94,9 +94,11 @@ pub enum ProofMode {
 // Shared utility functions
 // ============================================================================
 
-/// Double-SHA256 (Hash256) with domain separation — the canonical Neo protocol
-/// hash convention. Matches Neo’s existing `MerkleTree` convention and on-chain
-/// verifier expectations. `Hash256(x) = SHA256(SHA256(domain_tag || x))`.
+/// Domain-separated double-SHA256 used for zkVM public-input binding.
+///
+/// **Not** Neo protocol Hash256. The digest is
+/// `SHA256(SHA256("neo-zkvm-data-hash-v1:" || data))`.
+/// For true Neo Hash256 (`SHA256(SHA256(x))`), use [`hash256`].
 #[must_use]
 pub fn hash_data(data: &[u8]) -> [u8; 32] {
     const DOMAIN: &[u8] = b"neo-zkvm-data-hash-v1:";
@@ -118,7 +120,7 @@ pub fn try_hash_proof_output(output: &ProofOutput) -> Result<[u8; 32], BincodeEn
 /// This panics if serialization fails; prefer `try_hash_proof_output` in fallible paths.
 #[must_use]
 #[deprecated(
-    since = "0.2.3",
+    since = "0.2.2",
     note = "use `try_hash_proof_output` instead to avoid panics"
 )]
 pub fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
@@ -126,8 +128,9 @@ pub fn hash_proof_output(output: &ProofOutput) -> [u8; 32] {
         .expect("failed to serialize ProofOutput for hashing; use try_hash_proof_output")
 }
 
-/// Compute commitment over all public input fields using double-SHA256
-/// (Hash256) with domain separation, the canonical Neo protocol hash convention.
+/// Compute commitment over all public input fields using domain-separated
+/// double-SHA256 (`neo-zkvm-commitment-v1:`). This is a zkVM-internal digest,
+/// not Neo protocol Hash256.
 #[must_use]
 pub fn compute_commitment(inputs: &PublicInputs) -> [u8; 32] {
     const DOMAIN: &[u8] = b"neo-zkvm-commitment-v1:";

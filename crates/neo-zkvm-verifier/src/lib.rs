@@ -274,12 +274,25 @@ pub fn verify_with_vkey(proof: &NeoProof, vkey: &sp1_sdk::SP1VerifyingKey) -> bo
     if proof.output.state != 0 {
         return false;
     }
+    if proof.proof_bytes.is_empty() {
+        return false;
+    }
+    // Same DoS ceiling as verify_sp1_proof.
+    const MAX_PROOF_BYTES: usize = 1024 * 1024;
+    if proof.proof_bytes.len() > MAX_PROOF_BYTES {
+        return false;
+    }
     if verify_claimed_vkey_hash(&proof.vkey_hash, vkey).is_err() {
         return false;
     }
 
     match bincode_deserialize::<SP1ProofWithPublicValues>(&proof.proof_bytes) {
         Ok(sp1_proof) => {
+            let detected = detect_sp1_proof_type(&sp1_proof);
+            let expected = expected_proof_type(proof.proof_mode);
+            if detected != expected && detected != ProofType::Unknown {
+                return false;
+            }
             let pi = match decode_public_inputs(&sp1_proof.public_values) {
                 Ok(inputs) => inputs,
                 Err(_) => return false,

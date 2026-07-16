@@ -13,11 +13,11 @@
 //! - Execute: Run without proof (fastest, for testing)
 //! - Mock: Generate mock proof (for development)
 //! - SP1: Generate real ZK proof (production)
-//! - SP1Plonk: Generate PLONK proof (on-chain verification)
+//! - Plonk: Generate PLONK proof (on-chain verification)
 
 use neo_vm_guest::{OpCode, ProofInput, StackItem};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
-use neo_zkvm_verifier::{verify, verify_detailed};
+use neo_zkvm_verifier::{verify_detailed_for_mode, verify_for_mode};
 
 fn main() {
     println!("=== Neo zkVM Proof Generation Example ===\n");
@@ -65,7 +65,7 @@ fn main() {
     );
 
     // Verify the proof
-    let is_valid = verify(&proof);
+    let is_valid = verify_for_mode(&proof, ProofMode::Mock);
     println!("Proof valid: {}", is_valid);
     assert!(is_valid, "Proof should be valid");
 
@@ -87,14 +87,17 @@ fn main() {
     let proof2 = prover.prove(input_with_args);
     println!("Input: 7");
     println!("Result (7²): {:?}", proof2.output.result);
-    println!("Verification: {}", verify(&proof2));
+    println!(
+        "Verification: {}",
+        verify_for_mode(&proof2, ProofMode::Mock)
+    );
 
     // =========================================================================
     // Part 3: Detailed Verification
     // =========================================================================
     println!("\n--- Part 3: Detailed Verification ---\n");
 
-    let result = verify_detailed(&proof);
+    let result = verify_detailed_for_mode(&proof, ProofMode::Mock);
     println!("Detailed verification result:");
     println!("  Valid: {}", result.valid);
     if let Some(err) = &result.error {

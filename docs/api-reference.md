@@ -25,7 +25,9 @@ assert_eq!(output.result, Some(StackItem::Integer(5)));
 | `StackItem` | Canonical stack value type re-exported from `neo-vm-rs`. |
 | `execute` | Deterministic execution through the shared interpreter. |
 | `bincode_serialize` / `bincode_deserialize` | Canonical serialization helpers for proof data. |
-| `hash_proof_output` | Hashes serialized output for public input binding. |
+| `try_hash_proof_output` | Fallible hash of serialized output for public input binding. |
+| `hash_data` | Domain-separated double-SHA256 (`neo-zkvm-data-hash-v1:`), **not** Neo protocol Hash256. |
+| `hash256` | True Neo Hash256: `SHA256(SHA256(x))` (crypto helpers). |
 
 ## `neo-zkvm-prover`
 
@@ -58,12 +60,18 @@ let proof = prover.prove(ProofInput {
 ## `neo-zkvm-verifier`
 
 ```rust
+use neo_zkvm_prover::ProofMode;
 use neo_zkvm_verifier::verify_for_mode;
 
-assert!(verify_for_mode(&proof, proof.proof_mode));
+// Pin a verifier-chosen constant — NEVER pass proof.proof_mode here.
+// That would make the mode check a tautology and accept forgeable Mock proofs.
+// Demo / tests:
+assert!(verify_for_mode(&proof, ProofMode::Mock));
+// Production value-bearing decisions:
+// assert!(verify_for_mode(&proof, ProofMode::Groth16));
 ```
 
-The verifier checks mode consistency, public input hashes, verification key binding, and proof bytes for real proof modes.
+The verifier checks mode consistency, public input hashes, verification key binding, and proof bytes for real proof modes. See `SECURITY.md` for the full trust model.
 
 ## `neo-zkvm-cli`
 
