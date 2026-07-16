@@ -2161,8 +2161,11 @@ dependencies = [
  "hex",
  "neo-vm-guest",
  "neo-vm-rs",
+ "neo-zkvm-attestation",
  "neo-zkvm-prover",
  "neo-zkvm-verifier",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 

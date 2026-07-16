@@ -124,6 +124,54 @@ neo-zkvm prove 12139E40 -m mock -o proof.bin
 neo-zkvm verify proof.bin -m mock
 ```
 
+### attest
+
+Neo N3 settlement tooling: after off-chain proof verify, build digests and N-of-M
+secp256r1 ECDSA attestations for the on-chain `NeoZkAttestation` contract.
+
+```bash
+neo-zkvm attest keygen [-o key.json]
+neo-zkvm attest digest --proof <proof.bin> -m <mode> --network-magic <u32> [options]
+neo-zkvm attest sign --claim claim.json --secret-key <hex32> [-o sig.json]
+neo-zkvm attest bundle --proof <proof.bin> -m <mode> --config committee.json \
+  --secret-key <hex>... [-o bundle.json]
+neo-zkvm attest check --bundle bundle.json --config committee.json
+```
+
+**Committee config JSON:**
+
+```json
+{
+  "program_id": "<64 hex chars>",
+  "network_magic": 860833102,
+  "threshold": 2,
+  "attestors": [
+    "<uncompressed SEC1 pubkey hex 04||X||Y>",
+    "<...>"
+  ]
+}
+```
+
+**Demo flow (Mock — not for value settlement):**
+
+```bash
+neo-zkvm attest keygen -o a1.json
+neo-zkvm attest keygen -o a2.json
+# Write committee.json: program_id, network_magic, threshold, attestors[]
+neo-zkvm prove 12139E40 -m mock -o proof.bin
+neo-zkvm attest bundle --proof proof.bin -m mock --config committee.json \
+  --secret-key "$(jq -r .secret_key a1.json)" \
+  --secret-key "$(jq -r .secret_key a2.json)" \
+  --allow-unsafe-mode -o bundle.json
+neo-zkvm attest check --bundle bundle.json --config committee.json --allow-unsafe-mode
+```
+
+**Production:** use `-m groth16` (or `sp1` / `plonk`), real SP1 proofs, and **omit**
+`--allow-unsafe-mode`. Submit `bundle.json` fields to `NeoZkAttestation.Submit`.
+
+See [neo-n3-attestation.md](neo-n3-attestation.md) and
+`contracts/neo-n3/NeoZkAttestation/`.
+
 ### asm
 
 Assemble source code to bytecode.

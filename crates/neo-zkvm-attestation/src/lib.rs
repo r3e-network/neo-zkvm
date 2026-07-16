@@ -3,11 +3,15 @@
 //! Current Neo N3 cannot cheaply verify Groth16 on-chain (no pairing precompile).
 //! This crate defines the **canonical message** attestors sign after verifying an
 //! SP1 proof off-chain, and helpers to check **N-of-M secp256r1 ECDSA**.
+//!
+//! Production settlement path (Path A): off-chain SP1 verify → attestors sign →
+//! Neo contract `VerifyWithECDsa` threshold. BLS12-381 alone does not replace this
+//! unless Neo exposes matching pairings *and* the proof curve matches (see docs).
 
 use ecdsa::signature::{Signer, Verifier};
 use neo_vm_guest::{ProofMode, PublicInputs};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -53,6 +57,16 @@ impl ProofModeCode {
     pub fn is_settlement_safe(self) -> bool {
         matches!(self, Self::Sp1 | Self::Plonk | Self::Groth16)
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Execute => "execute",
+            Self::Mock => "mock",
+            Self::Sp1 => "sp1",
+            Self::Plonk => "plonk",
+            Self::Groth16 => "groth16",
+        }
+    }
 }
 
 /// Public claim fields that are signed and later checked on Neo N3.
@@ -88,12 +102,77 @@ pub struct AttestationBundle {
     pub signatures: Vec<AttestorSignature>,
 }
 
+/// Operator config for a settlement committee (JSON-friendly).
+///
+/// Public keys are uncompressed SEC1 hex (`04` ‖ X ‖ Y).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttestationConfig {
+    /// 32-byte program id as hex (64 hex chars, optional 0x prefix).
+    pub program_id: String,
+    /// Neo network magic (mainnet / testnet / private).
+    pub network_magic: u32,
+    /// Required number of distinct valid attestor signatures.
+    pub threshold: usize,
+    /// Authorized attestor public keys (uncompressed SEC1 hex).
+    pub attestors: Vec<String>,
+}
+
+impl AttestationConfig {
+    /// Parse and validate config fields into binary form.
+    pub fn parse(&self) -> Result<ParsedAttestationConfig, AttestationError> {
+        let program_id = parse_hex32(&self.program_id)?;
+        if self.threshold == 0 {
+            return Err(AttestationError::ThresholdNotMet { got: 0, need: 1 });
+        }
+        if self.attestors.is_empty() {
+            return Err(AttestationError::EmptyAttestorSet);
+        }
+        if self.threshold > self.attestors.len() {
+            return Err(AttestationError::ThresholdNotMet {
+                got: self.attestors.len(),
+                need: self.threshold,
+            });
+        }
+        let mut attestors = Vec::with_capacity(self.attestors.len());
+        for hex_key in &self.attestors {
+            let pk = parse_hex_bytes(hex_key)?;
+            if pk.len() != 65 || pk[0] != 0x04 {
+                return Err(AttestationError::InvalidPublicKey);
+            }
+            // Reject duplicates in the authorized set.
+            if attestors.iter().any(|k: &Vec<u8>| k == &pk) {
+                return Err(AttestationError::DuplicateAttestor);
+            }
+            // Validate SEC1 parse.
+            VerifyingKey::from_sec1_bytes(&pk).map_err(|_| AttestationError::InvalidPublicKey)?;
+            attestors.push(pk);
+        }
+        Ok(ParsedAttestationConfig {
+            program_id,
+            network_magic: self.network_magic,
+            threshold: self.threshold,
+            attestors,
+        })
+    }
+}
+
+/// Binary form of [`AttestationConfig`] after hex parsing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParsedAttestationConfig {
+    pub program_id: [u8; 32],
+    pub network_magic: u32,
+    pub threshold: usize,
+    pub attestors: Vec<Vec<u8>>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AttestationError {
     #[error("invalid public key")]
     InvalidPublicKey,
     #[error("invalid signature")]
     InvalidSignature,
+    #[error("invalid secret key")]
+    InvalidSecretKey,
     #[error("proof mode is not safe for settlement (reject Mock/Execute)")]
     UnsafeProofMode,
     #[error("threshold not met: got {got}, need {need}")]
@@ -102,11 +181,27 @@ pub enum AttestationError {
     DuplicateAttestor,
     #[error("public key not in the authorized attestor set")]
     UnauthorizedAttestor,
+    #[error("empty attestor set")]
+    EmptyAttestorSet,
+    #[error("invalid hex: {0}")]
+    InvalidHex(String),
+    #[error("expected {expected}-byte value, got {got}")]
+    InvalidLength { expected: usize, got: usize },
+    #[error("program_id is all zeros; set an explicit program identity")]
+    ZeroProgramId,
+    #[error("program_id does not match operator config")]
+    ProgramIdMismatch,
+    #[error("network_magic does not match operator config")]
+    NetworkMagicMismatch,
 }
 
 /// Compute the 32-byte SHA-256 digest that attestors sign.
 ///
 /// Layout is fixed so Neo contracts can recompute it field-by-field.
+///
+/// **Signing note:** Rust `sign_digest` and Neo `VerifyWithECDsa(..., secp256r1SHA256)`
+/// both apply SHA-256 to this 32-byte value before ECDSA (double-hash of the
+/// preimage). Keep both sides on the same convention.
 #[must_use]
 pub fn attestation_digest(claim: &AttestationClaim) -> [u8; 32] {
     let mut h = Sha256::new();
@@ -131,6 +226,66 @@ pub fn app_claim_hash(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
+/// Build a claim from public inputs (typically taken from a verified [`neo_vm_guest::NeoProof`]).
+pub fn claim_from_public_inputs(
+    program_id: [u8; 32],
+    proof_mode: ProofModeCode,
+    public_inputs: PublicInputs,
+    app_claim_hash: [u8; 32],
+    network_magic: u32,
+    nonce: [u8; 32],
+) -> Result<AttestationClaim, AttestationError> {
+    if program_id == [0u8; 32] {
+        return Err(AttestationError::ZeroProgramId);
+    }
+    Ok(AttestationClaim {
+        program_id,
+        proof_mode,
+        public_inputs,
+        app_claim_hash,
+        network_magic,
+        nonce,
+    })
+}
+
+/// Prefer a non-zero SP1 `vkey_hash` as `program_id`; otherwise return `None`.
+#[must_use]
+pub fn program_id_from_vkey_hash(vkey_hash: &[u8; 32]) -> Option<[u8; 32]> {
+    if *vkey_hash == [0u8; 32] {
+        None
+    } else {
+        Some(*vkey_hash)
+    }
+}
+
+/// Cryptographically random 32-byte nonce for replay protection.
+#[must_use]
+pub fn random_nonce() -> [u8; 32] {
+    let mut nonce = [0u8; 32];
+    OsRng.fill_bytes(&mut nonce);
+    nonce
+}
+
+/// Parse 32-byte hex (optional `0x` prefix).
+pub fn parse_hex32(s: &str) -> Result<[u8; 32], AttestationError> {
+    let bytes = parse_hex_bytes(s)?;
+    if bytes.len() != 32 {
+        return Err(AttestationError::InvalidLength {
+            expected: 32,
+            got: bytes.len(),
+        });
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Parse hex bytes (optional `0x` prefix).
+pub fn parse_hex_bytes(s: &str) -> Result<Vec<u8>, AttestationError> {
+    let hex_str = s.trim().trim_start_matches("0x").trim_start_matches("0X");
+    hex::decode(hex_str).map_err(|e| AttestationError::InvalidHex(e.to_string()))
+}
+
 /// secp256r1 keypair for local tests and attestor operators.
 pub struct AttestorKeypair {
     signing: SigningKey,
@@ -144,9 +299,19 @@ impl AttestorKeypair {
     }
 
     pub fn from_bytes(secret: &[u8; 32]) -> Result<Self, AttestationError> {
-        let signing = SigningKey::from_bytes(secret.into())
-            .map_err(|_| AttestationError::InvalidPublicKey)?;
+        let signing =
+            SigningKey::from_bytes(secret.into()).map_err(|_| AttestationError::InvalidSecretKey)?;
         Ok(Self { signing })
+    }
+
+    pub fn from_hex(secret_hex: &str) -> Result<Self, AttestationError> {
+        let bytes = parse_hex32(secret_hex)?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// 32-byte secret key (handle as sensitive material).
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.signing.to_bytes().into()
     }
 
     /// Uncompressed SEC1 public key (65 bytes, 0x04-prefixed).
@@ -155,6 +320,10 @@ impl AttestorKeypair {
         vk.to_encoded_point(false).as_bytes().to_vec()
     }
 
+    /// Sign the 32-byte attestation digest.
+    ///
+    /// Uses ECDSA-SHA256 over the digest bytes (same as Neo
+    /// `VerifyWithECDsa(digest, pk, sig, secp256r1SHA256)`).
     pub fn sign_digest(&self, digest: &[u8; 32]) -> Result<AttestorSignature, AttestationError> {
         let sig: Signature = self.signing.sign(digest);
         Ok(AttestorSignature {
@@ -229,6 +398,27 @@ pub fn verify_threshold(
     Ok(())
 }
 
+/// Verify a bundle against a parsed operator config.
+pub fn verify_bundle(
+    bundle: &AttestationBundle,
+    config: &ParsedAttestationConfig,
+    allow_unsafe_mode: bool,
+) -> Result<(), AttestationError> {
+    if bundle.claim.program_id != config.program_id {
+        return Err(AttestationError::ProgramIdMismatch);
+    }
+    if bundle.claim.network_magic != config.network_magic {
+        return Err(AttestationError::NetworkMagicMismatch);
+    }
+    verify_threshold(
+        &bundle.claim,
+        &bundle.signatures,
+        &config.attestors,
+        config.threshold,
+        allow_unsafe_mode,
+    )
+}
+
 /// Convenience: build a bundle from multiple keypairs.
 pub fn attest_bundle(
     claim: AttestationClaim,
@@ -240,6 +430,126 @@ pub fn attest_bundle(
         signatures.push(sign_claim(kp, &claim, allow_unsafe_mode)?);
     }
     Ok(AttestationBundle { claim, signatures })
+}
+
+/// Wire-friendly claim with hex fields (for CLI JSON).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClaimJson {
+    pub program_id: String,
+    pub proof_mode: String,
+    pub script_hash: String,
+    pub input_hash: String,
+    pub output_hash: String,
+    pub gas_consumed: u64,
+    pub execution_success: bool,
+    pub app_claim_hash: String,
+    pub network_magic: u32,
+    pub nonce: String,
+}
+
+impl From<&AttestationClaim> for ClaimJson {
+    fn from(c: &AttestationClaim) -> Self {
+        Self {
+            program_id: hex::encode(c.program_id),
+            proof_mode: c.proof_mode.as_str().to_string(),
+            script_hash: hex::encode(c.public_inputs.script_hash),
+            input_hash: hex::encode(c.public_inputs.input_hash),
+            output_hash: hex::encode(c.public_inputs.output_hash),
+            gas_consumed: c.public_inputs.gas_consumed,
+            execution_success: c.public_inputs.execution_success,
+            app_claim_hash: hex::encode(c.app_claim_hash),
+            network_magic: c.network_magic,
+            nonce: hex::encode(c.nonce),
+        }
+    }
+}
+
+impl ClaimJson {
+    pub fn into_claim(self) -> Result<AttestationClaim, AttestationError> {
+        let proof_mode = match self.proof_mode.to_ascii_lowercase().as_str() {
+            "execute" => ProofModeCode::Execute,
+            "mock" => ProofModeCode::Mock,
+            "sp1" => ProofModeCode::Sp1,
+            "plonk" => ProofModeCode::Plonk,
+            "groth16" => ProofModeCode::Groth16,
+            other => {
+                return Err(AttestationError::InvalidHex(format!(
+                    "unknown proof_mode '{other}'"
+                )));
+            }
+        };
+        Ok(AttestationClaim {
+            program_id: parse_hex32(&self.program_id)?,
+            proof_mode,
+            public_inputs: PublicInputs {
+                script_hash: parse_hex32(&self.script_hash)?,
+                input_hash: parse_hex32(&self.input_hash)?,
+                output_hash: parse_hex32(&self.output_hash)?,
+                gas_consumed: self.gas_consumed,
+                execution_success: self.execution_success,
+            },
+            app_claim_hash: parse_hex32(&self.app_claim_hash)?,
+            network_magic: self.network_magic,
+            nonce: parse_hex32(&self.nonce)?,
+        })
+    }
+}
+
+/// Wire-friendly signature (hex).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureJson {
+    pub public_key: String,
+    pub signature: String,
+}
+
+impl From<&AttestorSignature> for SignatureJson {
+    fn from(s: &AttestorSignature) -> Self {
+        Self {
+            public_key: hex::encode(&s.public_key),
+            signature: hex::encode(&s.signature),
+        }
+    }
+}
+
+impl SignatureJson {
+    pub fn into_signature(self) -> Result<AttestorSignature, AttestationError> {
+        Ok(AttestorSignature {
+            public_key: parse_hex_bytes(&self.public_key)?,
+            signature: parse_hex_bytes(&self.signature)?,
+        })
+    }
+}
+
+/// Wire-friendly bundle for CLI / attestor service interchange.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BundleJson {
+    pub claim: ClaimJson,
+    pub signatures: Vec<SignatureJson>,
+    /// Hex of the 32-byte attestation digest (informational; recompute on verify).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
+}
+
+impl From<&AttestationBundle> for BundleJson {
+    fn from(b: &AttestationBundle) -> Self {
+        let digest = attestation_digest(&b.claim);
+        Self {
+            claim: ClaimJson::from(&b.claim),
+            signatures: b.signatures.iter().map(SignatureJson::from).collect(),
+            digest: Some(hex::encode(digest)),
+        }
+    }
+}
+
+impl BundleJson {
+    pub fn into_bundle(self) -> Result<AttestationBundle, AttestationError> {
+        let claim = self.claim.into_claim()?;
+        let mut signatures = Vec::with_capacity(self.signatures.len());
+        for s in self.signatures {
+            signatures.push(s.into_signature()?);
+        }
+        Ok(AttestationBundle { claim, signatures })
+    }
 }
 
 #[cfg(test)]
@@ -341,5 +651,74 @@ mod tests {
         );
         assert!(ProofModeCode::Groth16.is_settlement_safe());
         assert!(!ProofModeCode::Mock.is_settlement_safe());
+    }
+
+    #[test]
+    fn json_roundtrip_bundle() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let bundle = attest_bundle(claim, &[&k1], false).unwrap();
+        let json = BundleJson::from(&bundle);
+        let restored = json.into_bundle().unwrap();
+        assert_eq!(bundle.claim, restored.claim);
+        assert_eq!(bundle.signatures, restored.signatures);
+    }
+
+    #[test]
+    fn config_parse_and_verify_bundle() {
+        let k1 = AttestorKeypair::generate();
+        let k2 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let bundle = attest_bundle(claim, &[&k1, &k2], false).unwrap();
+        let cfg = AttestationConfig {
+            program_id: hex::encode(bundle.claim.program_id),
+            network_magic: bundle.claim.network_magic,
+            threshold: 2,
+            attestors: vec![
+                hex::encode(k1.public_key_uncompressed()),
+                hex::encode(k2.public_key_uncompressed()),
+            ],
+        };
+        let parsed = cfg.parse().unwrap();
+        verify_bundle(&bundle, &parsed, false).unwrap();
+    }
+
+    #[test]
+    fn keypair_from_hex_roundtrip() {
+        let k = AttestorKeypair::generate();
+        let hex_sk = hex::encode(k.to_bytes());
+        let k2 = AttestorKeypair::from_hex(&hex_sk).unwrap();
+        assert_eq!(k.public_key_uncompressed(), k2.public_key_uncompressed());
+    }
+
+    #[test]
+    fn rejects_zero_program_id() {
+        let err = claim_from_public_inputs(
+            [0u8; 32],
+            ProofModeCode::Groth16,
+            PublicInputs {
+                script_hash: [1u8; 32],
+                input_hash: [2u8; 32],
+                output_hash: [3u8; 32],
+                gas_consumed: 1,
+                execution_success: true,
+            },
+            [4u8; 32],
+            1,
+            [5u8; 32],
+        )
+        .unwrap_err();
+        assert!(matches!(err, AttestationError::ZeroProgramId));
+    }
+
+    #[test]
+    fn rejects_duplicate_signatures() {
+        let k1 = AttestorKeypair::generate();
+        let claim = sample_claim(ProofModeCode::Groth16);
+        let sig = sign_claim(&k1, &claim, false).unwrap();
+        let authorized = vec![k1.public_key_uncompressed()];
+        let err =
+            verify_threshold(&claim, &[sig.clone(), sig], &authorized, 1, false).unwrap_err();
+        assert!(matches!(err, AttestationError::DuplicateAttestor));
     }
 }

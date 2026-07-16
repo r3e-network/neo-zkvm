@@ -43,9 +43,9 @@ AttestationBundle ──────────────────► Cont
 
 ### Phase 2 — Operator tooling
 
-- [ ] CLI: `neo-zkvm attest` (build digest from proof file + sign)
-- [ ] Config file for attestor keys / threshold / program_id
-- [ ] Replay protection helpers (nonce registry docs)
+- [x] CLI: `neo-zkvm attest` (`keygen`, `digest`, `sign`, `bundle`, `check`)
+- [x] Config file for attestor keys / threshold / program_id (JSON)
+- [x] Replay protection: random nonce helpers + contract nonce map + `IsNonceUsed`
 
 ### Phase 3 — Production SP1 operators
 

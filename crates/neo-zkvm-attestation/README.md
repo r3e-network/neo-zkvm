@@ -19,5 +19,18 @@ are roadmap items gated on CryptoLib APIs.
 ## Example
 
 ```rust
-use neo_zkvm_attestation::{AttestationClaim, AttestorKeypair, ProofModeCode, sign_claim, verify_threshold};
+use neo_zkvm_attestation::{
+    AttestationClaim, AttestorKeypair, ProofModeCode, sign_claim, verify_threshold,
+};
 ```
+
+## CLI
+
+```bash
+neo-zkvm attest keygen -o key.json
+neo-zkvm attest bundle --proof proof.bin -m groth16 --config committee.json \
+  --secret-key <hex> -o bundle.json
+neo-zkvm attest check --bundle bundle.json --config committee.json
+```
+
+Use `--allow-unsafe-mode` only for Mock demos — never for value settlement.

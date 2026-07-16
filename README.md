@@ -250,9 +250,13 @@ cargo run --locked --bin zk_attestation_settlement
 | Piece | Location |
 | --- | --- |
 | Attestation ABI + Rust N-of-M ECDSA | `crates/neo-zkvm-attestation` |
+| CLI (`attest keygen/digest/sign/bundle/check`) | `neo-zkvm attest …` |
 | Contract sketch (C#) | `contracts/neo-n3/NeoZkAttestation` |
 | Crypto surface (BLS vs pairings vs BN254) | [docs/neo-n3-crypto-surface.md](docs/neo-n3-crypto-surface.md) |
 | Roadmap | [docs/ROADMAP.md](docs/ROADMAP.md) |
+
+**Path A works on Neo N3 today** (deploy contract only). BLS12-381 is optional later for
+attestor aggregation or SNARK verify *if* CryptoLib exposes matching ops — not required.
 
 ## License
 

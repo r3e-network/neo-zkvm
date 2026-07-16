@@ -47,7 +47,9 @@ Contract sketch: `contracts/neo-n3/NeoZkAttestation/`
 | SP1 / Mock prove-verify | ✅ |
 | Canonical attestation digest + N-of-M sign/verify (Rust) | ✅ `neo-zkvm-attestation` |
 | Example settlement flow | ✅ `zk_attestation_settlement` |
-| Neo N3 contract sketch | ✅ C# `NeoZkAttestation` |
+| CLI operator tooling | ✅ `neo-zkvm attest` |
+| Committee config JSON | ✅ program_id / magic / threshold / attestors |
+| Neo N3 contract sketch | ✅ C# `NeoZkAttestation` (init-once, dup reject, LE) |
 | Production attestor service | ⬜ Phase 3 |
 | Audited mainnet deploy | ⬜ Phase 4 |
 

@@ -20,9 +20,12 @@ neo-vm-guest = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-zkvm-prover = { workspace = true }
 neo-zkvm-verifier = { workspace = true }
+neo-zkvm-attestation = { workspace = true }
 hex.workspace = true
 thiserror.workspace = true
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [features]
 default = []

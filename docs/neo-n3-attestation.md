@@ -100,8 +100,17 @@ This is the standard pattern on chains without SNARK precompiles.
 
 ## Rust crate
 
-`neo-zkvm-attestation` — build digest, sign, verify N-of-M.
+`neo-zkvm-attestation` — build digest, sign, verify N-of-M, committee config, JSON wire types.
 
-## Neo contract sketch
+## CLI
 
-See `contracts/neo-n3/NeoZkAttestation/` (C# Neo N3 style sketch).
+```bash
+neo-zkvm attest keygen|digest|sign|bundle|check
+```
+
+See [cli.md](cli.md) (`attest` section).
+
+## Neo contract
+
+See `contracts/neo-n3/NeoZkAttestation/` (C# Neo N3). Features: one-time `Initialize`,
+duplicate-attestor rejection, LE integer encoding, nonce replay map, Mock/Execute reject.
