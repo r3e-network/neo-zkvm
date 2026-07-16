@@ -54,8 +54,9 @@ neo-zkvm prove 12139E40 -m groth16
 # Explicit SP1 mode with fallback allowed
 neo-zkvm prove 12139E40 -m sp1 --allow-fallback
 
-# Save a serialized NeoProof
+# Save a serialized NeoProof and re-verify it (mode is pinned)
 neo-zkvm prove 12139E40 -m mock -o proof.bin
+neo-zkvm verify proof.bin -m mock
 
 # Valid modes: execute | mock | sp1 | plonk | groth16
 ```

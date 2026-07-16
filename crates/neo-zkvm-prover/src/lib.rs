@@ -164,11 +164,16 @@ impl NeoProver {
 
     fn fallback_artifacts(&self, public_inputs: &PublicInputs, warning: &str) -> Sp1ProofArtifacts {
         eprintln!("Warning: {warning}");
-        (
-            self.generate_mock_proof(public_inputs),
-            [0u8; 32],
-            public_inputs.clone(),
-        )
+        match self.try_generate_mock_proof(public_inputs) {
+            Ok(bytes) => (bytes, [0u8; 32], public_inputs.clone()),
+            Err(err) => {
+                // Extremely defensive: PublicInputs always serializes under the
+                // workspace bincode limit; if it somehow fails, emit empty bytes
+                // so the caller still gets a Mock-mode envelope rather than a panic.
+                eprintln!("Warning: mock fallback serialization failed ({err})");
+                (vec![], [0u8; 32], public_inputs.clone())
+            }
+        }
     }
 
     /// Try generating an SP1 proof in the given mode, falling back to mock or
@@ -273,12 +278,16 @@ impl NeoProver {
         let (proof_bytes, vkey_hash, actual_mode, sp1_public_inputs) = match self.config.proof_mode
         {
             ProofMode::Execute => (vec![], [0u8; 32], ProofMode::Execute, None),
-            ProofMode::Mock => (
-                self.generate_mock_proof(&public_inputs),
-                [0u8; 32],
-                ProofMode::Mock,
-                None,
-            ),
+            ProofMode::Mock => match self.try_generate_mock_proof(&public_inputs) {
+                Ok(bytes) => (bytes, [0u8; 32], ProofMode::Mock, None),
+                Err(err) => {
+                    return self.failed_proof(
+                        script_hash,
+                        input_hash,
+                        format!("Failed to serialize mock proof: {err}"),
+                    );
+                }
+            },
             ProofMode::Sp1 if sp1_available => {
                 #[cfg(feature = "sp1")]
                 {
@@ -446,23 +455,22 @@ impl NeoProver {
         }
     }
 
-    fn generate_mock_proof(&self, inputs: &PublicInputs) -> Vec<u8> {
+    fn try_generate_mock_proof(
+        &self,
+        inputs: &PublicInputs,
+    ) -> Result<Vec<u8>, BincodeEncodeError> {
         let timestamp = self.config.deterministic_mock_timestamp.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs()
         });
-        self.create_mock_proof(inputs, timestamp)
-    }
-
-    fn create_mock_proof(&self, inputs: &PublicInputs, timestamp: u64) -> Vec<u8> {
         let mock = MockProof {
             public_inputs: inputs.clone(),
             commitment: compute_commitment(inputs),
             timestamp,
         };
-        bincode_serialize(&mock).expect("MockProof serialization must not fail")
+        bincode_serialize(&mock)
     }
 
     fn verify_mock_proof(&self, proof: &NeoProof) -> bool {

@@ -534,11 +534,13 @@ fn test_shared_stack_value_serialization_roundtrip() {
 }
 
 #[test]
-fn test_cli_uses_shared_byte_arg_helper() {
+fn test_cli_uses_shared_crypto_syscall_helper() {
     let trace_host_rs = include_str!("../src/trace_host.rs");
 
-    assert!(trace_host_rs.contains("pop_byte_arg"));
-    assert!(!trace_host_rs.contains("fn pop_byte_arg"));
+    // Debug host must reuse guest deterministic crypto adapters, not a local copy.
+    assert!(trace_host_rs.contains("try_crypto_syscall"));
+    assert!(!trace_host_rs.contains("fn try_crypto_syscall"));
+    assert!(!trace_host_rs.contains("Sha256::digest"));
 }
 
 #[test]

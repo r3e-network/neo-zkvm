@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use super::PublicInputs;
 
 /// Mock proof structure for testing.
-#[derive(Serialize, Deserialize)]
+///
+/// **Not cryptographically secure.** Anyone can forge a `MockProof` for
+/// arbitrary public inputs. Production verifiers must reject Mock mode.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct MockProof {
     /// Public inputs used to compute the commitment.
     pub public_inputs: PublicInputs,

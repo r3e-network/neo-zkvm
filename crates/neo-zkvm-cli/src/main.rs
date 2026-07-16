@@ -1,10 +1,10 @@
 //! Neo zkVM CLI — development toolkit for execution, assembly, and proving.
 
 use clap::{Parser, Subcommand, ValueEnum};
-use neo_vm_guest::{ProofInput, bincode_serialize, execute};
+use neo_vm_guest::{ProofInput, bincode_serialize, deserialize_neoproof, execute};
 use neo_vm_rs::{MAX_SCRIPT_SIZE, interpret_with_stack_and_syscalls};
 use neo_zkvm_prover::{NeoProver, ProofMode, ProverConfig};
-use neo_zkvm_verifier::verify_for_mode;
+use neo_zkvm_verifier::{verify_detailed_for_mode, verify_for_mode};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -95,11 +95,22 @@ enum Commands {
     Debug {
         /// Hex bytecode, or a .bin/.nef file
         script: String,
+        /// Gas / step budget
+        #[arg(short = 'g', long = "gas", default_value_t = DEFAULT_GAS)]
+        gas: u64,
     },
     /// Analyze and display script information
     Inspect {
         /// Hex bytecode, or a .bin/.nef file
         script: String,
+    },
+    /// Verify a serialized NeoProof file (from `prove -o`)
+    Verify {
+        /// Path to a bincode-serialized NeoProof
+        proof: PathBuf,
+        /// Required proof mode — must match the proof (pinned; never attacker-chosen alone)
+        #[arg(short = 'm', long = "proof-mode", value_enum)]
+        proof_mode: CliProofMode,
     },
 }
 
@@ -123,8 +134,9 @@ fn dispatch(command: Commands) -> Result<(), String> {
         } => cmd_prove(&script, gas, proof_mode.into(), allow_fallback, output),
         Commands::Asm { source } => cmd_assemble(&source),
         Commands::Disasm { script } => cmd_disassemble(&script),
-        Commands::Debug { script } => cmd_debug(&script),
+        Commands::Debug { script, gas } => cmd_debug(&script, gas),
         Commands::Inspect { script } => cmd_inspect(&script),
+        Commands::Verify { proof, proof_mode } => cmd_verify(&proof, proof_mode.into()),
     }
 }
 
@@ -268,9 +280,9 @@ fn cmd_disassemble(script_input: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_debug(script_input: &str) -> Result<(), String> {
+fn cmd_debug(script_input: &str, gas_limit: u64) -> Result<(), String> {
     let script = parse_script(script_input)?;
-    let mut trace_host = TraceHost::new(script.clone());
+    let mut trace_host = TraceHost::new(script.clone(), gas_limit);
 
     println!("Tracing script with shared neo-vm-rs semantics...\n");
     let result = interpret_with_stack_and_syscalls(&script, Vec::new(), &mut trace_host);
@@ -281,6 +293,7 @@ fn cmd_debug(script_input: &str) -> Result<(), String> {
             println!("\nExecution result:");
             println!("  State: {:?}", result.state);
             println!("  Stack: {:?}", result.stack);
+            println!("  Steps: {}", trace_host.steps_executed());
             if let Some(error) = result.fault_message {
                 println!("  Fault: {error}");
             }
@@ -288,6 +301,48 @@ fn cmd_debug(script_input: &str) -> Result<(), String> {
         }
         Err(error) => Err(format!("Trace execution failed: {error}")),
     }
+}
+
+fn cmd_verify(proof_path: &Path, expected_mode: ProofMode) -> Result<(), String> {
+    let bytes = fs::read(proof_path)
+        .map_err(|e| format!("Failed to read proof '{}': {e}", proof_path.display()))?;
+
+    // Bound proof file size before deserialization (DoS guard).
+    const MAX_PROOF_FILE_BYTES: usize = 2 * 1024 * 1024;
+    if bytes.len() > MAX_PROOF_FILE_BYTES {
+        return Err(format!(
+            "Proof file exceeds maximum size ({} > {MAX_PROOF_FILE_BYTES} bytes)",
+            bytes.len()
+        ));
+    }
+
+    let proof =
+        deserialize_neoproof(&bytes).map_err(|e| format!("Failed to deserialize NeoProof: {e}"))?;
+
+    let detailed = verify_detailed_for_mode(&proof, expected_mode);
+    let simple = verify_for_mode(&proof, expected_mode);
+
+    println!("=======================================");
+    println!("  PROOF VERIFICATION");
+    println!("=======================================");
+    println!("  File:     {}", proof_path.display());
+    println!("  Expected: {expected_mode:?}");
+    println!("  Actual:   {:?}", proof.proof_mode);
+    println!("  Type:     {:?}", detailed.proof_type);
+    println!("  Valid:    {simple}");
+    if let Some(err) = &detailed.error {
+        println!("  Error:    {err}");
+    }
+    println!("  Gas:      {}", proof.output.gas_consumed);
+    println!("  Result:   {:?}", proof.output.result);
+    println!("=======================================");
+
+    if !simple {
+        return Err(detailed
+            .error
+            .unwrap_or_else(|| "Proof verification failed".to_string()));
+    }
+    Ok(())
 }
 
 fn cmd_inspect(script_input: &str) -> Result<(), String> {
@@ -542,5 +597,51 @@ mod tests {
             Commands::Run { gas, .. } => assert_eq!(gas, 42),
             _ => panic!("expected run"),
         }
+    }
+
+    #[test]
+    fn test_cli_verify_requires_mode() {
+        let err = parse_cli(&["verify", "proof.bin"]).unwrap_err();
+        assert!(
+            err.contains("proof-mode") || err.contains("required"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_cli_verify_parses() {
+        let cli = parse_cli(&["verify", "proof.bin", "-m", "mock"]).unwrap();
+        match cli.command {
+            Commands::Verify { proof, proof_mode } => {
+                assert_eq!(proof.as_os_str(), "proof.bin");
+                assert_eq!(ProofMode::from(proof_mode), ProofMode::Mock);
+            }
+            _ => panic!("expected verify"),
+        }
+    }
+
+    #[test]
+    fn test_prove_and_verify_file_roundtrip() {
+        let dir =
+            std::env::temp_dir().join(format!("neo-zkvm-proof-roundtrip-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("proof.bin");
+        let _ = fs::remove_file(&path);
+
+        cmd_prove(
+            "12139E40",
+            DEFAULT_GAS,
+            ProofMode::Mock,
+            false,
+            Some(path.clone()),
+        )
+        .expect("prove should succeed");
+
+        cmd_verify(&path, ProofMode::Mock).expect("verify should accept matching mode");
+        let err = cmd_verify(&path, ProofMode::Sp1).unwrap_err();
+        assert!(err.contains("Proof mode mismatch") || err.contains("mismatch"));
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
     }
 }

@@ -64,6 +64,13 @@ let proof = prover.prove(ProofInput {
 assert!(verify_for_mode(&proof, ProofMode::Mock));
 ```
 
+CLI prove/verify round-trip (mock for local tooling only):
+
+```bash
+cargo run -p neo-zkvm-cli -- prove 12139E40 -m mock -o /tmp/proof.bin
+cargo run -p neo-zkvm-cli -- verify /tmp/proof.bin -m mock
+```
+
 ## Real SP1 Proofs
 
 ```bash

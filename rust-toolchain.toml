@@ -1,0 +1,4 @@
+# Local default toolchain. Workspace MSRV is `rust-version = "1.88"` in Cargo.toml.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

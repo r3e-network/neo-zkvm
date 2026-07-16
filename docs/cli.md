@@ -99,6 +99,31 @@ neo-zkvm prove 12139E40 -m mock -o proof.bin
   allowed fallback). Cryptographic modes require a release build unless
   `--allow-fallback` is set.
 
+### verify
+
+Verify a serialized `NeoProof` written by `prove -o`.
+
+```bash
+neo-zkvm verify <proof.bin> --proof-mode <mode>
+```
+
+**Options:**
+
+| Flag           | Alias | Required | Description                                              |
+| -------------- | ----- | -------- | -------------------------------------------------------- |
+| `--proof-mode` | `-m`  | yes      | Expected mode: `execute`, `mock`, `sp1`, `plonk`, `groth16` |
+
+The mode is **required and pinned** — never inferred solely from the file's
+attacker-controlled `proof_mode` field. Production pipelines must pass a
+succinct mode constant (`sp1` / `plonk` / `groth16`).
+
+**Examples:**
+
+```bash
+neo-zkvm prove 12139E40 -m mock -o proof.bin
+neo-zkvm verify proof.bin -m mock
+```
+
 ### asm
 
 Assemble source code to bytecode.

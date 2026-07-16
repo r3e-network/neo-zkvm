@@ -7,6 +7,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_vm_guest::{OpCode, ProofInput, StackItem, execute, interop_hash};
+// Crypto path exercises the shared deterministic syscall adapters.
 
 fn add_script() -> Vec<u8> {
     vec![

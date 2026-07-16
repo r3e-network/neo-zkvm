@@ -1,5 +1,6 @@
 /target
 .worktrees/
+.serena/
 tarpaulin-report.html
 cobertura.xml
 *.profraw

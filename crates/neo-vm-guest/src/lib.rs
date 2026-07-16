@@ -1,5 +1,6 @@
 //! Shared VM types, serialization helpers, and proof utilities for Neo zkVM.
 
+mod crypto;
 mod legacy_neo_proof;
 mod mock_proof;
 mod neo_proof;
@@ -8,6 +9,7 @@ mod proof_output;
 mod public_inputs;
 mod zk_proof_syscalls;
 
+pub use crypto::{crypto_syscall_name, hash160, hash256, ripemd160, sha256, try_crypto_syscall};
 pub use legacy_neo_proof::LegacyNeoProof;
 pub use mock_proof::MockProof;
 pub use neo_proof::NeoProof;

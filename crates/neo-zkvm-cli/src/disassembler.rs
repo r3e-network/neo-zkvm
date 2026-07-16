@@ -6,6 +6,7 @@
 //! - Jump target annotations
 //! - Operand decoding
 
+use neo_vm_guest::crypto_syscall_name;
 use neo_vm_rs::{OpCode, StackItemType, interop_hash};
 
 pub struct Disassembler<'a> {
@@ -306,6 +307,9 @@ impl<'a> Disassembler<'a> {
     }
 
     fn syscall_name(&self, id: u32) -> &'static str {
+        if let Some(name) = crypto_syscall_name(id) {
+            return name;
+        }
         match id {
             id if id == interop_hash("System.Runtime.Log") => "System.Runtime.Log",
             id if id == interop_hash("System.Runtime.Notify") => "System.Runtime.Notify",
@@ -313,9 +317,6 @@ impl<'a> Disassembler<'a> {
             id if id == interop_hash("System.Storage.Get") => "System.Storage.Get",
             id if id == interop_hash("System.Storage.Put") => "System.Storage.Put",
             id if id == interop_hash("System.Storage.Delete") => "System.Storage.Delete",
-            id if id == interop_hash("System.Crypto.SHA256") => "System.Crypto.SHA256",
-            id if id == interop_hash("System.Crypto.RIPEMD160") => "System.Crypto.RIPEMD160",
-            id if id == interop_hash("System.Crypto.Hash160") => "System.Crypto.Hash160",
             id if id == interop_hash("System.Crypto.CheckSig") => "System.Crypto.CheckSig",
             _ => "Unknown",
         }
