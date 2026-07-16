@@ -7,7 +7,7 @@
 mod common;
 
 use libfuzzer_sys::fuzz_target;
-use neo_vm_guest::{execute, OpCode, ProofInput};
+use neo_vm_guest::{execute, OpCode, ProofInput, StackItem};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
@@ -20,13 +20,14 @@ fuzz_target!(|data: &[u8]| {
     }
     script.push(OpCode::RET.byte());
 
-    // Fuzz with non-empty arguments: extract 1-3 argument bytes from the tail
-    // of the fuzz input after the script portion.
+    // Optional private inputs: tail bytes become a single ByteString argument.
     let mut arguments = vec![];
     if data.len() > 256 {
-        let arg_bytes: Vec<u8> = data[256..].to_vec();
+        let arg_bytes = data[256..].to_vec();
         if !arg_bytes.is_empty() {
-            arguments.push(arg_bytes);
+            // Cap argument size to avoid pathological allocations under fuzz.
+            let capped = arg_bytes.into_iter().take(1024).collect::<Vec<_>>();
+            arguments.push(StackItem::ByteString(capped));
         }
     }
 

@@ -294,8 +294,14 @@ fn cmd_debug(script_input: &str, gas_limit: u64) -> Result<(), String> {
             println!("  State: {:?}", result.state);
             println!("  Stack: {:?}", result.stack);
             println!("  Steps: {}", trace_host.steps_executed());
-            if let Some(error) = result.fault_message {
+            if let Some(error) = &result.fault_message {
                 println!("  Fault: {error}");
+            }
+            // Match `run`: non-zero exit on Fault for scripting automation.
+            if !matches!(result.state, neo_vm_rs::VmState::Halt) {
+                return Err(result
+                    .fault_message
+                    .unwrap_or_else(|| format!("Trace execution faulted: {:?}", result.state)));
             }
             Ok(())
         }
@@ -587,6 +593,18 @@ mod tests {
     fn test_cmd_run_fails_on_fault() {
         // PUSH5 PUSH0 DIV RET (division by zero)
         let err = cmd_run("1510A140", DEFAULT_GAS).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn test_cmd_debug_fails_on_fault() {
+        let err = cmd_debug("1510A140", DEFAULT_GAS).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn test_cmd_prove_strict_fails_on_fault() {
+        let err = cmd_prove("1510A140", DEFAULT_GAS, ProofMode::Mock, false, None).unwrap_err();
         assert!(!err.is_empty());
     }
 

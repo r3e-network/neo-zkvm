@@ -21,11 +21,15 @@ A production proof release must be validated with a real SP1 guest ELF. Dummy SP
 
 ## Package Order
 
+0. **`neo-vm-rs`** (external repo) must be published to crates.io first — workspace crates depend on it
 1. `neo-vm-guest`
 2. `neo-zkvm-prover`
 3. `neo-zkvm-verifier` (optional `sp1` feature depends on prover for ELF/host verify)
 4. `neo-zkvm-cli`
 5. `neo-zkvm-examples` remains unpublished (`publish = false`)
+
+> Until `neo-vm-rs` is on crates.io, `./scripts/verify-packaging.sh` and `cargo publish` will fail.
+> Local development via git+rev is unaffected.
 
 ## Operator Checks
 
@@ -33,3 +37,4 @@ A production proof release must be validated with a real SP1 guest ELF. Dummy SP
 - Confirm no crate depends on a legacy local VM engine.
 - Confirm explicit `sp1`, `plonk`, and `groth16` modes fail on fallback unless `--allow-fallback` is supplied.
 - Confirm release notes describe proof mode behavior and SP1 prerequisites.
+- Confirm packaging dry-run succeeds only after `neo-vm-rs` is published.

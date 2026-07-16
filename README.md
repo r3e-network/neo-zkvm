@@ -97,6 +97,7 @@ SP1_FORCE_DUMMY=true cargo clippy -p neo-zkvm-prover -p neo-zkvm-verifier -p neo
 ./scripts/verify-release-metadata.sh
 
 # Validate crates.io package assembly only
+# Requires neo-vm-rs published on crates.io (workspace builds via git+rev otherwise)
 ./scripts/verify-packaging.sh
 
 # Print the full release plan without tagging or publishing

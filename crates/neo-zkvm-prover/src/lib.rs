@@ -415,25 +415,32 @@ impl NeoProver {
         }
     }
 
-    /// Generate a proof and fail if requested cryptographic mode falls back.
+    /// Generate a proof and fail if requested cryptographic mode falls back
+    /// or if VM execution faulted.
+    ///
+    /// Unlike [`Self::prove`], this rejects:
+    /// - silent mode downgrades for Sp1/Plonk/Groth16
+    /// - any proof whose execution `state != 0` (fault), in all modes
     pub fn prove_strict(&self, input: ProofInput) -> Result<NeoProof, String> {
         let requested_mode = self.config.proof_mode;
         let proof = self.prove(input);
         if matches!(
             requested_mode,
             ProofMode::Sp1 | ProofMode::Plonk | ProofMode::Groth16
-        ) {
-            if proof.proof_mode != requested_mode {
-                return Err(format!(
-                    "Requested proof mode {:?} but prover produced {:?}. Re-run with fallback enabled if this is expected.",
-                    requested_mode, proof.proof_mode
-                ));
-            }
-            if proof.output.state != 0 {
-                return Err(proof.output.error.clone().unwrap_or_else(|| {
-                    format!("Proof generation in {:?} mode failed", requested_mode)
-                }));
-            }
+        ) && proof.proof_mode != requested_mode
+        {
+            return Err(format!(
+                "Requested proof mode {:?} but prover produced {:?}. Re-run with fallback enabled if this is expected.",
+                requested_mode, proof.proof_mode
+            ));
+        }
+        if proof.output.state != 0 {
+            return Err(proof.output.error.clone().unwrap_or_else(|| {
+                format!(
+                    "Proof generation in {:?} mode failed (execution fault)",
+                    requested_mode
+                )
+            }));
         }
         Ok(proof)
     }
@@ -647,6 +654,28 @@ mod tests {
             .prove_strict(input)
             .expect("execute mode should be strict-safe");
         assert_eq!(proof.proof_mode, ProofMode::Execute);
+    }
+
+    #[test]
+    fn test_prove_strict_rejects_execution_fault_in_all_modes() {
+        let prover = NeoProver::new(ProverConfig {
+            proof_mode: ProofMode::Mock,
+            ..Default::default()
+        });
+
+        let input = ProofInput {
+            script: div_by_zero_script(),
+            arguments: vec![],
+            gas_limit: 1_000_000,
+        };
+
+        let err = prover
+            .prove_strict(input)
+            .expect_err("faulted execution must fail prove_strict");
+        assert!(
+            !err.is_empty(),
+            "error message should describe the execution fault"
+        );
     }
 
     #[test]

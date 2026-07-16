@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fuzz target `fuzz_vm_execution` type error: arguments are now `StackItem::ByteString` (CI fuzz-smoke was broken)
+- Legacy `NeoProof` deserialize no longer rejects valid Execute-mode proofs with zero `vkey_hash`
+- `prove_strict` rejects execution faults in all modes (not only SP1/Plonk/Groth16)
+- CLI `debug` exits non-zero on Fault (parity with `run`)
+- Packaging docs/scripts clarify that crates.io publish requires published `neo-vm-rs`
+- Workspace `neo-vm-rs` dependency declares a version for packaging metadata
+
 ### Changed
 
 - Guest execution meters gas at runtime (one unit per executed instruction via `on_instruction`), so loops cannot under-charge relative to static bytecode estimates
